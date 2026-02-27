@@ -96,7 +96,7 @@ stateDiagram-v2
 
 ```mermaid
 graph TB
-    Neco[Neco 核心应用] --> MCPManager[MCP 管理器]
+    Host[宿主应用] --> MCPManager[MCP 管理器]
 
     MCPManager --> Server1[文件系统服务器]
     MCPManager --> Server2[Git 服务器]
@@ -111,9 +111,9 @@ graph TB
     Tools2 --> Results2[返回Git信息]
     Tools3 --> Results3[返回搜索结果]
 
-    Results1 --> Neco
-    Results2 --> Neco
-    Results3 --> Neco
+    Results1 --> Host
+    Results2 --> Host
+    Results3 --> Host
 ```
 
 ## 5. 懒加载实现流程

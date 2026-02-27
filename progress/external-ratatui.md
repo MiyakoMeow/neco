@@ -2,7 +2,7 @@
 
 > 探索日期: 2026-02-27  
 > Ratatui版本: 0.30.0  
-> 探索目标: 为Neco项目评估Ratatui作为终端REPL界面的可行性
+> 探索目标: 深度探索Ratatui TUI库的核心特性和应用场景
 
 ---
 
@@ -22,11 +22,10 @@
 - [12. 多Agent并行执行的UI展示](#12-多agent并行执行的ui展示)
 - [13. Session管理的TUI实现](#13-session管理的tui实现)
 - [14. ACP模式集成](#14-acp模式集成)
-- [15. 与Neco需求的匹配度分析](#15-与neco需求的匹配度分析)
-- [16. 推荐架构设计](#16-推荐架构设计)
-- [17. 完整代码示例](#17-完整代码示例)
-- [18. 生态与工具](#18-生态与工具)
-- [19. 结论与建议](#19-结论与建议)
+- [15. 结论与建议](#15-结论与建议)
+- [16. 完整代码示例](#16-完整代码示例)
+- [17. 生态与工具](#17-生态与工具)
+- [附录A：快速参考](#附录a快速参考)
 
 ---
 
@@ -1703,7 +1702,7 @@ use std::io::{BufRead, BufReader, Write};
 
 /// 在独立进程中运行模型
 fn spawn_model_process() -> std::io::Result<std::process::Child> {
-    Command::new("neco-model-runner")
+    Command::new("model-runner")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -3523,612 +3522,17 @@ impl ACPLayout {
 
 ---
 
-## 15. 与Neco需求的匹配度分析
 
-### 15.1 需求对照表
-
-| Neco需求 | Ratatui支持 | 匹配度 | 实现方案 |
-|---------|------------|-------|---------|
-| **终端REPL界面** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | 使用Paragraph + 自定义输入处理 |
-| **流式输出** | ✅ 原生支持 | ⭐⭐⭐⭐⭐ | 异步任务 + 共享状态 + 定期渲染 |
-| **多Agent并行** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | tokio::spawn + Channel + Arc<RwLock> |
-| **模型运行分离** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | 异步任务隔离 + 事件通信 |
-| **Session管理** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | 自定义SessionManager + 序列化 |
-| **代码高亮** | ⚠️ 需要第三方 | ⭐⭐⭐⭐ | syntect + 自定义widget |
-| **Markdown渲染** | ⚠️ 需要第三方 | ⭐⭐⭐⭐ | pulldown-cmark + 自定义widget |
-| **文件树显示** | ✅ 原生支持 | ⭐⭐⭐⭐⭐ | List + 自定义树结构 |
-| **快捷键绑定** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | 事件处理层实现 |
-| **配置持久化** | ✅ 完全支持 | ⭐⭐⭐⭐⭐ | 标准Rust文件操作 |
-| **智能模式** | ✅ 完全支持 | ⭐⭐⭐⭐ | 复杂状态机 |
-| **交互式编辑** | ⚠️ 需要第三方 | ⭐⭐⭐ | tui-widgets或自定义 |
-
-### 15.2 详细匹配分析
-
-#### 15.2.1 终端REPL界面
-
-**Neco需求：**
-- 支持用户输入命令
-- 显示模型输出
-- 支持历史记录
-- 支持多行输入
-
-**Ratatui实现：**
-- ✅ 使用`Paragraph` widget渲染文本
-- ✅ 自定义`REPLInput`组件处理输入
-- ✅ 使用`Vec<String>`存储历史记录
-- ✅ 支持多行编辑（需自定义实现）
-
-**推荐方案：**
-```rust
-struct REPLWidget {
-    input: REPLInput,
-    output: REPOutput,
-    history: HistoryManager,
-}
-```
-
-#### 15.2.2 流式输出
-
-**Neco需求：**
-- 实时显示模型生成
-- 支持Markdown格式
-- 支持代码高亮
-
-**Ratatui实现：**
-- ✅ 异步任务 + 共享状态（`Arc<RwLock>`）
-- ✅ 使用`tokio::time::interval`定期渲染
-- ✅ Markdown解析：`pulldown-cmark`
-- ✅ 代码高亮：`syntect`
-
-**推荐方案：**
-```rust
-struct StreamingWidget {
-    content: Arc<RwLock<String>>,
-    markdown_parser: Parser,
-    code_highlighter: HighlightLines,
-}
-```
-
-#### 15.2.3 多Agent并行
-
-**Neco需求：**
-- 同时运行多个Agent
-- 显示每个Agent状态
-- 支持Agent切换
-
-**Ratatui实现：**
-- ✅ 使用`tokio::spawn`并行执行
-- ✅ 使用`mpsc::channel`通信
-- ✅ `AgentManager`管理状态
-- ✅ `MultiAgentWidget`显示多个Agent
-
-**推荐方案：**
-```rust
-struct MultiAgentSystem {
-    agents: HashMap<AgentId, AgentState>,
-    executor: AgentExecutor,
-    ui: MultiAgentWidget,
-}
-```
-
-#### 15.2.4 模型运行分离
-
-**Neco需求：**
-- 模型运行在独立进程
-- UI与模型解耦
-- 支持流式通信
-
-**Ratatui实现：**
-- ✅ 异步任务隔离
-- ✅ Channel通信（`mpsc`、`broadcast`）
-- ✅ 共享状态同步（`Arc<RwLock>`）
-
-**推荐方案：**
-```rust
-// UI进程
-struct UIProcess {
-    model_bridge: ModelBridge,
-    renderer: Renderer,
-}
-
-// 模型桥接
-struct ModelBridge {
-    command_tx: mpsc::Sender<Command>,
-    response_rx: mpsc::Receiver<Response>,
-}
-```
-
-### 15.3 优势分析
-
-#### 15.3.1 性能优势
-
-1. **即时模式渲染**：
-   - 无需维护widget树
-   - 栈分配为主
-   - 高效的diff算法
-
-2. **异步友好**：
-   - 与tokio完美集成
-   - 支持非阻塞UI
-   - 高效的并发模型
-
-3. **内存效率**：
-   - 典型应用<10MB
-   - 小buffer占用
-   - 智能缓存
-
-#### 15.3.2 开发体验
-
-1. **类型安全**：
-   - 编译时保证UI正确性
-   - 防止状态不一致
-
-2. **模块化**：
-   - 清晰的关注点分离
-   - 易于测试和维护
-
-3. **生态丰富**：
-   - 大量第三方widget
-   - 活跃的社区支持
-
-### 15.4 潜在挑战
-
-#### 15.4.1 学习曲线
-
-- **即时模式思维**：需要适应不同于传统GUI的思维
-- **异步编程**：需要理解tokio和async/await
-- **布局系统**：需要熟悉flexbox-like布局
-
-#### 15.4.2 功能缺失
-
-- **交互式编辑**：需要第三方库或自定义实现
-- **复杂图形**：终端限制（需要Canvas）
-- **触摸支持**：终端限制
-
-#### 15.4.3 性能考虑
-
-- **大量渲染**：复杂UI可能影响帧率
-- **内存分配**：需避免在渲染循环中分配
-- **终端兼容性**：不同终端能力差异
 
 ---
 
-## 16. 推荐架构设计
 
-### 16.1 整体架构
 
-```mermaid
-graph TB
-    subgraph "进程架构"
-        A[主进程<br/>TUI应用]
-        B[模型进程<br/>可选]
-    end
-    
-    subgraph "主进程内部"
-        C[UI层<br/>Ratatui Widgets]
-        D[业务逻辑层<br/>Controllers]
-        E[状态管理层<br/>State Managers]
-        F[通信层<br/>Channels/Bridge]
-    end
-    
-    subgraph "异步任务"
-        G[渲染任务<br/>60 FPS]
-        H[事件处理任务<br/>Input Handler]
-        I[模型通信任务<br/>Model Bridge]
-    end
-    
-    A --> C
-    C --> D
-    D --> E
-    E --> F
-    F --> I
-    
-    G -.-> C
-    H -.-> D
-    I -.-> F
-    
-    F -.通信通道.-> B
-    
-    style A fill:#e1f5ff
-    style C fill:#f5ffe1
-    style D fill:#ffe1f5
-    style E fill:#fff4e1
-    style F fill:#ffe1e1
-    style B fill:#e1f5ff
-```
 
-### 16.2 模块划分
-
-```rust
-// main.rs
-pub mod ui;
-pub mod controllers;
-pub mod state;
-pub mod bridge;
-pub mod config;
-
-use ui::Application;
-use state::StateManager;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let state = StateManager::new();
-    let app = Application::new(state);
-    app.run().await
-}
-```
-
-#### 16.2.1 UI层（ui/）
-
-```rust
-// ui/mod.rs
-pub mod widgets;
-pub mod layout;
-pub mod renderer;
-
-use widgets::*;
-use layout::*;
-use renderer::*;
-
-/// 主应用UI
-pub struct Application {
-    state: Arc<RwLock<StateManager>>,
-    layout: MainLayout,
-}
-
-impl Application {
-    pub fn new(state: Arc<RwLock<StateManager>>) -> Self {
-        Self {
-            state,
-            layout: MainLayout::new(),
-        }
-    }
-    
-    pub async fn run(mut self) -> std::io::Result<()> {
-        let terminal = ratatui::init();
-        
-        let mut render_interval = tokio::time::interval(Duration::from_millis(16));
-        let mut events = EventStream::new();
-        
-        loop {
-            tokio::select! {
-                _ = render_interval.tick() => {
-                    terminal.draw(|frame| self.render(frame))?;
-                }
-                Some(Ok(event)) = events.next() => {
-                    if self.handle_event(event).await {
-                        break;
-                    }
-                }
-            }
-        }
-        
-        ratatui::restore();
-        Ok(())
-    }
-}
-```
-
-#### 16.2.2 控制器层（controllers/）
-
-```rust
-// controllers/mod.rs
-pub mod repl_controller;
-pub mod agent_controller;
-pub mod session_controller;
-
-use repl_controller::REPLController;
-use agent_controller::AgentController;
-use session_controller::SessionController;
-
-/// 控制器管理器
-pub struct ControllerManager {
-    repl: REPLController,
-    agent: AgentController,
-    session: SessionController,
-}
-
-impl ControllerManager {
-    pub fn new(state: Arc<RwLock<StateManager>>) -> Self {
-        Self {
-            repl: REPLController::new(Arc::clone(&state)),
-            agent: AgentController::new(Arc::clone(&state)),
-            session: SessionController::new(Arc::clone(&state)),
-        }
-    }
-    
-    pub async fn handle_event(&mut self, event: Event) -> Result<bool> {
-        match event {
-            Event::Key(key) => {
-                self.handle_key_event(key).await
-            }
-            Event::Mouse(mouse) => {
-                self.handle_mouse_event(mouse).await
-            }
-            _ => Ok(false),
-        }
-    }
-}
-```
-
-#### 16.2.3 状态管理层（state/）
-
-```rust
-// state/mod.rs
-pub mod app_state;
-pub mod repl_state;
-pub mod agent_state;
-pub mod session_state;
-
-use app_state::AppState;
-use repl_state::REPLState;
-use agent_state::AgentStateManager;
-use session_state::SessionManager;
-
-/// 统一状态管理器
-pub struct StateManager {
-    pub app: AppState,
-    pub repl: REPLState,
-    pub agents: AgentStateManager,
-    pub sessions: SessionManager,
-}
-
-impl StateManager {
-    pub fn new() -> Self {
-        Self {
-            app: AppState::new(),
-            repl: REPLState::new(),
-            agents: AgentStateManager::new(),
-            sessions: SessionManager::new(),
-        }
-    }
-}
-```
-
-### 16.3 通信架构
-
-#### 16.3.1 进程内通信
-
-```rust
-// bridge/mod.rs
-use tokio::sync::{mpsc, broadcast};
-
-/// 桥接器：连接UI和模型
-pub struct ModelBridge {
-    command_tx: mpsc::Sender<ModelCommand>,
-    response_rx: broadcast::Receiver<ModelResponse>,
-    state: Arc<RwLock<BridgeState>>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ModelCommand {
-    Chat { session_id: SessionId, message: String },
-    Stream { session_id: SessionId, message: String },
-    Cancel { session_id: SessionId },
-}
-
-#[derive(Debug, Clone)]
-pub enum ModelResponse {
-    Chunk { session_id: SessionId, text: String },
-    Complete { session_id: SessionId },
-    Error { session_id: SessionId, message: String },
-}
-
-impl ModelBridge {
-    pub fn new() -> (Self, mpsc::Sender<ModelCommand>, broadcast::Receiver<ModelResponse>) {
-        let (command_tx, command_rx) = mpsc::channel(100);
-        let (response_tx, response_rx) = broadcast::channel(100);
-        let state = Arc::new(RwLock::new(BridgeState::new()));
-        
-        // 启动桥接任务
-        let state_clone = Arc::clone(&state);
-        tokio::spawn(async move {
-            Self::run_bridge(command_rx, response_tx, state_clone).await;
-        });
-        
-        (
-            Self {
-                command_tx,
-                response_rx,
-                state,
-            },
-            command_tx,
-            response_rx,
-        )
-    }
-    
-    async fn run_bridge(
-        mut command_rx: mpsc::Receiver<ModelCommand>,
-        response_tx: broadcast::Sender<ModelResponse>,
-        state: Arc<RwLock<BridgeState>>,
-    ) {
-        while let Some(cmd) = command_rx.recv().await {
-            match cmd {
-                ModelCommand::Chat { session_id, message } => {
-                    // 处理聊天命令
-                    Self::handle_chat(session_id, message, &response_tx, &state).await;
-                }
-                ModelCommand::Stream { session_id, message } => {
-                    // 处理流式聊天
-                    Self::handle_stream(session_id, message, &response_tx, &state).await;
-                }
-                ModelCommand::Cancel { session_id } => {
-                    // 取消正在进行的请求
-                    // ...
-                }
-            }
-        }
-    }
-}
-```
-
-#### 16.3.2 进程间通信（可选）
-
-```rust
-// bridge/ipc.rs
-use std::process::{Command, Stdio};
-
-/// IPC桥接器：与独立模型进程通信
-pub struct IPCBridge {
-    process: Option<std::process::Child>,
-    stdin: Option<std::process::ChildStdin>,
-    stdout: Option<std::process::ChildStdout>,
-}
-
-impl IPCBridge {
-    pub fn spawn() -> Result<Self> {
-        let process = Command::new("neco-model")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        
-        let stdin = process.stdin.take().unwrap();
-        let stdout = process.stdout.take().unwrap();
-        
-        Ok(Self {
-            process: Some(process),
-            stdin: Some(stdin),
-            stdout: Some(stdout),
-        })
-    }
-    
-    pub fn send_command(&mut self, cmd: &str) -> Result<()> {
-        if let Some(ref mut stdin) = self.stdin {
-            writeln!(stdin, "{}", cmd)?;
-            stdin.flush()?;
-        }
-        Ok(())
-    }
-    
-    pub fn read_response(&mut self) -> Result<String> {
-        if let Some(ref mut stdout) = self.stdout {
-            let mut line = String::new();
-            stdout.read_line(&mut line)?;
-            Ok(line)
-        } else {
-            Err(anyhow::anyhow!("stdout not available"))
-        }
-    }
-}
-```
-
-### 16.4 渲染流程
-
-```mermaid
-sequenceDiagram
-    participant Main as 主循环
-    participant Timer as 定时器
-    participant UI as UI渲染
-    participant State as 状态管理
-    participant Bridge as 桥接器
-    
-    Main->>Timer: 每16ms触发
-    Timer->>UI: 触发渲染
-    UI->>State: 读取当前状态
-    State-->>UI: 返回状态快照
-    UI->>UI: 计算布局
-    UI->>UI: 渲染Widgets
-    UI->>UI: 输出到终端
-    
-    alt 状态变化
-        Bridge->>State: 更新状态
-        State->>UI: 标记dirty
-        UI->>UI: 下一帧重新渲染
-    end
-```
-
-```rust
-// renderer/mod.rs
-use ratatui::Frame;
-
-pub struct Renderer {
-    last_render_time: Instant,
-    frame_count: u64,
-}
-
-impl Renderer {
-    pub fn new() -> Self {
-        Self {
-            last_render_time: Instant::now(),
-            frame_count: 0,
-        }
-    }
-    
-    pub fn render(&mut self, frame: &mut Frame, state: &StateManager) {
-        self.frame_count += 1;
-        
-        // 计算布局
-        let layout = self.calculate_layout(frame.area());
-        
-        // 渲染各个组件
-        self.render_repl(frame, layout.repl_area, state);
-        self.render_agents(frame, layout.agents_area, state);
-        self.render_sessions(frame, layout.sessions_area, state);
-        self.render_status_bar(frame, layout.status_area, state);
-    }
-    
-    fn calculate_layout(&self, area: Rect) -> MainLayout {
-        // 根据区域大小计算布局
-        let chunks = Layout::vertical([
-            Constraint::Min(0),      // 主内容区
-            Constraint::Length(1),    // 状态栏
-        ]).split(area);
-        
-        let main_chunks = Layout::horizontal([
-            Constraint::Percentage(25),  // 左侧面板
-            Constraint::Percentage(50),  // 主工作区
-            Constraint::Percentage(25),  // 右侧面板
-        ]).split(chunks[0]);
-        
-        MainLayout {
-            repl_area: main_chunks[1],
-            agents_area: main_chunks[0],
-            sessions_area: main_chunks[2],
-            status_area: chunks[1],
-        }
-    }
-}
-```
-
-### 16.5 错误处理策略
-
-```rust
-// error.rs
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum NecoError {
-    #[error("Model error: {0}")]
-    Model(String),
-    
-    #[error("UI error: {0}")]
-    UI(String),
-    
-    #[error("IO error: {0}")]
-    IO(#[from] std::io::Error),
-    
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-    
-    #[error("State error: {0}")]
-    State(String),
-}
-
-pub type Result<T> = std::result::Result<T, NecoError>;
-
-// 错误恢复策略
-pub enum RecoveryStrategy {
-    Retry,
-    Fallback,
-    Terminate,
-    NotifyUser,
-}
-```
 
 ---
 
-## 17. 完整代码示例
+## 16. 完整代码示例
 
 ### 17.1 最小化示例
 
@@ -4494,7 +3898,7 @@ fn render_multi_agent(app: &MultiAgentApp, frame: &mut Frame) {
 
 ---
 
-## 18. 生态与工具
+## 17. 生态与工具
 
 ### 18.1 第三方Widget库
 
@@ -4547,62 +3951,32 @@ cargo tarpaulin --out Html
 
 ---
 
-## 19. 结论与建议
+## 15. 结论与建议
 
-### 19.1 总体评价
+### 15.1 总体评价
 
-**Ratatui是Neco项目的理想选择**，理由如下：
+**Ratatui是一个功能强大、设计优秀的Rust TUI库**，特别适合构建现代化的终端应用：
 
-1. **✅ 完美匹配核心需求**：
-   - 终端REPL界面：原生支持
-   - 流式输出：异步架构完美支持
-   - 多Agent并行：tokio并发模型理想
-   - 模型分离：异步任务隔离简单高效
-
-2. **✅ 技术优势突出**：
-   - 高性能：即时模式 + diff算法
+1. **✅ 核心优势**：
+   - 即时模式渲染：简洁高效
+   - 异步友好：与tokio完美集成
    - 类型安全：Rust类型系统保证
-   - 模块化：清晰的关注点分离
+   - 模块化架构：清晰的关注点分离
+
+2. **✅ 技术特性**：
+   - 高性能：双缓冲区 + diff算法
+   - 低内存：典型应用<10MB
    - 生态丰富：活跃社区和第三方库
+   - 文档完善：官方文档详细实用
 
-3. **✅ 开发体验优秀**：
-   - 文档完善：官方文档详细
-   - 示例丰富：大量实用示例
-   - 模板支持：快速启动项目
-   - 社区活跃：问题响应及时
+3. **✅ 适用场景**：
+   - 终端REPL应用
+   - 系统监控工具
+   - 交互式命令行工具
+   - 数据可视化面板
+   - 多任务管理界面
 
-### 19.2 推荐方案
-
-#### 19.2.1 架构选择
-
-**推荐：异步任务 + 共享状态**
-
-```rust
-use std::sync::{Arc, RwLock};
-use tokio::sync::mpsc;
-
-struct NecoApp {
-    ui_state: Arc<RwLock<UIState>>,
-    model_bridge: ModelBridge,
-    event_handler: EventHandler,
-}
-
-impl NecoApp {
-    fn new() -> Self {
-        let ui_state = Arc::new(RwLock::new(UIState::new()));
-        let model_bridge = ModelBridge::new();
-        let event_handler = EventHandler::new(Arc::clone(&ui_state));
-        
-        Self {
-            ui_state,
-            model_bridge,
-            event_handler,
-        }
-    }
-}
-```
-
-#### 19.2.2 技术栈
+### 15.2 推荐技术栈
 
 ```toml
 [dependencies]
@@ -4615,115 +3989,43 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
-# 可选
+# 可选依赖
 syntect = "5.0"         # 代码高亮
-pulldown-cmark = "0.9"  # Markdown
-tui-textarea = "0.4"    # 文本编辑
+pulldown-cmark = "0.9"  # Markdown解析
+tui-textarea = "0.4"    # 多行文本编辑
 ```
 
-#### 19.2.3 项目结构
+### 15.3 最佳实践建议
 
-```
-neco/
-├── src/
-│   ├── main.rs              # 入口点
-│   ├── ui/                  # UI层
-│   │   ├── mod.rs
-│   │   ├── widgets/         # 自定义widgets
-│   │   │   ├── mod.rs
-│   │   │   ├── repl.rs
-│   │   │   ├── agent.rs
-│   │   │   └── session.rs
-│   │   ├── layout.rs         # 布局管理
-│   │   └── renderer.rs      # 渲染器
-│   ├── controllers/         # 控制器层
-│   │   ├── mod.rs
-│   │   ├── repl_controller.rs
-│   │   ├── agent_controller.rs
-│   │   └── session_controller.rs
-│   ├── state/               # 状态管理
-│   │   ├── mod.rs
-│   │   ├── app_state.rs
-│   │   ├── repl_state.rs
-│   │   └── agent_state.rs
-│   ├── bridge/              # 桥接器
-│   │   ├── mod.rs
-│   │   ├── model_bridge.rs
-│   │   └── ipc_bridge.rs
-│   └── config.rs            # 配置
-├── tests/                   # 测试
-├── examples/                # 示例
-└── Cargo.toml
-```
+1. **架构设计**：
+   - 采用异步任务 + 共享状态模式
+   - 使用Arc<RwLock>管理共享状态
+   - 通过Channel进行任务间通信
+   - 分离UI层、业务逻辑层和数据层
 
-### 19.3 实施路线图
-
-#### 阶段1：基础UI（1-2周）
-
-- [ ] 搭建基本Ratatui框架
-- [ ] 实现简单的REPL界面
-- [ ] 实现基础事件处理
-- [ ] 添加输入/输出组件
-
-**目标**：可运行的REPL原型
-
-#### 阶段2：异步集成（2-3周）
-
-- [ ] 集成tokio异步运行时
-- [ ] 实现模型桥接器
-- [ ] 添加流式输出支持
-- [ ] 实现错误处理
-
-**目标**：支持流式输出的REPL
-
-#### 阶段3：多Agent支持（2-3周）
-
-- [ ] 实现Agent状态管理
-- [ ] 添加多Agent并行执行
-- [ ] 实现Agent选择UI
-- [ ] 添加Agent监控
-
-**目标**：支持多Agent并行执行
-
-#### 阶段4：Session管理（1-2周）
-
-- [ ] 实现Session管理器
-- [ ] 添加Session持久化
-- [ ] 实现Session切换UI
-- [ ] 添加历史记录
-
-**目标**：完整的Session管理
-
-#### 阶段5：高级功能（3-4周）
-
-- [ ] 添加Markdown渲染
-- [ ] 添加代码高亮
-- [ ] 实现项目树
-- [ ] 添加配置管理
-
-**目标**：功能完整的TUI
-
-### 19.4 注意事项
-
-1. **性能考虑**：
+2. **性能优化**：
    - 避免在渲染循环中分配内存
    - 使用脏标记避免不必要的渲染
-   - 限制帧率（60 FPS通常足够）
+   - 限制帧率（30-60 FPS通常足够）
+   - 缓存Layout对象
 
-2. **错误处理**：
-   - 模型错误不应崩溃UI
+3. **错误处理**：
    - 使用Result优雅处理错误
+   - 模型错误不应崩溃UI
    - 提供用户友好的错误消息
+   - 实现适当的错误恢复策略
 
-3. **测试策略**：
+4. **测试策略**：
    - 单元测试核心逻辑
    - 集成测试通信层
    - 手动测试UI交互
+   - 使用 Criterion 进行性能测试
 
-4. **文档**：
-   - 记录架构决策
-   - 添加代码注释
-   - 编写用户手册
+5. **开发流程**：
+   - 使用 cargo generate 快速启动项目
+   - 运行示例代码学习最佳实践
+   - 参与社区讨论获取帮助
+   - 关注版本更新和新特性
 
 ---
 
@@ -4761,10 +4063,10 @@ tokio = "1.40"
 
 ```bash
 # 配置目录
-export NECO_CONFIG="$HOME/.config/neco"
+export APP_CONFIG="$HOME/.config/app"
 
 # 数据目录
-export NECO_DATA="$HOME/.local/share/neco"
+export APP_DATA="$HOME/.local/share/app"
 
 # 日志级别
 export RUST_LOG=debug
@@ -4775,8 +4077,7 @@ export RUST_LOG=debug
 **文档版本**: 1.0.0  
 **最后更新**: 2026-02-27  
 **作者**: MiyakoMeow  
-**项目**: Neco
 
 ---
 
-> 本文档基于Ratatui 0.30.0版本探索，涵盖了其核心架构、Widget系统、事件处理、异步支持、并发模型、性能优化、REPL实现、模型分离、流式输出、多Agent并行、Session管理、ACP模式集成等内容，并针对Neco项目的具体需求提供了详细的匹配度分析和推荐架构设计。
+> 本文档基于Ratatui 0.30.0版本深度探索，涵盖了其核心架构、Widget系统、事件处理、异步支持、并发模型、性能优化、REPL实现、模型分离、流式输出、多Agent并行、Session管理、ACP模式集成等内容，为构建现代化TUI应用提供全面的技术参考。

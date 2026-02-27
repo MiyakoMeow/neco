@@ -257,7 +257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 完整客户端示例
 
-### Neco 集成客户端
+### MCP 集成客户端
 
 ```rust
 use rmcp::{
@@ -269,14 +269,14 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::{process::Command, sync::RwLock};
 
 #[derive(Clone)]
-pub struct NecoMcpClient {
+pub struct McpClient {
     name: String,
     service: DynClient,
     tools: Arc<RwLock<HashMap<String, Tool>>>,
 }
 
-impl NecoMcpClient {
-    /// 创建新的 MCP 客户端连接
+impl McpClient {
+    /// 创建新的客户端连接
     pub async fn new(name: String, command: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let parts: Vec<&str> = command.split_whitespace().collect();
         let mut cmd = Command::new(parts[0]);
@@ -408,11 +408,11 @@ impl NecoMcpClient {
 }
 
 /// 多服务器管理器
-pub struct NecoMcpManager {
-    clients: Arc<RwLock<HashMap<String, Arc<NecoMcpClient>>>>,
+pub struct McpManager {
+    clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
 }
 
-impl NecoMcpManager {
+impl McpManager {
     pub fn new() -> Self {
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
@@ -424,7 +424,7 @@ impl NecoMcpManager {
         &self,
         name: String,
         command: String,
-    ) -> Result<Arc<NecoMcpClient>, Box<dyn std::error::Error>> {
+    ) -> Result<Arc<McpClient>, Box<dyn std::error::Error>> {
         {
             let readers = self.clients.read().await;
             if let Some(client) = readers.get(&name) {
@@ -439,7 +439,7 @@ impl NecoMcpManager {
                 return Ok(client.clone());
             }
 
-            let client = Arc::new(NecoMcpClient::new(name.clone(), &command).await?);
+            let client = Arc::new(McpClient::new(name.clone(), &command).await?);
             writers.insert(name.clone(), client.clone());
 
             Ok(client)
@@ -499,7 +499,7 @@ impl NecoMcpManager {
     }
 }
 
-impl Default for NecoMcpManager {
+impl Default for McpManager {
     fn default() -> Self {
         Self::new()
     }
@@ -507,7 +507,7 @@ impl Default for NecoMcpManager {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let manager = NecoMcpManager::new();
+    let manager = McpManager::new();
 
     // 添加文件系统服务器
     let fs_client = manager.get_or_create_client(
@@ -567,7 +567,7 @@ async fn stream_file(
 ### 2. 批量工具调用
 
 ```rust
-impl NecoMcpManager {
+impl McpManager {
     pub async fn call_tools_batch(
         &self,
         calls: Vec<(String, String, Option<serde_json::Value>)>,
@@ -601,7 +601,7 @@ pub struct ChainStep {
 impl ToolChain {
     pub async fn execute(
         &self,
-        manager: &NecoMcpManager,
+        manager: &McpManager,
         initial_input: serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let mut current_output = initial_input;
@@ -629,12 +629,12 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 
 pub struct CachedMcpClient {
-    inner: Arc<NecoMcpClient>,
+    inner: Arc<McpClient>,
     cache: Arc<Mutex<LruCache<String, CallToolResult>>>,
 }
 
 impl CachedMcpClient {
-    pub fn new(inner: Arc<NecoMcpClient>, cache_size: usize) -> Self {
+    pub fn new(inner: Arc<McpClient>, cache_size: usize) -> Self {
         Self {
             inner,
             cache: Arc::new(Mutex::new(LruCache::new(
@@ -718,7 +718,7 @@ async fn test_mcp_integration() {
     let service = server.serve(stdio()).await.unwrap();
 
     // 创建客户端连接
-    let client = NecoMcpClient::new(
+    let client = McpClient::new(
         "test".into(),
         "cargo run --bin test-server"
     ).await.unwrap();
@@ -779,7 +779,7 @@ impl McpClient for MockMcpClient {
 
 ```rust
 pub struct ConnectionPool {
-    connections: Arc<RwLock<Vec<Arc<NecoMcpClient>>>>,
+    connections: Arc<RwLock<Vec<Arc<McpClient>>>>,
     max_size: usize,
 }
 
@@ -791,11 +791,11 @@ impl ConnectionPool {
         }
     }
 
-    pub async fn acquire(&self, name: String, command: String) -> Result<Arc<NecoMcpClient>, Box<dyn std::error::Error>> {
+    pub async fn acquire(&self, name: String, command: String) -> Result<Arc<McpClient>, Box<dyn std::error::Error>> {
         let mut connections = self.connections.write().await;
 
         if connections.len() < self.max_size {
-            let client = Arc::new(NecoMcpClient::new(name, &command).await?);
+            let client = Arc::new(McpClient::new(name, &command).await?);
             connections.push(client.clone());
             Ok(client)
         } else {
@@ -812,7 +812,7 @@ impl ConnectionPool {
 ```rust
 use futures::stream::{self, StreamExt};
 
-impl NecoMcpManager {
+impl McpManager {
     pub async fn call_tools_concurrent(
         &self,
         calls: Vec<(String, String, Option<serde_json::Value>)>,
@@ -928,12 +928,12 @@ impl SandboxedExecutor {
 use governor::{Quota, RateLimiter};
 
 pub struct RateLimitedClient {
-    inner: Arc<NecoMcpClient>,
+    inner: Arc<McpClient>,
     limiter: RateLimiter<...>,
 }
 
 impl RateLimitedClient {
-    pub fn new(inner: Arc<NecoMcpClient>, calls_per_second: u32) -> Self {
+    pub fn new(inner: Arc<McpClient>, calls_per_second: u32) -> Self {
         let quota = Quota::per_second(nonzero!(calls_per_second));
         let limiter = RateLimiter::direct(quota);
 

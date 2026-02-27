@@ -12,7 +12,6 @@
 3. ✅ 研究服务器和客户端实现模式
 4. ✅ 分析工具、资源、提示系统
 5. ✅ 探索懒加载机制
-6. ✅ 设计与 Neco 的集成方案
 
 ---
 
@@ -23,14 +22,11 @@
 MCP (Model Context Protocol) 是一个开放协议，用于标准化 LLM 应用与外部系统的集成。
 
 **三层架构：**
-```
-Host (主机应用)
-  ↓
-Client (MCP客户端)
-  ↓
-Server (MCP服务器)
-  ↓
-Tools/Resources/Prompts
+```mermaid
+graph TB
+    A[Host 主机应用] --> B[Client MCP客户端]
+    B --> C[Server MCP服务器]
+    C --> D[Tools/Resources/Prompts]
 ```
 
 **核心特性：**
@@ -209,10 +205,12 @@ pub trait Transport {
 ### 9. 任务系统
 
 **任务生命周期：**
-```
-Queued → Processing → Completed
-                    ↘ Failed
-                    ↘ Cancelled
+```mermaid
+graph LR
+    A[Queued] --> B[Processing]
+    B --> C[Completed]
+    B --> D[Failed]
+    B --> E[Cancelled]
 ```
 
 **任务操作：**
@@ -266,57 +264,6 @@ ResourceTemplate { uri_template: "data:///{id}", .. }
 - 使用 `thiserror` 定义自定义错误
 - 实现合适的错误转换
 - 提供有用的错误信息
-
----
-
-## 与 Neco 的集成方案
-
-### 集成架构
-
-```
-Neco (AI 编码助手)
-  ↓
-NecoMcpManager (管理器)
-  ↓
-├── FileSystemServer (文件操作)
-├── GitServer (版本控制)
-├── SearchServer (搜索)
-└── CustomServer (自定义)
-```
-
-### 关键组件
-
-**1. NecoMcpClient**
-```rust
-pub struct NecoMcpClient {
-    name: String,
-    service: DynClient,
-    tools: Arc<RwLock<HashMap<String, Tool>>>,
-}
-```
-
-**2. NecoMcpManager**
-```rust
-pub struct NecoMcpManager {
-    clients: Arc<RwLock<HashMap<String, Arc<NecoMcpClient>>>>,
-}
-```
-
-**核心功能：**
-- ✅ 多服务器管理
-- ✅ 懒加载连接
-- ✅ 工具自动发现
-- ✅ 错误重试
-- ✅ 超时控制
-- ✅ 结果缓存
-
-### 集成优势
-
-1. **能力扩展** - 快速添加新功能
-2. **模块化设计** - 不同功能独立服务器
-3. **标准化协议** - 使用统一 MCP 协议
-4. **生态系统** - 利用现有 MCP 服务器
-5. **懒加载** - 按需启动，节省资源
 
 ---
 
@@ -425,28 +372,6 @@ pub struct NecoMcpManager {
 
 ## 下一步行动
 
-### 对于 Neco 项目
-
-1. **阶段 1：基础集成**
-   - [ ] 添加 RMCP 依赖
-   - [ ] 实现 NecoMcpManager
-   - [ ] 连接基础 MCP 服务器（文件系统）
-
-2. **阶段 2：功能扩展**
-   - [ ] 添加 Git 服务器
-   - [ ] 添加搜索服务器
-   - [ ] 实现工具自动发现
-
-3. **阶段 3：高级特性**
-   - [ ] 实现缓存层
-   - [ ] 添加工具链功能
-   - [ ] 性能优化
-
-4. **阶段 4：生产就绪**
-   - [ ] 安全审计
-   - [ ] 压力测试
-   - [ ] 文档完善
-
 ### 学习路径
 
 1. **基础** - 阅读 MCP 规范
@@ -474,17 +399,9 @@ RMCP 是一个功能强大、设计优秀的 MCP Rust 实现。它提供了：
 ✅ **灵活的传输层** - 多种传输方式
 ✅ **良好的扩展性** - 模块化设计
 
-对于 Neco 项目，集成 RMCP 可以：
-
-- 快速扩展 AI 编码助手的能力
-- 利用 MCP 生态系统
-- 实现模块化架构
-- 支持懒加载优化资源使用
-
 **推荐指数**: ⭐⭐⭐⭐⭐
 
 ---
 
 **探索完成时间**: 2026-02-27
-**探索者**: Neco Team
 **版本**: 1.0.0

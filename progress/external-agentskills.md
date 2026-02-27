@@ -1,7 +1,7 @@
 # Agent Skills 深度探索报告
 
 > 探索日期：2026-02-27  
-> 探索目标：彻底了解 Agent Skills 系统的设计理念、技术架构、实现方式，评估与 Neco 的匹配度并提出集成建议
+> 探索目标：彻底了解 Agent Skills 系统的设计理念、技术架构、实现方式
 
 ---
 
@@ -15,9 +15,7 @@
 - [6. 生态系统分析](#6-生态系统分析)
 - [7. 与 OpenClaw 的兼容性](#7-与-openclaw-的兼容性)
 - [8. 现有 Skills 生态](#8-现有-skills-生态)
-- [9. 与 Neco 需求的匹配度分析](#9-与-neco-需求的匹配度分析)
-- [10. 集成建议](#10-集成建议)
-- [11. 架构流程图](#11-架构流程图)
+- [9. 架构流程图](#9-架构流程图)
 
 ---
 
@@ -994,743 +992,9 @@ pdf/
 
 ---
 
-## 9. 与 Neco 需求的匹配度分析
+## 9. 架构流程图
 
-### 9.1 Neco 需求回顾
-
-基于项目背景，Neco 的核心需求是：
-
-1. **模块化能力扩展** - 动态加载特定领域能力
-2. **上下文优化** - 高效使用 Token 和上下文窗口
-3. **可移植性** - 跨环境、跨平台复用
-4. **可维护性** - 易于更新和版本控制
-5. **安全性** - 可控的代码执行和资源访问
-6. **社区生态** - 利用现有 Skills 资源
-
-### 9.2 匹配度矩阵
-
-| Neco 需求 | Agent Skills 支持 | 匹配度 | 说明 |
-|----------|------------------|-------|------|
-| **模块化扩展** | ✓ 完全支持 | ⭐⭐⭐⭐⭐ | Skills 就是模块化的能力包 |
-| **上下文优化** | ✓ 核心特性 | ⭐⭐⭐⭐⭐ | 渐进式披露专门优化上下文 |
-| **可移植性** | ✓ 开放标准 | ⭐⭐⭐⭐⭐ | 跨产品、跨平台兼容 |
-| **可维护性** | ✓ Git 友好 | ⭐⭐⭐⭐⭐ | 纯文本，版本控制友好 |
-| **安全性** | ⚠ 需实现 | ⭐⭐⭐ | 需要实现沙箱和权限控制 |
-| **社区生态** | ✓ 丰富资源 | ⭐⭐⭐⭐⭐ | 大量现有 Skills 可复用 |
-| **零代码创建** | ✓ 核心优势 | ⭐⭐⭐⭐⭐ | 非技术用户也能创建 Skills |
-| **灵活组合** | ✓ 多 Skill 调用 | ⭐⭐⭐⭐ | 单任务可使用多个 Skills |
-| **性能优化** | ✓ 按需加载 | ⭐⭐⭐⭐ | 三层加载机制优化性能 |
-| **标准化** | ✓ 开放标准 | ⭐⭐⭐⭐⭐ | 规范清晰，工具完善 |
-
-**总体匹配度：** ⭐⭐⭐⭐⭐ (5/5)
-
-### 9.3 详细匹配分析
-
-#### 需求 1：模块化能力扩展
-
-**Agent Skills 方案：**
-```yaml
-# 每个 Skill 是独立的模块
-neco/
-├── .claude/
-│   └── skills/
-│       ├── data-analysis/
-│       ├── code-review/
-│       └── documentation/
-```
-
-**优势：**
-- 每个 Skill 独立开发和测试
-- 按需加载，不影响其他功能
-- 易于添加新能力
-
-**与 Neco 匹配：**
-- 完美契合 Neco 的模块化架构
-- 可以将不同的 Neco 功能打包为 Skills
-- 支持渐进式功能扩展
-
-#### 需求 2：上下文优化
-
-**Agent Skills 方案：**
-
-```mermaid
-graph LR
-    A[Neco 启动] --> B[加载所有 Skill Metadata<br/>~100 tokens each]
-    B --> C[用户请求]
-    C --> D[匹配相关 Skill]
-    D --> E[加载 SKILL.md<br/>< 5000 tokens]
-    E --> F{需要资源?}
-    F -->|是| G[按需加载 scripts/references]
-    F -->|否| H[执行任务]
-```
-
-**Token 使用对比：**
-
-| 方案 | 启动 Token | 任务 Token | 总体效率 |
-|-----|-----------|-----------|---------|
-| **传统方案** | 全部指令在系统提示 | 0 | ❌ 浪费 |
-| **Agent Skills** | 仅元数据 | 按需加载 | ✓ 高效 |
-
-**与 Neco 匹配：**
-- 渐进式披露直接解决 Neco 的上下文优化需求
-- 支持大量 Skills 而不显著增加启动开销
-- 灵活的加载策略
-
-#### 需求 3：可移植性
-
-**Agent Skills 方案：**
-
-```bash
-# 同一个 Skill 可用于：
-- Claude Code (本地)
-- Claude.ai (Web)
-- Cursor (IDE)
-- OpenClaw (自定义框架)
-- Neco (目标平台)
-```
-
-**跨平台示例：**
-```bash
-# 开发环境
-~/.claude/skills/my-skill/
-
-# 生产环境
-.claude/skills/my-skill/
-
-# 团队共享
-git@github.com:team/skills.git
-```
-
-**与 Neco 匹配：**
-- 开放标准确保跨平台兼容
-- 纯文本格式便于集成
-- 社区工具支持多种环境
-
-#### 需求 4：可维护性
-
-**Agent Skills 方案：**
-
-```bash
-# 版本控制
-git add .claude/skills/my-skill/
-git commit -m "Update data-analysis skill"
-
-# 团队协作
-git pull origin main  # 获取最新 Skills
-git push origin main  # 分享新 Skills
-
-# 更新策略
-- 修改 SKILL.md → 立即生效
-- 更新 scripts → 需验证
-- 添加 references → 扩展能力
-```
-
-**与 Neco 匹配：**
-- Git 友好的纯文本格式
-- 清晰的版本历史
-- 易于回滚和分支管理
-
-#### 需求 5：安全性
-
-**Agent Skills 方案：**
-
-需要实现的安全机制：
-
-1. **沙箱执行**
-```python
-def safe_execute(script, args):
-    # 在隔离环境中执行脚本
-    # 限制文件系统访问
-    # 设置超时
-    # 记录执行日志
-```
-
-2. **权限控制**
-```yaml
----
-allowed-tools: Bash(git:*) Read
-# 或限制特定操作
-compatibility: Requires internet access for API calls
----
-```
-
-3. **验证机制**
-```bash
-skills-ref validate ./my-skill
-# 检查 frontmatter 格式
-# 验证文件结构
-# 检查脚本安全性
-```
-
-**与 Neco 匹配：**
-- ⚠️ 需要额外实现安全层
-- 规范提供了 `allowed-tools` 字段
-- 需要实现沙箱和审计
-
-#### 需求 6：社区生态
-
-**现有资源：**
-
-| 类别 | 数量 | 质量 |
-|-----|------|------|
-| **官方 Skills** | 20+ | ⭐⭐⭐⭐⭐ |
-| **社区 Skills** | 100+ | ⭐⭐⭐⭐ |
-| **工具和库** | 10+ | ⭐⭐⭐⭐ |
-
-**可复用的 Skills：**
-- `pdf` - 文档处理
-- `data-analysis` - 数据分析
-- `code-review` - 代码审查
-- `documentation` - 文档生成
-- `testing` - 测试自动化
-
-**与 Neco 匹配：**
-- ✓ 大量现成 Skills 可直接使用
-- ✓ 社区活跃，持续更新
-- ✓ 官方维护质量高
-
-### 9.4 潜在挑战
-
-#### 挑战 1：脚本执行安全
-
-**问题：** Skills 可能包含恶意脚本
-
-**解决方案：**
-```python
-# 1. 沙箱执行
-import subprocess
-import tempfile
-
-def execute_in_sandbox(script, args):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # 限制文件系统访问
-        # 设置网络隔离
-        # 限制执行时间
-        result = subprocess.run(
-            ['python', script],
-            cwd=tmpdir,
-            timeout=30,
-            capture_output=True
-        )
-        return result.stdout
-
-# 2. 代码审计
-def audit_script(script_path):
-    # 检查危险操作
-    dangerous = ['eval', 'exec', '__import__']
-    with open(script_path) as f:
-        content = f.read()
-    for func in dangerous:
-        if func in content:
-            raise SecurityError(f"Dangerous function: {func}")
-```
-
-#### 挑战 2：上下文窗口管理
-
-**问题：** 多 Skills 同时加载可能超出上下文限制
-
-**解决方案：**
-```python
-# 1. 优先级管理
-SKILL_PRIORITIES = {
-    'user-explicit': 10,  # 用户显式调用
-    'semantic-match': 5,  # 语义匹配
-    'context-relevant': 3  # 上下文相关
-}
-
-# 2. 动态卸载
-def manage_context_window(active_skills):
-    total_tokens = sum(s.tokens for s in active_skills)
-    while total_tokens > MAX_TOKENS:
-        # 卸载最低优先级的 Skill
-        skill_to_remove = min(active_skills, key=lambda s: s.priority)
-        active_skills.remove(skill_to_remove)
-        total_tokens -= skill_to_remove.tokens
-```
-
-#### 挑战 3：Skill 发现和匹配
-
-**问题：** 如何准确匹配用户意图到合适的 Skills
-
-**解决方案：**
-```python
-# 1. 语义匹配
-from sentence_transformers import SentenceTransformer
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
-def match_skills(user_input, skills):
-    user_embedding = model.encode(user_input)
-    skill_embeddings = model.encode([s['description'] for s in skills])
-    
-    similarities = cosine_similarity([user_embedding], skill_embeddings)[0]
-    ranked_skills = sorted(zip(skills, similarities), key=lambda x: x[1], reverse=True)
-    
-    return [s for s, score in ranked_skills if score > THRESHOLD]
-
-# 2. 用户反馈学习
-def learn_from_feedback(skill, user_satisfaction):
-    # 根据用户满意度调整匹配阈值
-    # 记录成功/失败的匹配案例
-    pass
-```
-
----
-
-## 10. 集成建议
-
-### 10.1 推荐集成方案
-
-基于分析，建议 Neco 采用**混合集成方案**：
-
-#### 方案架构
-
-```mermaid
-graph TB
-    subgraph "Neco Core"
-        A[用户交互层]
-        B[任务分析引擎]
-        C[Skill 管理器]
-        D[安全沙箱]
-        E[执行引擎]
-    end
-    
-    subgraph "Skills 层"
-        F[本地 Skills]
-        G[团队 Skills]
-        H[社区 Skills]
-    end
-    
-    subgraph "工具层"
-        I[skills-ref CLI]
-        J[验证工具]
-        K[编辑器插件]
-    end
-    
-    A --> B
-    B --> C
-    C --> F
-    C --> G
-    C --> H
-    C --> D
-    D --> E
-    
-    F -.-> J
-    G -.-> I
-    H -.-> I
-```
-
-### 10.2 实施步骤
-
-#### 阶段 1：基础集成（1-2 周）
-
-**目标：** 实现 Skills 的基本加载和调用
-
-```python
-# neco/skills/__init__.py
-
-class SkillManager:
-    def __init__(self, skills_dirs):
-        self.skills_dirs = skills_dirs
-        self.metadata_cache = {}
-        self.instruction_cache = {}
-    
-    def discover_skills(self):
-        """发现所有 Skills"""
-        for skills_dir in self.skills_dirs:
-            for skill_name in os.listdir(skills_dir):
-                skill_path = os.path.join(skills_dir, skill_name)
-                if os.path.isfile(f"{skill_path}/SKILL.md"):
-                    self._load_metadata(skill_name, skill_path)
-    
-    def _load_metadata(self, name, path):
-        """加载 Skill 元数据（Level 1）"""
-        with open(f"{path}/SKILL.md") as f:
-            content = f.read()
-        
-        frontmatter = content.split('---')[1]
-        metadata = yaml.safe_load(frontmatter)
-        
-        self.metadata_cache[name] = {
-            'name': metadata['name'],
-            'description': metadata['description'],
-            'path': path
-        }
-    
-    def match_skills(self, user_input):
-        """匹配相关 Skills"""
-        user_embedding = self.model.encode(user_input)
-        descriptions = [s['description'] for s in self.metadata_cache.values()]
-        skill_embeddings = self.model.encode(descriptions)
-        
-        similarities = cosine_similarity([user_embedding], skill_embeddings)[0]
-        
-        matched = []
-        for (name, skill), score in zip(self.metadata_cache.items(), similarities):
-            if score > 0.7:  # 阈值
-                matched.append((name, skill, score))
-        
-        return sorted(matched, key=lambda x: x[2], reverse=True)
-    
-    def load_skill_instruction(self, skill_name):
-        """加载 Skill 指令（Level 2）"""
-        if skill_name not in self.instruction_cache:
-            skill = self.metadata_cache[skill_name]
-            with open(f"{skill['path']}/SKILL.md") as f:
-                content = f.read()
-            instruction = '---'.join(content.split('---')[2:])
-            self.instruction_cache[skill_name] = instruction
-        
-        return self.instruction_cache[skill_name]
-    
-    def load_skill_resource(self, skill_name, resource_path):
-        """加载 Skill 资源（Level 3）"""
-        skill = self.metadata_cache[skill_name]
-        full_path = os.path.join(skill['path'], resource_path)
-        
-        with open(full_path) as f:
-            return f.read()
-```
-
-#### 阶段 2：安全集成（2-3 周）
-
-**目标：** 实现安全的脚本执行和资源访问
-
-```python
-# neco/skills/sandbox.py
-
-import subprocess
-import tempfile
-import os
-from pathlib import Path
-
-class SkillSandbox:
-    def __init__(self, timeout=30, max_memory=1024*1024*100):
-        self.timeout = timeout
-        self.max_memory = max_memory
-    
-    def execute_script(self, skill_name, script_path, args=None):
-        """在沙箱中执行脚本"""
-        skill_path = self.metadata_cache[skill_name]['path']
-        full_script = os.path.join(skill_path, script_path)
-        
-        # 验证脚本
-        self._validate_script(full_script)
-        
-        # 在临时目录中执行
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # 设置环境变量
-            env = {
-                'NECO_SKILL_NAME': skill_name,
-                'NECO_SKILL_DIR': skill_path,
-                'NECO_TEMP_DIR': tmpdir,
-                **os.environ
-            }
-            
-            try:
-                result = subprocess.run(
-                    ['python', full_script] + (args or []),
-                    cwd=tmpdir,
-                    timeout=self.timeout,
-                    capture_output=True,
-                    text=True,
-                    env=env
-                )
-                
-                if result.returncode != 0:
-                    raise SkillExecutionError(
-                        f"Script failed: {result.stderr}"
-                    )
-                
-                return result.stdout
-            
-            except subprocess.TimeoutExpired:
-                raise SkillExecutionError("Script execution timeout")
-    
-    def _validate_script(self, script_path):
-        """验证脚本安全性"""
-        with open(script_path) as f:
-            content = f.read()
-        
-        # 检查危险操作
-        dangerous_patterns = [
-            r'eval\s*\(',
-            r'exec\s*\(',
-            r'__import__\s*\(',
-            r'compile\s*\(',
-        ]
-        
-        for pattern in dangerous_patterns:
-            if re.search(pattern, content):
-                raise SecurityError(
-                    f"Dangerous operation detected: {pattern}"
-                )
-        
-        # 检查文件操作
-        file_operations = [
-            'open(', 'file(', 'os.remove', 'os.rmdir'
-        ]
-        
-        for op in file_operations:
-            if op in content:
-                # 允许但在日志中记录
-                logging.warning(f"File operation detected: {op}")
-```
-
-#### 阶段 3：生态集成（1-2 周）
-
-**目标：** 集成社区工具和资源
-
-```bash
-# 安装 skills-ref
-pip install skills-ref
-
-# 验证 Skills
-skills-ref validate ~/.claude/skills/*
-
-# 生成系统提示
-skills-ref to-prompt ~/.claude/skills/* > system_prompt.txt
-```
-
-```python
-# neco/skills/marketplace.py
-
-class SkillMarketplace:
-    def __init__(self):
-        self.github_api = "https://api.github.com"
-    
-    def search_skills(self, query):
-        """搜索社区 Skills"""
-        # 从 awesome-claude-skills 搜索
-        # 从 skills.sh 搜索
-        # 从 skillsmp.com 搜索
-        pass
-    
-    def install_skill(self, repo_url, skill_name):
-        """安装 Skill"""
-        # 克隆仓库
-        # 复制 Skill 到本地
-        # 验证 Skill
-        # 添加到索引
-        pass
-    
-    def update_skills(self):
-        """更新已安装的 Skills"""
-        # Git pull
-        # 验证更新
-        pass
-```
-
-#### 阶段 4：优化集成（1-2 周）
-
-**目标：** 性能优化和用户体验提升
-
-```python
-# neco/skills/optimizer.py
-
-class SkillOptimizer:
-    def __init__(self):
-        self.usage_stats = {}
-        self.performance_metrics = {}
-    
-    def optimize_description(self, skill_name):
-        """优化 Skill 描述以提高触发率"""
-        # 使用 skill-creator 的优化脚本
-        # 分析历史使用数据
-        # A/B 测试不同描述
-        pass
-    
-    def cache_hot_skills(self):
-        """预加载高频 Skills"""
-        # 基于使用统计
-        # 预加载 Level 2 内容
-        pass
-    
-    def monitor_performance(self):
-        """监控 Skills 性能"""
-        # 记录加载时间
-        # 记录 Token 使用
-        # 记录成功率
-        pass
-```
-
-### 10.3 技术选型
-
-#### 核心依赖
-
-```python
-# requirements.txt
-
-# YAML 解析
-pyyaml>=6.0
-
-# 语义匹配
-sentence-transformers>=2.2.0
-
-# 安全执行
-restrictedpython>=6.0
-
-# 验证工具
-skills-ref>=0.1.0
-
-# 日志
-structlog>=23.1.0
-```
-
-#### 可选依赖
-
-```python
-# 高级功能
-
-# 性能监控
-prometheus-client>=0.17.0
-
-# 缓存
-redis>=4.5.0
-
-# 分布式锁
-celery>=5.2.0
-```
-
-### 10.4 目录结构
-
-```
-neco/
-├── neco/
-│   ├── core/
-│   │   ├── agent.py          # Neco 核心 Agent
-│   │   └── engine.py         # 执行引擎
-│   ├── skills/
-│   │   ├── __init__.py
-│   │   ├── manager.py        # Skill 管理器
-│   │   ├── loader.py         # Skill 加载器
-│   │   ├── matcher.py        # Skill 匹配器
-│   │   ├── sandbox.py        # 安全沙箱
-│   │   ├── marketplace.py    # Skills 市场
-│   │   └── optimizer.py      # 性能优化
-│   ├── integrations/
-│   │   ├── claude_code.py    # Claude Code 集成
-│   │   └── openclaw.py       # OpenClaw 集成
-│   └── utils/
-│       ├── validation.py     # 验证工具
-│       └── logging.py        # 日志工具
-├── skills/
-│   ├── local/                # 本地 Skills
-│   ├── team/                 # 团队 Skills
-│   └── community/            # 社区 Skills
-├── tests/
-│   ├── test_skills/
-│   │   ├── test_loader.py
-│   │   ├── test_matcher.py
-│   │   └── test_sandbox.py
-│   └── fixtures/
-│       └── sample-skills/
-├── docs/
-│   ├── skills-guide.md
-│   └── api-reference.md
-└── requirements.txt
-```
-
-### 10.5 配置文件
-
-```yaml
-# config/neco.yml
-
-skills:
-  # Skills 目录
-  directories:
-    - ~/.neco/skills/
-    - ./.neco/skills/
-    - ./skills/community/
-  
-  # 匹配阈值
-  match_threshold: 0.7
-  
-  # 安全设置
-  security:
-    sandbox_enabled: true
-    timeout: 30
-    max_memory: 104857600  # 100MB
-  
-  # 性能设置
-  performance:
-    cache_hot_skills: true
-    preload_count: 5
-    max_concurrent_skills: 3
-  
-  # 市场设置
-  marketplace:
-    auto_update: false
-    update_interval: 86400  # 24小时
-    sources:
-      - github:anthropics/skills
-      - github:ComposioHQ/awesome-claude-skills
-
-# 日志设置
-logging:
-  level: INFO
-  format: json
-  outputs:
-    - stdout
-    - file:/var/log/neco/skills.log
-```
-
-### 10.6 API 设计
-
-```python
-# neco/skills/api.py
-
-from typing import List, Dict, Optional
-
-class SkillsAPI:
-    """Skills 高级 API"""
-    
-    def list_skills(self) -> List[Dict]:
-        """列出所有可用 Skills"""
-        pass
-    
-    def get_skill(self, name: str) -> Dict:
-        """获取 Skill 详情"""
-        pass
-    
-    def install_skill(self, source: str) -> bool:
-        """安装 Skill"""
-        pass
-    
-    def uninstall_skill(self, name: str) -> bool:
-        """卸载 Skill"""
-        pass
-    
-    def update_skill(self, name: str) -> bool:
-        """更新 Skill"""
-        pass
-    
-    def enable_skill(self, name: str) -> bool:
-        """启用 Skill"""
-        pass
-    
-    def disable_skill(self, name: str) -> bool:
-        """禁用 Skill"""
-        pass
-    
-    def test_skill(self, name: str, test_input: str) -> Dict:
-        """测试 Skill"""
-        pass
-    
-    def get_skill_stats(self, name: str) -> Dict:
-        """获取 Skill 统计"""
-        pass
-    
-    def optimize_skill(self, name: str) -> Dict:
-        """优化 Skill"""
-        pass
-```
-
----
-
-## 11. 架构流程图
-
-### 11.1 完整系统架构
+### 9.1 完整系统架构
 
 ```mermaid
 graph TB
@@ -1739,7 +1003,7 @@ graph TB
         B[用户反馈]
     end
     
-    subgraph "Neco Core"
+    subgraph "Agent Core"
         C[任务分析引擎]
         D[Skill 管理器]
         E[匹配引擎]
@@ -1785,34 +1049,34 @@ graph TB
     style K fill:#fff4e1
 ```
 
-### 11.2 渐进式加载流程
+### 9.2 渐进式加载流程
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant NE as Neco Engine
+    participant AE as Agent Engine
     participant SM as Skill Manager
     participant FS as File System
     
-    U->>NE: 发送任务请求
-    NE->>SM: 请求匹配 Skills
+    U->>AE: 发送任务请求
+    AE->>SM: 请求匹配 Skills
     SM->>FS: 扫描 Skills 目录
     FS-->>SM: 返回 Skill 元数据
     SM->>SM: 语义匹配
-    SM-->>NE: 返回匹配的 Skills
-    NE->>SM: 请求加载 Skill 指令
+    SM-->>AE: 返回匹配的 Skills
+    AE->>SM: 请求加载 Skill 指令
     SM->>FS: 读取 SKILL.md
     FS-->>SM: 返回文件内容
-    SM-->>NE: 返回 Skill 指令
-    NE->>NE: 执行任务
-    NE->>SM: 请求加载资源（可选）
+    SM-->>AE: 返回 Skill 指令
+    AE->>AE: 执行任务
+    AE->>SM: 请求加载资源（可选）
     SM->>FS: 读取资源文件
     FS-->>SM: 返回资源内容
-    SM-->>NE: 返回资源
-    NE-->>U: 返回结果
+    SM-->>AE: 返回资源
+    AE-->>U: 返回结果
 ```
 
-### 11.3 安全执行流程
+### 9.3 安全执行流程
 
 ```mermaid
 flowchart TD
@@ -1837,7 +1101,7 @@ flowchart TD
     style M fill:#ffe1e1
 ```
 
-### 11.4 Skills 生态系统
+### 9.4 Skills 生态系统
 
 ```mermaid
 mindmap
@@ -1885,9 +1149,9 @@ mindmap
 
 ---
 
-## 12. 总结与建议
+## 10. 总结与建议
 
-### 12.1 核心发现
+### 10.1 核心发现
 
 1. **Agent Skills 是成熟的开放标准**
    - 由 Anthropic 开发，已被广泛采用
@@ -1899,20 +1163,19 @@ mindmap
    - 支持大量 Skills 而不影响性能
    - 灵活的按需加载策略
 
-3. **高度匹配 Neco 需求**
-   - 完美契合模块化扩展需求
-   - 原生支持上下文优化
+3. **广泛的产品支持**
    - 跨平台可移植
    - 社区生态成熟
+   - 持续维护和更新
 
 4. **需要额外实现的部分**
    - 安全沙箱机制
    - Skills 匹配优化
    - 性能监控和调优
 
-### 12.2 集成建议
+### 10.2 集成建议
 
-#### 推荐方案：**完全集成 Agent Skills**
+#### 推荐方案：**采用 Agent Skills 标准**
 
 **理由：**
 1. ✓ 成熟的标准，无需重新发明
@@ -1942,7 +1205,7 @@ mindmap
 - 用户体验改进
 - 文档和示例
 
-### 12.3 风险和缓解
+### 10.3 风险和缓解
 
 | 风险 | 影响 | 缓解措施 |
 |-----|------|---------|
@@ -1951,14 +1214,14 @@ mindmap
 | **Skill 匹配不准** | 中 | 语义匹配 + 用户反馈学习 + A/B 测试 |
 | **社区 Skill 质量** | 低 | 验证机制 + 评分系统 + 官方认证 |
 
-### 12.4 长期规划
+### 10.4 长期规划
 
 1. **贡献到 Agent Skills 生态**
-   - 开发 Neco 特定的 Skills
+   - 开发特定领域的 Skills
    - 分享最佳实践
    - 贡献工具和库
 
-2. **建立 Neco Skill 市场**
+2. **建立 Skill 市场**
    - 策展高质量 Skills
    - 提供评分和评论
    - 建立社区标准
@@ -1993,13 +1256,13 @@ skills-ref validate ./my-skill
 skills-ref to-prompt ~/.claude/skills/*
 
 # 创建新 Skill
-neco skill create my-skill
+skills create my-skill
 
 # 安装 Skill
-neco skill install anthropics/skills/pdf
+skills install anthropics/skills/pdf
 
 # 测试 Skill
-neco skill test pdf --input "sample.pdf"
+skills test pdf --input "sample.pdf"
 ```
 
 ### C. 示例 Skills
@@ -2069,5 +1332,4 @@ See [REFERENCE.md](references/REFERENCE.md) for advanced features.
 
 **文档版本：** 1.0  
 **最后更新：** 2026-02-27  
-**作者：** Neco Team  
 **许可：** CC-BY-4.0
