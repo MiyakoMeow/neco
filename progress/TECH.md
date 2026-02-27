@@ -17,18 +17,53 @@ Neco的技术架构围绕**多层智能体树形结构**展开，各模块通过
 
 ```mermaid
 graph TB
-    Session[Session 1:1]
-    AgentTree[AgentTree 1:1]
-    AgentNodes[AgentNode N]
-    MemoryContext[MemoryContext]
-    CoordinationBus[CoordinationBus]
-    ModelSelector[ModelSelector]
+    subgraph "Session层"
+        Session[Session 1:1<br/>会话生命周期]
+        MemoryContext[MemoryContext<br/>记忆激活]
+    end
 
-    Session --> AgentTree
-    Session --> MemoryContext
-    AgentTree --> AgentNodes
-    AgentTree --> CoordinationBus
-    AgentNodes --> ModelSelector
+    subgraph "智能体树（多层结构）"
+        Root[根智能体 Root Agent<br/>直接与用户对话<br/>Session唯一]
+        L1_Explore[Level 1: Explore Agent<br/>探索代码库]
+        L1_Code[Level 1: Code Agent<br/>代码修改]
+        L1_Doc[Level 1: Doc Agent<br/>文档生成]
+        L2_Explore1[Level 2: Explore-Sub1<br/>探索模块A]
+        L2_Explore2[Level 2: Explore-Sub2<br/>探索模块B]
+        L2_Code1[Level 2: Code-Sub1<br/>实现功能]
+        ActOnly[执行智能体 ActOnly<br/>只能执行工具<br/>不能创建子节点]
+
+        Root -->|任务拆分| L1_Explore
+        Root -->|并行任务| L1_Code
+        Root -->|独立任务| L1_Doc
+        Root -.->|委托执行| ActOnly
+
+        L1_Explore -->|子任务| L2_Explore1
+        L1_Explore -->|子任务| L2_Explore2
+        L1_Code -->|协助| L2_Code1
+
+        Root -.->|上行汇报/下行指令| L1_Explore
+        Root -.->|纠正指令| L1_Code
+        Root -.->|纠正指令| L1_Doc
+        L1_Explore -.->|进度汇报| Root
+        L1_Code -.->|进度汇报| Root
+        L2_Explore1 -.->|进度汇报| L1_Explore
+        L2_Code1 -.->|进度汇报| L1_Code
+    end
+
+    subgraph "通信与协调"
+        CoordinationBus[InMemoryMessageBus<br/>仅父子路由<br/>上行汇报/下行指令]
+    end
+
+    subgraph "模型选择"
+        ModelSelector[ModelSelector<br/>think/balanced/act<br/>按节点类型选择]
+    end
+
+    Session --> Root
+    MemoryContext --> Root
+    Root --> CoordinationBus
+    L1_Explore --> ModelSelector
+    L1_Code --> ModelSelector
+    L1_Doc --> ModelSelector
 ```
 
 **内生关系**：
@@ -36,6 +71,12 @@ graph TB
 - **AgentTree ↔ AgentNode**：树形管理，根智能体（Root）直接与用户对话，递归创建子节点
 - **AgentNode.nodeType ↔ ModelGroup**：不同类型智能体使用不同模型（think/balanced/act）
 - **CoordinationBus ↔ 父子通信**：基于InMemoryMessageBus，仅支持父子路由（上行汇报/下行指令）
+- **多层结构优势**：
+  - **任务分解**：递归拆分，无限层级（vs 扁平结构的单层拆分）
+  - **责任划分**：明确的上下级关系（vs 所有智能体平等）
+  - **进度追踪**：树形路径，精确定位（vs 全局状态难以定位）
+  - **并行控制**：细粒度并行（子树级）（vs 粗粒度并行）
+  - **异常处理**：局部重试（子树）（vs 全局重试）
 
 ### 二、两层记忆系统的设计约束
 
@@ -138,16 +179,50 @@ graph LR
 - **Skills懒加载 ↔ 记忆激活**：按上下文关键词激活Skills（Compact模式），避免全量加载
 - **子智能体生命周期 ↔ 任务分解**：根智能体根据任务复杂度动态创建子节点
 
-### 六、设计决策连锁反应
+### 六、设计决策总览
 
-| 决策 | 直接影响 | 间接影响 |
-|------|----------|----------|
-| 采用树形智能体结构 | 需要AgentTree管理器 | 消息总线支持父子路由；Session持久化需要序列化树 |
-| 使用纯LLM架构 | 无Embeddings模型 | 两层记忆结构；关键词检索匹配；LLM重新排序 |
-| Trait驱动模块化 | 统一抽象接口 | 多提供商支持；易测试和扩展 |
-| MCP懒加载策略 | 延迟启动服务器 | 工具执行触发连接；需要连接复用机制 |
-| Arc+RwLock并发模型 | 共享可变状态 | 智能体树并发访问；模型无锁轮询 |
-| Jujutsu版本控制 | Session持久化 | Git Workspace兼容层；提交历史管理 |
+#### 核心架构决策
+
+| 决策 | 直接影响 | 间接影响 | 权衡 |
+|------|----------|----------|------|
+| **采用树形智能体结构** | 需要AgentTree管理器；消息总线支持父子路由；Session持久化需要序列化树 | ✅ 更清晰的责任划分<br/>✅ 更细粒度的并行控制<br/>✅ 更精准的异常处理 | ❌ 更复杂的实现（树管理算法）<br/>❌ 更高的通信开销（层级传递） |
+| **使用纯LLM架构** | 无Embeddings模型；两层记忆结构；关键词检索匹配；LLM重新排序 | ✅ 更简单的部署和维护<br/>✅ 更低的运营成本<br/>✅ 统一的API接口 | ❌ 语义搜索准确性可能较低<br/>❌ 某些功能性能较差 |
+| **两层记忆架构** | 减少内存占用；提升检索速度；摘要和内容分离存储 | ✅ 平衡内存与性能<br/>✅ 灵活的存储方式 | ❌ 需要管理两层数据 |
+| **Trait驱动模块化** | 统一抽象接口；支持多提供商、多传输协议、多后端存储 | ✅ 易测试和扩展<br/>✅ 提供商无关抽象 | 增加抽象层复杂度 |
+| **MCP懒加载策略** | 延迟启动服务器；工具执行触发连接；需要连接复用机制 | ✅ 减少启动时间<br/>✅ 按需消耗资源 | 首次调用延迟 |
+| **Arc+RwLock并发模型** | 共享可变状态；智能体树并发访问；模型无锁轮询 | ✅ 高并发支持<br/>✅ 读多写少优化 | 需要仔细管理锁 |
+| **Jujutsu版本控制** | Session持久化；Git Workspace兼容层；提交历史管理 | ✅ 不可变分支更适合Session<br/>✅ 更好的性能（大规模历史） | ❌ 学习曲线较陡 |
+
+#### 关键设计亮点
+
+**1. 树形智能体结构（核心创新）**
+- **问题**：现有方案（Claude Code、OpenClaw）只提供扁平智能体池，无法有效管理复杂任务层级
+- **解决方案**：多层智能体树形结构，每个Session形成动态智能体树
+  - 根智能体（Root）：每个Session唯一，直接与用户对话，负责任务规划和结果汇总
+  - 子智能体（Child）：可以创建下级，有限制的子节点数
+  - 执行智能体（ActOnly）：只能执行工具，不能创建子节点（叶子节点）
+- **通信模式**：仅支持父子通信（上行汇报/下行指令），确保清晰的指挥链
+- **灵感来源**：现代公司分工制度（CEO → 部门经理 → 员工）
+
+**2. 纯LLM架构**
+- **决策理由**：
+  1. 简化架构：减少依赖和复杂度
+  2. 降低成本：不需要部署多个模型服务
+  3. 统一接口：所有功能通过LLM API调用
+  4. 足够实用：两层记忆+关键词匹配满足大部分需求
+- **不支持的功能**：Embeddings、Rerank、Apply模型
+- **替代方案**：
+  - 语义搜索 → 关键词匹配 + 记忆索引
+  - Rerank → LLM重新排序（可选）
+  - Apply → 直接生成
+
+**3. Jujutsu vs Git**
+- **选择Jujutsu的原因**：
+  1. 不可变分支模型更适合Session版本管理
+  2. 更好的性能（大规模Session历史）
+  3. 自动解决多祖先合并冲突
+  4. O(1)分支操作（vs Git的clone）
+- **兼容性**：提供Git Workspace兼容层
 
 ---
 
@@ -1195,42 +1270,7 @@ graph TB
 
 ### 1. 树形架构设计
 
-#### 核心概念
-
-Neco采用**多层智能体树形结构**，每个Session形成一个动态的智能体树：
-
-```mermaid
-graph TB
-    subgraph "Level 0: 根智能体"
-        Root[根智能体<br/>(Root Agent)<br/>直接与用户对话<br/>Session唯一]
-    end
-
-    subgraph "Level 1: 子智能体"
-        E1[Explore Agent<br/>(探索)]
-        C1[Code Agent<br/>(编码)]
-        D1[Doc Agent<br/>(文档)]
-    end
-
-    subgraph "Level 2: 孙智能体"
-        E2[Explore-Sub1]
-        E3[Explore-Sub2]
-        C2[Code-Sub1]
-    end
-
-    subgraph "特殊类型"
-        A[执行智能体<br/>(Act Only)<br/>只能执行工具<br/>不能创建子节点]
-    end
-
-    Root -->|任务拆分| E1
-    Root -->|并行任务| C1
-    Root -->|独立任务| D1
-
-    E1 -->|子任务| E2
-    E1 -->|子任务| E3
-    C1 -->|协助| C2
-
-    Root -.->|委托执行| A
-```
+树形架构详见[Section 一、树形架构作为核心组织形式](#一树形架构作为核心组织形式)。
 
 #### AgentNode结构
 
@@ -3969,123 +4009,6 @@ future-embeddings = []
 future-rerank = []
 future-apply = []
 ```
-
----
-
-## 设计决策记录
-
-### 为什么选择Jujutsu而非Git？
-
-| 特性 | Jujutsu | Git |
-|------|---------|-----|
-| 分支模型 | 有向无环图 | 线性链 |
-| 分支操作 | 不可变、O(1) | 需要clone |
-| 合并冲突 | 自动解决多祖先 | 需要手动解决 |
-| 学习曲线 | 较陡 | 较平缓 |
-
-**决策**：选择Jujutsu作为主要版本控制系统，原因：
-1. 不可变分支模型更适合Session版本管理
-2. 更好的性能（大规模Session历史）
-3. 提供Git Workspace兼容层（已实现）
-
-### 为什么只用LLM？
-
-**理由**：
-1. **简化架构**：减少依赖和复杂度
-2. **降低成本**：不需要部署多个模型服务
-3. **统一接口**：所有功能通过LLM API调用
-4. **足够实用**：两层记忆+关键词匹配满足大部分需求
-
-**权衡**：
-- ✅ 更简单的部署和维护
-- ✅ 更低的运营成本
-- ❌ 语义搜索准确性可能较低
-- ❌ 某些功能性能较差
-
-### 为什么两层记忆架构？
-
-**理由**：
-1. **减少内存占用**：只加载激活记忆的完整内容
-2. **提升检索速度**：索引层快速过滤
-3. **灵活存储**：摘要和内容可分离存储
-
-**架构对比**：
-
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| 单层（OpenClaw） | 简单 | 内存占用大 |
-| 三层（OpenViking） | 精确 | 需要额外模型 |
-| 两层（Neco） | 平衡 | 需要管理两层数据 |
-
-### 为什么选择树形智能体结构？
-
-**核心问题**：现有的多智能体协作方案（如Claude Code、OpenClaw）只提供扁平的智能体池，无法有效管理复杂的任务层级关系。
-
-**解决方案**：采用**多层智能体树形结构**，每个Session形成一个动态的智能体树。
-
-**架构优势**：
-
-| 维度 | 扁平结构（传统） | 树形结构（Neco） |
-|------|------------------|-----------------|
-| 任务分解 | 单层拆分，难以细化 | 递归拆分，无限层级 |
-| 责任划分 | 所有智能体平等 | 明确的上下级关系 |
-| 进度追踪 | 全局状态，难以定位 | 树形路径，精确定位 |
-| 并行控制 | 粗粒度并行 | 细粒度并行（子树级） |
-| 异常处理 | 全局重试 | 局部重试（子树） |
-| 通信模式 | 广播/点对点 | 仅父子通信（上行汇报/下行指令） |
-
-**设计亮点**：
-
-1. **根智能体唯一性**
-   - 每个Session只有一个根智能体
-   - 根智能体直接与用户对话
-   - 负责全局任务规划和结果汇总
-
-2. **动态树形成**
-   - 根据任务复杂度自动扩展层级
-   - 并行任务自动创建兄弟节点
-   - 任务完成后自动回收子树
-
-3. **类型约束系统**
-   - `Root`: 可以创建子节点
-   - `Child`: 可以创建子节点（有限制）
-   - `ActOnly`: 不能创建子节点（叶子节点）
-
- 4. **严格的父子通信**
-    - 上行：子节点向父节点汇报进度、结果和错误
-    - 下行：父节点向子节点发送指令、查询状态
-    - 限制：不支持兄弟通信或跨层级通信，确保清晰的指挥链
-
-**灵感来源**：现代公司分工制度
-- CEO（根智能体）→ 部门经理（子智能体）→ 员工（孙智能体）
-- 明确的汇报线和责任边界
-- 灵活的任务分配和协调
-
-**实现示例**：
-
-```rust
-// 场景：分析大型项目并修复bug
-// 树形结构形成过程：
-
-Root (根智能体)
-├─ Explore Agent (探索项目结构)
-│  ├─ Explore-Sub1 (分析模块A)
-│  └─ Explore-Sub2 (分析模块B)
-├─ Code Agent (修复bug)
-│  └─ Code-Sub1 (实现具体修复)
-└─ Doc Agent (生成文档)
-
-// 对比扁平结构：
-// - 扁平：所有智能体在同一池中，难以追踪任务来源
-// - 树形：每个智能体有明确的父节点，便于管理和监控
-```
-
-**权衡**：
-- ✅ 更清晰的责任划分
-- ✅ 更细粒度的并行控制
-- ✅ 更精准的异常处理
-- ❌ 更复杂的实现（树管理算法）
-- ❌ 更高的通信开销（层级传递）
 
 ---
 
