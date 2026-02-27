@@ -149,16 +149,6 @@ graph LR
 | Arc+RwLock并发模型 | 共享可变状态 | 智能体树并发访问；模型无锁轮询 |
 | Jujutsu版本控制 | Session持久化 | Git Workspace兼容层；提交历史管理 |
 
-### 设计决策连锁反应
-
-| 决策 | 直接影响 | 间接影响 |
-|------|----------|----------|
-| 采用树形智能体结构 | 需要AgentTree管理器 | 消息总线支持父子路由；Session持久化需要序列化树 |
-| 使用纯LLM架构 | 无Embeddings模型 | 两层记忆结构；关键词检索匹配；LLM重新排序 |
-| MCP懒加载策略 | 延迟启动服务器 | 工具执行触发连接；需要连接复用机制 |
-| Arc+RwLock并发模型 | 共享可变状态 | 智能体树并发访问；模型无锁轮询 |
-| Jujutsu版本控制 | Session持久化 | Git Workspace兼容层；提交历史管理 |
-
 ---
 
 ## 目录
@@ -276,10 +266,7 @@ graph LR
 
 #### 2. 并发模型
 
-- **共享不可变数据**: 使用 `Arc<T>` 共享配置和只读状态
-- **独享可变数据**: 使用 `&mut T` 或 `Mutex<T>` 保护可变状态
-- **异步任务**: 使用 `tokio::spawn` 创建后台任务
-- **通信**: 使用 `mpsc` 通道进行消息传递
+详见[Section 四、并发模型贯穿全栈](#四并发模型贯穿全栈)。
 
 #### 3. 错误处理
 
@@ -515,102 +502,7 @@ pub struct ProviderConfig {
 
 ### 4. 子智能体管理（树形结构）
 
-**重要**：Neco采用**树形架构**管理子智能体，而非扁平注册表。详细设计见[Section 6: 多智能体协作](#多智能体协作)。
-
-#### AgentNode（简化定义）
-
-```rust
-/// 智能体节点（树的节点）
-///
-/// # 在SessionContext中的使用
-/// SessionContext包含一个AgentTree实例，管理整棵树
-/// 完整定义见Section 6
-#[derive(Debug, Clone)]
-pub struct AgentNode {
-    /// 节点ID
-    pub id: AgentId,
-
-    /// 节点类型（Root/Child/ActOnly）
-    pub node_type: AgentNodeType,
-
-    /// 父节点ID（None表示根智能体）
-    pub parent_id: Option<AgentId>,
-
-    /// 子节点ID列表
-    pub children: Vec<AgentId>,
-
-    /// 智能体会话（包含状态、任务等）
-    pub session: AgentSession,
-
-    /// 创建时间
-    pub created_at: DateTime<Utc>,
-}
-
-/// 智能体会话（与AgentNode一一对应）
-#[derive(Debug, Clone)]
-pub struct AgentSession {
-    /// 会话ID（与AgentNode.id相同）
-    pub id: AgentId,
-
-    /// 任务描述
-    pub task: String,
-
-    /// 当前状态
-    pub status: AgentStatus,
-
-    /// 开始时间
-    pub started_at: DateTime<Utc>,
-
-    /// 完成时间
-    pub completed_at: Option<DateTime<Utc>>,
-
-    /// 执行结果
-    pub result: Option<ToolResult>,
-
-    /// Tokio任务句柄（用于取消）
-    #[serde(skip)]
-    handle: Option<JoinHandle<()>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AgentStatus {
-    Created,
-    Running,
-    Paused,
-    Completed,
-    Failed,
-}
-
-/// 智能体节点类型
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AgentNodeType {
-    /// 根智能体（每个Session唯一）
-    Root,
-
-    /// 子智能体（可以创建下级）
-    Child,
-
-    /// 执行智能体（只能执行工具，不能创建下级）
-    ActOnly,
-}
-
-/// 智能体ID（Newtype）
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AgentId(String);
-
-impl AgentId {
-    /// 生成新的智能体ID
-    pub fn new() -> Self {
-        Self(Uuid::new_v4().to_string())
-    }
-}
-```
-
-**设计要点**：
-- **树形结构**：AgentNode通过parent_id和children形成树形关系
-- **类型约束**：AgentNodeType限制节点能力（如ActOnly不能创建子节点）
-- **并发安全**：AgentTree使用Arc<RwLock<HashMap<AgentId, AgentNode>>>保护内部状态
-- **生命周期**：AgentSession的状态转换详见[Section 6.5: 子智能体生命周期](#5-子智能体生命周期状态机)
+**重要**：Neco采用**树形架构**管理子智能体，而非扁平注册表。完整数据结构定义见[Section 6.1: 树形架构设计](#1-树形架构设计)。
 
 ### 5. 记忆系统
 
@@ -1639,47 +1531,11 @@ impl AgentTree {
 }
 ```
 
-### 2. 协作架构（树形结构）
+### 2. 协作架构
 
-```mermaid
-graph TB
-    subgraph "Level 0: 根智能体（Root Agent）"
-        Root[根智能体<br/>直接与用户对话<br/>任务分解与汇总]
-    end
+树形结构详见[Section 1: 树形架构设计](#1-树形架构设计)。
 
-    subgraph "Level 1: 子智能体"
-        E1[Explore Agent<br/>探索代码库]
-        C1[Code Agent<br/>代码修改]
-        D1[Doc Agent<br/>文档生成]
-    end
-
-    subgraph "Level 2: 孙智能体"
-        E2[Explore-Sub1<br/>探索模块A]
-        E3[Explore-Sub2<br/>探索模块B]
-        C2[Code-Sub1<br/>实现功能]
-    end
-
-    Root -->|任务拆分| E1
-    Root -->|并行任务| C1
-    Root -->|独立任务| D1
-
-    E1 -->|子任务| E2
-    E1 -->|子任务| E3
-    C1 -->|协助| C2
-
-    E2 -.->|进度汇报| E1
-    E3 -.->|进度汇报| E1
-    E1 -.->|进度汇总| Root
-    C2 -.->|进度汇报| C1
-    C1 -.->|进度汇总| Root
-    D1 -.->|进度汇报| Root
-
-    Root -.->|纠正指令| E1
-    Root -.->|纠正指令| C1
-    E1 -.->|纠正指令| E2
-```
-
-**通信模式说明**：
+**通信模式**：
 - **实线箭头**：父子关系（任务委派）
 - **虚线箭头**：父子通信（上行汇报/下行指令）
 - **限制**：只支持父子通信，无兄弟通信或跨层级通信
