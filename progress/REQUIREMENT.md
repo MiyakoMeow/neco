@@ -160,7 +160,6 @@ env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
 - MCP懒加载。
 - OpenClaw扩展支持
-- 外部上下文管理系统支持
 
 ## 要求
 

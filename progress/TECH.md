@@ -9,6 +9,116 @@
 
 ---
 
+## 架构核心：内生联系总览
+
+Neco的技术架构围绕**多层智能体树形结构**展开，各模块通过以下核心设计相互关联：
+
+### 一、树形架构作为核心组织形式
+
+```
+Session (1) ←→ AgentTree (1) ←→ AgentNode (N)
+     ↓                ↓               ↓
+ MemoryContext    CoordinationBus   ModelSelector
+```
+
+**内生关系**：
+- **Session ↔ AgentTree**：一对一绑定，Session生命周期 = 智能体树生命周期
+- **AgentTree ↔ AgentNode**：树形管理，根智能体（Root）直接与用户对话，递归创建子节点
+- **AgentNode.nodeType ↔ ModelGroup**：不同类型智能体使用不同模型（think/balanced/act）
+
+### 二、两层记忆系统的设计约束
+
+```
+纯LLM架构 (无Embeddings)
+     ↓
+记忆检索依赖关键词匹配
+     ↓
+需要两层结构：索引层（快速检索）+ 内容层（按需加载）
+```
+
+**内生关系**：
+- **纯LLM架构 → 两层记忆**：无Embeddings模型，必须通过标题/摘要快速筛选
+- **workspace分类 ↔ 智能体树**：特定目录会话只加载相关记忆，减少上下文污染
+- **MemoryLibrary → SessionContext**：Session启动时激活记忆，形成MemoryContext
+
+### 三、并发模型贯穿全栈
+
+```
+Arc<T> (共享不可变)
+  ├── Config (全局配置)
+  ├── ModelConfig.current_index (AtomicUsize, 无锁轮询)
+  └── AgentTree.nodes (Arc<RwLock<HashMap>>)
+
+Arc<RwLock<T>> (共享可变，读多写少)
+  ├── AgentTree.nodes (智能体树管理)
+  ├── SharedState (跨智能体通信)
+  └── MemoryIndex (记忆索引)
+```
+
+**内生关系**：
+- **智能体树并发 → Arc<RwLock>**：多层级智能体并发访问树结构，需要读写锁
+- **模型轮询 → AtomicUsize**：无锁轮询支持高并发，避免Mutex竞争
+- **父子通信 → 单向通道**：上行汇报和下行指令，无循环依赖风险
+
+### 四、懒加载与按需启动策略
+
+```
+MCP服务器懒加载
+     ↓
+McpServerManager.get_client() (按需连接)
+     ↓
+ToolExecutor.execute() (触发工具调用)
+     ↓
+AgentNode (创建子智能体)
+```
+
+**内生关系**：
+- **MCP懒加载 ↔ 工具执行**：只有智能体调用工具时才启动MCP服务器
+- **Skills懒加载 ↔ 记忆激活**：按上下文关键词激活Skills，避免全量加载
+- **子智能体生命周期 ↔ 任务分解**：根智能体根据任务复杂度动态创建子节点
+
+### 五、树形架构驱动的通信协议
+
+```
+AgentNode (父子关系)
+     ↓
+CoordinationEnvelope (消息类型：Report/Command)
+     ↓
+InMemoryMessageBus (父子路由：上行汇报/下行指令)
+```
+
+**内生关系**：
+- **树形结构 → 消息路由**：仅支持父子通信（上行汇报进度、下行发送指令）
+- **消息总线 ↔ AgentTree**：每个节点维护父节点引用，直接向父节点发送消息
+- **进度追踪 → 父子链式传递**：子节点→父节点→根智能体，形成清晰的汇报线
+
+### 六、纯LLM架构的技术约束
+
+```
+无Embeddings/Rerank/Apply模型
+     ↓
+记忆检索依赖关键词匹配
+     ↓
+两层记忆结构：索引层（快速检索）+ 内容层（按需加载）
+```
+
+**内生关系**：
+- **纯LLM → 关键词检索**：MemoryLibrary.recall使用标题匹配+相似度分数
+- **两层记忆 → 内容激活**：先检索索引层，再加载完整内容
+- **workspace分类 → 上下文隔离**：特定目录会话只加载相关记忆
+
+### 设计决策连锁反应
+
+| 决策 | 直接影响 | 间接影响 |
+|------|----------|----------|
+| 采用树形智能体结构 | 需要AgentTree管理器 | 消息总线支持父子路由；Session持久化需要序列化树 |
+| 使用纯LLM架构 | 无Embeddings模型 | 两层记忆结构；关键词检索匹配；LLM重新排序 |
+| MCP懒加载策略 | 延迟启动服务器 | 工具执行触发连接；需要连接复用机制 |
+| Arc+RwLock并发模型 | 共享可变状态 | 智能体树并发访问；模型无锁轮询 |
+| Jujutsu版本控制 | Session持久化 | Git Workspace兼容层；提交历史管理 |
+
+---
+
 ## 目录
 
 1. [项目概述](#项目概述)
@@ -69,8 +179,8 @@ graph TB
     end
 
     subgraph "执行层"
-        Agent[主智能体]
-        SubAgent[子智能体池]
+        Agent[根智能体]
+        AgentTree[智能体树]
         Tools[工具执行器]
     end
 
@@ -93,7 +203,8 @@ graph TB
 
     Orchestrator --> Router
     Router --> Agent
-    Router --> SubAgent
+    Router --> AgentTree
+    AgentTree --> Agent
 
     Agent --> Session
     Agent --> Memory
@@ -112,12 +223,13 @@ graph TB
 
 ```mermaid
 graph LR
-    A[Session创建] -->|拥有| B[ConversationContext]
+    A[Session创建] -->|拥有| B[SessionContext]
     B -->|引用| C[MessageHistory]
-    B -->|拥有| D[SubAgentRegistry]
-    D -->|管理| E[SubAgentSession]
-    E -->|临时| F[AgentInstance]
-    F -->|释放| G[Drop]
+    B -->|拥有| D[AgentTree]
+    D -->|管理| E[AgentNode]
+    E -->|包含| F[AgentSession]
+    F -->|临时| G[AgentInstance]
+    G -->|释放| H[Drop]
 ```
 
 #### 2. 并发模型
@@ -150,6 +262,10 @@ graph LR
 /// - 创建于用户首次交互
 /// - 存储在 `~/.local/neco/{session_id}/` 目录
 /// - 使用Jujutsu进行版本管理
+///
+/// # 树形智能体架构
+/// 每个Session包含一个AgentTree，管理所有子智能体
+/// 根智能体（Root Agent）直接与用户对话，可递归创建子节点
 pub struct SessionContext {
     /// 唯一会话ID（基于UUID v7，具有时间排序特性）
     pub id: SessionId,
@@ -160,8 +276,13 @@ pub struct SessionContext {
     /// 对话历史
     pub history: Vec<ConversationMessage>,
 
-    /// 子智能体会话注册表
-    pub sub_agents: Arc<RwLock<SubAgentRegistry>>,
+    /// 智能体树（管理所有子智能体）
+    ///
+    /// # 树形结构
+    /// - 根智能体（Root Agent）：每个Session唯一，直接与用户对话
+    /// - 子智能体（Child Agent）：由根或其他子智能体创建
+    /// - 执行智能体（ActOnly）：只能执行工具，不能创建子节点
+    pub agent_tree: Arc<AgentTree>,
 
     /// 共享状态（用于跨智能体通信）
     pub shared_state: Arc<RwLock<SharedState>>,
@@ -350,77 +471,50 @@ pub struct ProviderConfig {
 - **AtomicUsize**: 无锁轮询，支持并发访问
 - **Vec<String>**: 多个API密钥，自动故障转移
 
-### 4. 子智能体管理
+### 4. 子智能体管理（树形结构）
 
-#### SubAgentRegistry
+**重要**：Neco采用**树形架构**管理子智能体，而非扁平注册表。详细设计见[Section 6: 多智能体协作](#多智能体协作)。
 
-```rust
-/// 子智能体注册表
-///
-/// # 并发安全
-/// - 使用 `RwLock` 保护内部状态
-/// - 限制并发数量（默认10个）
-pub struct SubAgentRegistry {
-    /// 所有会话（session_id -> session）
-    sessions: RwLock<HashMap<SessionId, SubAgentSession>>,
-
-    /// 运行中计数器
-    running_count: AtomicUsize,
-
-    /// 最大并发数
-    max_concurrent: usize,
-}
-
-impl SubAgentRegistry {
-    /// 尝试插入新会话（带并发限制）
-    pub fn try_insert(&self, session: SubAgentSession)
-        -> Result<(), SubAgentError>
-    {
-        // 检查并发限制
-        if self.running_count.load(Ordering::Acquire) >= self.max_concurrent {
-            return Err(SubAgentError::TooManyRunning);
-        }
-
-        // 插入会话
-        let mut guard = self.sessions.write()
-            .map_err(|_| SubAgentError::LockPoisoned)?;
-        guard.insert(session.id.clone(), session);
-
-        // 增加计数
-        self.running_count.fetch_add(1, Ordering::Release);
-        Ok(())
-    }
-
-    /// 标记会话完成
-    pub fn complete(&self, session_id: &SessionId, result: ToolResult) {
-        let mut guard = self.sessions.write().unwrap();
-        if let Some(session) = guard.get_mut(session_id) {
-            session.status = SubAgentStatus::Completed;
-            session.completed_at = Some(Utc::now());
-            session.result = Some(result);
-        }
-        self.running_count.fetch_sub(1, Ordering::Release);
-    }
-}
-```
-
-#### SubAgentSession
+#### AgentNode（简化定义）
 
 ```rust
-/// 子智能体会话
+/// 智能体节点（树的节点）
 ///
-/// # 状态转换
-/// Created → Running → Completed/Failed
+/// # 在SessionContext中的使用
+/// SessionContext包含一个AgentTree实例，管理整棵树
+/// 完整定义见Section 6
 #[derive(Debug, Clone)]
-pub struct SubAgentSession {
-    /// 会话ID
-    pub id: SessionId,
+pub struct AgentNode {
+    /// 节点ID
+    pub id: AgentId,
+
+    /// 节点类型（Root/Child/ActOnly）
+    pub node_type: AgentNodeType,
+
+    /// 父节点ID（None表示根智能体）
+    pub parent_id: Option<AgentId>,
+
+    /// 子节点ID列表
+    pub children: Vec<AgentId>,
+
+    /// 智能体会话（包含状态、任务等）
+    pub session: AgentSession,
+
+    /// 创建时间
+    pub created_at: DateTime<Utc>,
+}
+
+/// 智能体会话（与AgentNode一一对应）
+#[derive(Debug, Clone)]
+pub struct AgentSession {
+    /// 会话ID（与AgentNode.id相同）
+    pub id: AgentId,
 
     /// 任务描述
     pub task: String,
 
     /// 当前状态
-    pub status: SubAgentStatus,
+    pub status: AgentStatus,
 
     /// 开始时间
     pub started_at: DateTime<Utc>,
@@ -437,13 +531,44 @@ pub struct SubAgentSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SubAgentStatus {
+pub enum AgentStatus {
     Created,
     Running,
+    Paused,
     Completed,
     Failed,
 }
+
+/// 智能体节点类型
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentNodeType {
+    /// 根智能体（每个Session唯一）
+    Root,
+
+    /// 子智能体（可以创建下级）
+    Child,
+
+    /// 执行智能体（只能执行工具，不能创建下级）
+    ActOnly,
+}
+
+/// 智能体ID（Newtype）
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AgentId(String);
+
+impl AgentId {
+    /// 生成新的智能体ID
+    pub fn new() -> Self {
+        Self(Uuid::new_v4().to_string())
+    }
+}
 ```
+
+**设计要点**：
+- **树形结构**：AgentNode通过parent_id和children形成树形关系
+- **类型约束**：AgentNodeType限制节点能力（如ActOnly不能创建子节点）
+- **并发安全**：AgentTree使用Arc<RwLock<HashMap<AgentId, AgentNode>>>保护内部状态
+- **生命周期**：AgentSession的状态转换详见[Section 6.5: 子智能体生命周期](#5-子智能体生命周期状态机)
 
 ### 5. 记忆系统
 
@@ -779,6 +904,20 @@ impl SessionManager {
         // 初始化Git仓库（Jujutsu）
         self.init_jujutsu_repo(&session_dir).await?;
 
+        // 创建根智能体会话
+        let root_session = AgentSession {
+            id: AgentId::new(),
+            task: "根智能体：管理整个会话".to_string(),
+            status: AgentStatus::Running,
+            started_at: Utc::now(),
+            completed_at: None,
+            result: None,
+            handle: None,
+        };
+
+        // 创建智能体树（包含根智能体）
+        let agent_tree = AgentTree::new(root_session).await;
+
         // 创建Session上下文
         let context = SessionContext {
             id: session_id.clone(),
@@ -791,7 +930,7 @@ impl SessionManager {
                 preferences: UserPreferences::default(),
             },
             history: Vec::new(),
-            sub_agents: Arc::new(RwLock::new(SubAgentRegistry::new())),
+            agent_tree: Arc::new(agent_tree),
             shared_state: Arc::new(RwLock::new(SharedState::new())),
             config,
         };
@@ -1321,28 +1460,30 @@ graph TB
         C2[Code-Sub1<br/>实现功能]
     end
 
-    subgraph "协调总线（全局）"
-        Bus[InMemoryMessageBus<br/>跨层级通信]
-    end
-
     Root -->|任务拆分| E1
     Root -->|并行任务| C1
     Root -->|独立任务| D1
 
-    E1 -->|子探索| E2
-    E1 -->|子探索| E3
+    E1 -->|子任务| E2
+    E1 -->|子任务| E3
     C1 -->|协助| C2
 
-    Root -.->|进度查询| Bus
-    E1 -.->|进度报告| Bus
-    C1 -.->|进度报告| Bus
-    E2 -.->|进度报告| Bus
-    E3 -.->|进度报告| Bus
-    C2 -.->|进度报告| Bus
+    E2 -.->|进度汇报| E1
+    E3 -.->|进度汇报| E1
+    E1 -.->|进度汇总| Root
+    C2 -.->|进度汇报| C1
+    C1 -.->|进度汇总| Root
+    D1 -.->|进度汇报| Root
 
     Root -.->|纠正指令| E1
     Root -.->|纠正指令| C1
+    E1 -.->|纠正指令| E2
 ```
+
+**通信模式说明**：
+- **实线箭头**：父子关系（任务委派）
+- **虚线箭头**：父子通信（上行汇报/下行指令）
+- **限制**：只支持父子通信，无兄弟通信或跨层级通信
 
 ### 3. 动态树形成过程
 
@@ -1386,12 +1527,9 @@ sequenceDiagram
     Root->>Tree: bfs_traverse()
     Tree-->>Root: [Root, E1, C1, E2]
 
-    Note over Root,E2: 步骤4: 跨层级通信
-    Root->>Tree: get_path(explore_sub1)
-    Tree-->>Root: [Root, E1, E2]
-
-    E2->>E1: 进度报告
-    E1->>Root: 进度汇总
+    Note over Root,E2: 步骤4: 父子通信链
+    E2->>E1: 进度报告（上行）
+    E1->>Root: 进度汇总（上行）
     Root->>U: 整体进度
 
     E2->>E2: 子任务完成
@@ -1483,110 +1621,278 @@ impl AgentTree {
 }
 ```
 
-### 4. 跨层级通信
+### 4. 父子通信
 
-#### InMemoryMessageBus
+Neco采用严格的**父子通信模式**，智能体只能与其直接父节点或直接子节点通信。
+
+#### 通信模式
+
+```mermaid
+graph TB
+    subgraph "上行通信（汇报）"
+        Child[子节点] -->|进度报告| Parent[父节点]
+        Child -->|任务完成| Parent
+        Child -->|错误报告| Parent
+    end
+
+    subgraph "下行通信（指令）"
+        Parent -->|任务委派| Child
+        Parent -->|暂停/取消| Child
+        Parent -->|参数调整| Child
+    end
+
+    subgraph "不可达（跨层级）"
+        Parent -.x.孙子节点
+        兄弟节点 -.x.兄弟节点
+    end
+```
+
+#### CoordinationEnvelope
 
 ```rust
-/// 内存消息总线
+/// 协调信封（父子通信消息）
+#[derive(Debug, Clone)]
+pub struct CoordinationEnvelope {
+    /// 消息ID（唯一）
+    pub id: MessageId,
+
+    /// 发送者（子节点或父节点）
+    pub from: AgentId,
+
+    /// 接收者（必须为父子关系）
+    pub to: AgentId,
+
+    /// 消息类型
+    pub message: CoordinationMessage,
+
+    /// 时间戳
+    pub timestamp: DateTime<Utc>,
+}
+
+/// 协调消息类型
+#[derive(Debug, Clone)]
+pub enum CoordinationMessage {
+    /// 上行：进度报告
+    Report {
+        progress: f32,  // 0.0 - 1.0
+        message: String,
+    },
+
+    /// 上行：任务完成
+    Completed {
+        result: ToolResult,
+    },
+
+    /// 上行：错误报告
+    Error {
+        error: String,
+    },
+
+    /// 下行：任务委派
+    Command {
+        command: Command,
+    },
+
+    /// 下行：查询状态
+    Query {
+        query: Query,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum Command {
+    Pause,
+    Resume,
+    Cancel,
+    UpdateParameters { params: Value },
+}
+
+#[derive(Debug, Clone)]
+pub enum Query {
+    Status,
+    Progress,
+    Result,
+}
+```
+
+#### ParentChannel（父子通信通道）
+
+```rust
+/// 父子通信通道
 ///
-/// # 特性
-/// - 幂等性保证（去重）
-/// - 有序传递
-/// - 死信队列
-pub struct InMemoryMessageBus {
-    inner: Arc<Mutex<BusState>>,
+/// # 设计原则
+/// - 每个AgentNode维护一个到其父节点的通道
+/// - 父节点通过AgentTree.children管理所有子节点的通道
+pub struct ParentChannel {
+    /// 发送到父节点的通道（上行）
+    tx_to_parent: mpsc::Sender<CoordinationEnvelope>,
+
+    /// 从子节点接收的通道（下行）
+    rx_from_children: Arc<Mutex<HashMap<AgentId, mpsc::Receiver<CoordinationEnvelope>>>>,
 }
 
-struct BusState {
-    /// 下一个序列号
-    next_sequence: u64,
+impl ParentChannel {
+    /// 创建父子通信通道
+    pub fn new(parent_id: Option<AgentId>) -> (Self, Vec<mpsc::Receiver<CoordinationEnvelope>>) {
+        // 如果有父节点，创建上行通道
+        let (tx_to_parent, _rx_for_parent) = mpsc::channel(100);
 
-    /// 已见消息ID（幂等性）
-    seen_message_ids: HashSet<MessageId>,
+        // 下行通道由父节点统一管理
+        let rx_from_children = Arc::new(Mutex::new(HashMap::new()));
 
-    /// 每个Agent的收件箱
-    inboxes: HashMap<AgentId, VecDeque<SequencedEnvelope>>,
-
-    /// 死信队列
-    dead_letters: Vec<DeadLetter>,
-
-    /// 容量限制
-    limits: BusLimits,
-}
-
-impl InMemoryMessageBus {
-    /// 发布消息
-    pub async fn publish(&self, envelope: CoordinationEnvelope)
-        -> Result<(), BusError>
-    {
-        let mut state = self.inner.lock().await;
-
-        // 幂等性检查
-        if state.seen_message_ids.contains(&envelope.id) {
-            return Ok(());  // 已处理，忽略
-        }
-
-        // 生成序列号
-        let sequence = state.next_sequence;
-        state.next_sequence += 1;
-
-        // 记录已见
-        state.seen_message_ids.insert(envelope.id.clone());
-
-        // 投递到收件箱
-        let targets = if let Some(to) = &envelope.to {
-            vec![to.clone()]
-        } else {
-            // 广播到所有Agent
-            state.inboxes.keys().cloned().collect()
-        };
-
-        for target in targets {
-            let inbox = state.inboxes.entry(target).or_default();
-            inbox.push_back(SequencedEnvelope {
-                sequence,
-                envelope: envelope.clone(),
-            });
-
-            // 容量限制
-            if inbox.len() > state.limits.max_inbox_size {
-                inbox.pop_front();  // LRU
-            }
-        }
-
-        Ok(())
+        (
+            Self {
+                tx_to_parent,
+                rx_from_children,
+            },
+            vec![_rx_for_parent],
+        )
     }
 
-    /// 接收消息
-    pub async fn receive(&self, agent_id: &AgentId)
-        -> Option<SequencedEnvelope>
+    /// 发送消息给父节点（上行）
+    pub async fn send_to_parent(&self, envelope: CoordinationEnvelope)
+        -> Result<(), ChannelError>
     {
-        let mut state = self.inner.lock().await;
-        state.inboxes.get_mut(agent_id)?.pop_front()
+        self.tx_to_parent.send(envelope)
+            .await
+            .map_err(ChannelError::SendFailed)
+    }
+
+    /// 从子节点接收消息（下行）
+    pub async fn receive_from_child(&self, child_id: &AgentId)
+        -> Option<CoordinationEnvelope>
+    {
+        let mut receivers = self.rx_from_children.lock().await;
+        receivers.get_mut(child_id)?.recv().await.ok()
+    }
+
+    /// 注册子节点通道（由父节点调用）
+    pub fn register_child(&self, child_id: AgentId, rx: mpsc::Receiver<CoordinationEnvelope>) {
+        let mut receivers = self.rx_from_children.lock().unwrap();
+        receivers.insert(child_id, rx);
     }
 }
 ```
 
-### 3. 子智能体生命周期
+#### 在AgentNode中的集成
+
+```rust
+impl AgentNode {
+    /// 发送进度报告给父节点
+    pub async fn report_progress(&self, progress: f32, message: String)
+        -> Result<(), ChannelError>
+    {
+        if let Some(ref parent_channel) = self.parent_channel {
+            let envelope = CoordinationEnvelope {
+                id: MessageId::new(),
+                from: self.id.clone(),
+                to: self.parent_id.clone().unwrap(),
+                message: CoordinationMessage::Report { progress, message },
+                timestamp: Utc::now(),
+            };
+            parent_channel.send_to_parent(envelope).await?;
+        }
+        Ok(())
+    }
+
+    /// 发送任务完成给父节点
+    pub async fn report_completion(&self, result: ToolResult)
+        -> Result<(), ChannelError>
+    {
+        if let Some(ref parent_channel) = self.parent_channel {
+            let envelope = CoordinationEnvelope {
+                id: MessageId::new(),
+                from: self.id.clone(),
+                to: self.parent_id.clone().unwrap(),
+                message: CoordinationMessage::Completed { result },
+                timestamp: Utc::now(),
+            };
+            parent_channel.send_to_parent(envelope).await?;
+        }
+        Ok(())
+    }
+
+    /// 发送指令给子节点
+    pub async fn send_command_to_child(&self, child_id: &AgentId, command: Command)
+        -> Result<(), ChannelError>
+    {
+        if let Some(ref parent_channel) = self.parent_channel {
+            // 找到子节点的上行通道
+            let envelope = CoordinationEnvelope {
+                id: MessageId::new(),
+                from: self.id.clone(),
+                to: child_id.clone(),
+                message: CoordinationMessage::Command { command },
+                timestamp: Utc::now(),
+            };
+
+            // 通过子节点的下行通道发送
+            // (实际实现需要AgentTree维护子节点的通道引用)
+        }
+        Ok(())
+    }
+}
+```
+
+#### 通信流程示例
+
+```mermaid
+sequenceDiagram
+    participant Root as 根智能体
+    participant Child as 子智能体
+    participant GrandChild as 孙智能体
+
+    Note over Root,GrandChild: 任务委派（下行）
+    Root->>Child: Command(任务分解)
+    Child->>GrandChild: Command(执行任务)
+
+    Note over Root,GrandChild: 进度汇报（上行）
+    GrandChild->>Child: Report(50%)
+    Child->>Root: Report(25%)
+
+    Note over Root,GrandChild: 任务完成（上行）
+    GrandChild->>Child: Completed(结果)
+    Child->>Root: Completed(汇总结果)
+
+    Note over Root,GrandChild: 跨层级不可达
+    Root-.x. GrandChild: 不能直接通信
+```
+
+### 5. 子智能体生命周期（状态机）
+
+在树形架构中，每个AgentNode会经历以下状态转换：
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Created: spawn()
+    [*] --> Created: AgentTree.add_child()
 
-    Created --> Running: 开始执行
+    Created --> Running: 任务启动（tokio::spawn）
 
-    Running --> Running: 进度更新
-    Running --> Paused: 收到暂停请求
+    Running --> Running: 进度更新（通过CoordinationEnvelope）
+
+    Running --> Paused: 收到暂停请求（根智能体或父节点）
     Running --> Completed: 任务完成
     Running --> Failed: 执行失败
 
     Paused --> Running: 恢复执行
     Paused --> Failed: 超时或取消
 
-    Completed --> [*]
-    Failed --> [*]
+    Completed --> [*]: AgentTree.remove()（自动回收子树）
+    Failed --> [*]: AgentTree.remove()（保留错误信息）
 ```
+
+**状态转换触发条件**：
+- `Created → Running`：父节点调用`tokio::spawn`启动子节点任务
+- `Running → Paused`：根智能体或父节点发送`CoordinationEnvelope::Command(Pause)`
+- `Running → Completed`：子节点任务返回`Ok(ToolResult)`
+- `Running → Failed`：子节点任务返回`Err(SubAgentError)`或超时
+- `Completed/Failed → [*]`：父节点调用`AgentTree.remove()`回收子树
+
+**与树形架构的关系**：
+- 每个AgentNode包含一个`AgentSession`，管理其状态
+- 父节点负责监控子节点状态，决定是否暂停或取消
+- 子节点完成后，父节点决定是否保留或删除子树
+- 根智能体协调整棵树的状态，确保整体任务完成
 
 ---
 
@@ -2431,7 +2737,7 @@ pub enum NecoError {
 /// # 使用场景
 /// - Config: Arc<Config>（不可变）
 /// - Session: Arc<SessionContext>（内部使用RwLock）
-/// - SubAgentRegistry: Arc<RwLock<...>>（读多写少）
+/// - AgentTree: Arc<RwLock<HashMap<AgentId, AgentNode>>>（读多写少）
 /// - ModelIndex: Arc<AtomicUsize>（计数器）
 ```
 
@@ -2647,106 +2953,7 @@ impl OpenClawCompat {
 - ✅ Session管理（自动转换）
 - ✅ 工具调用协议
 
-### 3. 外部上下文管理系统
-
-Neco支持外部上下文管理系统（如RAG系统、向量数据库）：
-
-```rust
-/// 外部上下文提供者trait
-#[async_trait]
-pub trait ExternalContextProvider: Send + Sync {
-    /// 检索相关上下文
-    async fn retrieve_context(
-        &self,
-        query: &str,
-        workspace: &Path,
-    ) -> Result<Vec<ContextEntry>, ContextError>;
-}
-
-/// 上下文条目
-#[derive(Debug, Clone)]
-pub struct ContextEntry {
-    /// 内容
-    pub content: String,
-
-    /// 相关性分数
-    pub relevance: f32,
-
-    /// 来源
-    pub source: ContextSource,
-}
-
-#[derive(Debug, Clone)]
-pub enum ContextSource {
-    /// 文件
-    File { path: PathBuf, line: usize },
-
-    /// URL
-    Url { url: String },
-
-    /// 记忆
-    Memory { id: MemoryId },
-
-    /// 自定义
-    Custom { name: String, metadata: Value },
-}
-
-/// 外部上下文管理器
-pub struct ExternalContextManager {
-    /// 注册的提供者
-    providers: Vec<Box<dyn ExternalContextProvider>>,
-
-    /// 配置
-    config: ContextConfig,
-}
-
-impl ExternalContextManager {
-    /// 从所有提供者检索上下文
-    pub async fn retrieve_all(
-        &self,
-        query: &str,
-        workspace: &Path,
-    ) -> Vec<ContextEntry> {
-        let mut all_entries = Vec::new();
-
-        for provider in &self.providers {
-            match provider.retrieve_context(query, workspace).await {
-                Ok(mut entries) => {
-                    all_entries.append(&mut entries);
-                }
-                Err(_) => continue,
-            }
-        }
-
-        // 按相关性排序
-        all_entries.sort_by(|a, b| {
-            b.relevance.partial_cmp(&a.relevance).unwrap()
-        });
-
-        // 限制数量
-        all_entries.truncate(self.config.max_entries);
-
-        all_entries
-    }
-}
-```
-
-**配置示例**：
-
-```toml
-[external_context]
-max_entries = 10
-
-[[external_context.providers]]
-type = "filesystem"
-max_depth = 3
-
-[[external_context.providers]]
-type = "rag"
-endpoint = "http://localhost:8000/retrieve"
-```
-
-### 4. Session管理增强
+### 3. Session管理增强
 
 #### Git Workspace支持
 
@@ -2829,7 +3036,7 @@ impl SessionStorage {
 }
 ```
 
-### 5. 脚本化工具调用
+### 4. 脚本化工具调用
 
 支持Claude的Programmatic Tool Calling：
 
@@ -3029,60 +3236,13 @@ impl ModelConfig {
 
 对于不支持的模型功能，Neco提供以下替代方案：
 
-| 功能 | 替代方案 | 说明 |
+| 功能 | 实现方案 | 说明 |
 |------|----------|------|
-| Embeddings | 外部RAG系统 | 通过"外部上下文管理系统"集成 |
-| 语义搜索 | 关键词匹配 + 记忆索引 | 使用`MemoryLibrary`的模糊匹配 |
-| Rerank | LLM重新排序 | 使用主模型对搜索结果重排 |
+| 语义搜索 | 关键词匹配 + 记忆索引 | 使用`MemoryLibrary`的标题匹配和模糊搜索 |
+| Rerank | LLM重新排序 | 使用主模型对搜索结果重排（可选） |
 | Apply | 直接生成 | LLM直接生成内容，无需Apply模型 |
 
-**示例：使用外部RAG替代Embeddings**
-
-```rust
-/// 基于外部RAG的上下文检索
-pub struct RagContextProvider {
-    /// RAG服务端点
-    endpoint: String,
-
-    /// 客户端
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl ExternalContextProvider for RagContextProvider {
-    async fn retrieve_context(
-        &self,
-        query: &str,
-        workspace: &Path,
-    ) -> Result<Vec<ContextEntry>, ContextError> {
-        // 调用外部RAG服务
-        let response = self.client
-            .post(&self.endpoint)
-            .json(&serde_json::json!({
-                "query": query,
-                "workspace": workspace,
-            }))
-            .send()
-            .await
-            .map_err(ContextError::RequestFailed)?;
-
-        let results: Vec<RagResult> = response
-            .json()
-            .await
-            .map_err(ContextError::InvalidResponse)?;
-
-        // 转换为ContextEntry
-        Ok(results.into_iter().map(|r| ContextEntry {
-            content: r.content,
-            relevance: r.score,
-            source: ContextSource::Custom {
-                name: "rag".to_string(),
-                metadata: serde_json::to_value(r).unwrap_or_default(),
-            },
-        }).collect())
-    }
-}
-```
+**说明**：Neco采用纯LLM架构，不依赖外部RAG系统。记忆检索通过两层结构（索引+内容）和关键词匹配实现。
 
 ### 2. 未来支持计划
 
@@ -3151,7 +3311,7 @@ future-apply = []
 1. **简化架构**：减少依赖和复杂度
 2. **降低成本**：不需要部署多个模型服务
 3. **统一接口**：所有功能通过LLM API调用
-4. **灵活性**：通过外部系统集成扩展能力
+4. **足够实用**：两层记忆+关键词匹配满足大部分需求
 
 **权衡**：
 - ✅ 更简单的部署和维护
@@ -3189,7 +3349,7 @@ future-apply = []
 | 进度追踪 | 全局状态，难以定位 | 树形路径，精确定位 |
 | 并行控制 | 粗粒度并行 | 细粒度并行（子树级） |
 | 异常处理 | 全局重试 | 局部重试（子树） |
-| 通信模式 | 广播为主 | 定向通信（父子/兄弟） |
+| 通信模式 | 广播/点对点 | 仅父子通信（上行汇报/下行指令） |
 
 **设计亮点**：
 
@@ -3208,10 +3368,10 @@ future-apply = []
    - `Child`: 可以创建子节点（有限制）
    - `ActOnly`: 不能创建子节点（叶子节点）
 
-4. **跨层级通信**
-   - 父子通信：任务委派和进度上报
-   - 兄弟通信：协作和资源共享
-   - 跨层级通信：根节点可达任意节点
+ 4. **严格的父子通信**
+    - 上行：子节点向父节点汇报进度、结果和错误
+    - 下行：父节点向子节点发送指令、查询状态
+    - 限制：不支持兄弟通信或跨层级通信，确保清晰的指挥链
 
 **灵感来源**：现代公司分工制度
 - CEO（根智能体）→ 部门经理（子智能体）→ 员工（孙智能体）
