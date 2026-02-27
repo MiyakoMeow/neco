@@ -56,15 +56,24 @@ ACP 遵循 JSON-RPC 2.0 规范，支持两种消息类型：
 
 ### 2.1 架构组件
 
-```
-┌─────────────┐     JSON-RPC      ┌─────────────┐
-│   Client    │ ←──────────────→  │   Agent     │
-│ (编辑器)     │   Stdio/HTTP/WS   │ (AI代理)     │
-└─────────────┘                   └─────────────┘
-      │                                  │
-      ├─ 文件系统                         ├─ LLM
-      ├─ 终端                            ├─ 工具
-      └─ 用户界面                        └─ MCP服务器
+```mermaid
+graph LR
+    subgraph Client["Client<br/>(编辑器)"]
+        C1["文件系统"]
+        C2["终端"]
+        C3["用户界面"]
+    end
+    
+    subgraph Agent["Agent<br/>(AI代理)"]
+        A1["LLM"]
+        A2["工具"]
+        A3["MCP服务器"]
+    end
+    
+    Client <--"JSON-RPC<br/>(Stdio/HTTP/WS)"--> Agent
+    
+    style Client fill:#e1f5fe
+    style Agent fill:#f3e5f5
 ```
 
 #### 客户端 (Client)
