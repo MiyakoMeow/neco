@@ -963,119 +963,527 @@ graph TB
 
 ## 多智能体协作
 
-### 1. 协作架构
+### 1. 树形架构设计
+
+#### 核心概念
+
+Neco采用**多层智能体树形结构**，每个Session形成一个动态的智能体树：
 
 ```mermaid
 graph TB
-    subgraph "主智能体（上级）"
-        M1[任务分解]
-        M2[结果汇总]
-        M3[异常纠正]
+    subgraph "Level 0: 根智能体"
+        Root[根智能体<br/>(Root Agent)<br/>直接与用户对话<br/>Session唯一]
     end
 
-    subgraph "协调总线"
-        Bus[InMemoryMessageBus]
+    subgraph "Level 1: 子智能体"
+        E1[Explore Agent<br/>(探索)]
+        C1[Code Agent<br/>(编码)]
+        D1[Doc Agent<br/>(文档)]
     end
 
-    subgraph "子智能体池"
-        S1[Explore Agent]
-        S2[Code Agent]
-        S3[Doc Agent]
-        S4[工具Agent]
+    subgraph "Level 2: 孙智能体"
+        E2[Explore-Sub1]
+        E3[Explore-Sub2]
+        C2[Code-Sub1]
     end
 
-    M1 -->|分配任务| Bus
-    Bus --> S1
-    Bus --> S2
-    Bus --> S3
+    subgraph "特殊类型"
+        A[执行智能体<br/>(Act Only)<br/>只能执行工具<br/>不能创建子节点]
+    end
 
-    S1 -->|进度报告| Bus
-    S2 -->|进度报告| Bus
-    S3 -->|进度报告| Bus
+    Root -->|任务拆分| E1
+    Root -->|并行任务| C1
+    Root -->|独立任务| D1
 
-    Bus -->|汇总| M2
+    E1 -->|子任务| E2
+    E1 -->|子任务| E3
+    C1 -->|协助| C2
 
-    M3 -->|纠正指令| Bus
-    Bus --> S4
+    Root -.->|委托执行| A
 ```
 
-### 2. 消息总线设计
-
-#### CoordinationEnvelope
+#### AgentNode结构
 
 ```rust
-/// 协调消息信封
+/// 智能体节点（树的节点）
 ///
-/// # 消息类型
-/// - DelegateTask: 委派任务
-/// - TaskResult: 任务结果
-/// - ProgressUpdate: 进度更新
-/// - ControlRequest: 控制请求（汇报、暂停等）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CoordinationEnvelope {
-    /// 消息唯一ID
-    pub id: MessageId,
+/// # 树形结构
+/// - 每个Session只有一个根智能体（Root Agent）
+/// - 根智能体直接与用户对话
+/// - 每个智能体可以有多个子节点
+/// - 形成动态的树形结构
+#[derive(Debug, Clone)]
+pub struct AgentNode {
+    /// 节点ID
+    pub id: AgentId,
 
-    /// 会话ID
-    pub conversation_id: SessionId,
+    /// 节点类型
+    pub node_type: AgentNodeType,
 
-    /// 发送者
-    pub from: AgentId,
+    /// 父节点ID（None表示根智能体）
+    pub parent_id: Option<AgentId>,
 
-    /// 接收者（None=广播）
-    pub to: Option<AgentId>,
+    /// 子节点ID列表
+    pub children: Vec<AgentId>,
 
-    /// 消息类型
-    pub payload: CoordinationPayload,
+    /// 智能体会话
+    pub session: AgentSession,
 
-    /// 时间戳
-    pub timestamp: DateTime<Utc>,
+    /// 创建时间
+    pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CoordinationPayload {
-    /// 委派任务
-    DelegateTask {
-        task_id: String,
-        description: String,
-        context: SharedContext,
-    },
+/// 智能体节点类型
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentNodeType {
+    /// 根智能体（每个Session唯一）
+    Root,
 
-    /// 任务结果
-    TaskResult {
-        task_id: String,
-        success: bool,
-        output: String,
-    },
+    /// 子智能体（可以创建下级）
+    Child,
 
-    /// 进度更新
-    ProgressUpdate {
-        task_id: String,
-        progress: f32,  // 0.0 - 1.0
-        message: String,
-    },
-
-    /// 控制请求
-    ControlRequest {
-        action: ControlAction,
-    },
+    /// 执行智能体（只能执行工具，不能创建下级）
+    ActOnly,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ControlAction {
-    /// 请求汇报
-    RequestReport,
+/// 智能体ID（Newtype）
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AgentId(String);
 
-    /// 暂停任务
-    Pause,
-
-    /// 恢复任务
-    Resume,
-
-    /// 取消任务
-    Cancel,
+impl AgentId {
+    /// 生成新的智能体ID
+    pub fn new() -> Self {
+        Self(Uuid::new_v4().to_string())
+    }
 }
 ```
+
+#### AgentTree管理器
+
+```rust
+/// 智能体树管理器
+///
+/// # 职责
+/// - 维护智能体树结构
+/// - 管理节点生命周期
+/// - 执行树遍历和查询
+pub struct AgentTree {
+    /// 所有节点（agent_id -> node）
+    nodes: Arc<RwLock<HashMap<AgentId, AgentNode>>>,
+
+    /// 根智能体ID
+    root_id: Arc<RwLock<Option<AgentId>>>,
+
+    /// 节点类型约束
+    type_constraints: HashMap<AgentNodeType, NodeTypeConstraints>,
+}
+
+/// 节点类型约束
+#[derive(Debug, Clone)]
+pub struct NodeTypeConstraints {
+    /// 是否可以创建子节点
+    pub can_create_children: bool,
+
+    /// 最大子节点数（None=无限制）
+    pub max_children: Option<usize>,
+
+    /// 允许的子节点类型
+    pub allowed_child_types: Vec<AgentNodeType>,
+}
+
+impl AgentTree {
+    /// 创建新树（初始化根智能体）
+    pub async fn new(root_session: AgentSession) -> Self {
+        let root_id = AgentId::new();
+        let root_node = AgentNode {
+            id: root_id.clone(),
+            node_type: AgentNodeType::Root,
+            parent_id: None,
+            children: Vec::new(),
+            session: root_session,
+            created_at: Utc::now(),
+        };
+
+        let mut nodes = HashMap::new();
+        nodes.insert(root_id.clone(), root_node);
+
+        Self {
+            nodes: Arc::new(RwLock::new(nodes)),
+            root_id: Arc::new(RwLock::new(Some(root_id))),
+            type_constraints: Self::default_constraints(),
+        }
+    }
+
+    /// 添加子节点
+    pub async fn add_child(
+        &self,
+        parent_id: &AgentId,
+        node_type: AgentNodeType,
+        session: AgentSession,
+    ) -> Result<AgentId, TreeError> {
+        // 1. 验证父节点存在
+        let mut nodes = self.nodes.write().await;
+        let parent = nodes.get(parent_id)
+            .ok_or_else(|| TreeError::ParentNotFound(parent_id.clone()))?;
+
+        // 2. 验证父节点类型约束
+        let parent_constraints = self.type_constraints.get(&parent.node_type)
+            .ok_or_else(|| TreeError::UnknownNodeType(parent.node_type.clone()))?;
+
+        if !parent_constraints.can_create_children {
+            return Err(TreeError::CannotCreateChildren(parent.node_type.clone()));
+        }
+
+        // 3. 验证子节点数量限制
+        if let Some(max) = parent_constraints.max_children {
+            if parent.children.len() >= max {
+                return Err(TreeError::TooManyChildren(parent.id.clone()));
+            }
+        }
+
+        // 4. 创建新节点
+        let child_id = AgentId::new();
+        let child_node = AgentNode {
+            id: child_id.clone(),
+            node_type,
+            parent_id: Some(parent_id.clone()),
+            children: Vec::new(),
+            session,
+            created_at: Utc::now(),
+        };
+
+        // 5. 更新父节点的子节点列表
+        let parent = nodes.get_mut(parent_id).unwrap();
+        parent.children.push(child_id.clone());
+
+        // 6. 插入新节点
+        nodes.insert(child_id.clone(), child_node);
+
+        Ok(child_id)
+    }
+
+    /// 获取根智能体
+    pub async fn root(&self) -> Option<AgentNode> {
+        let root_id = self.root_id.read().await;
+        let nodes = self.nodes.read().await;
+        root_id.as_ref().and_then(|id| nodes.get(id).cloned())
+    }
+
+    /// 获取节点
+    pub async fn get(&self, agent_id: &AgentId) -> Option<AgentNode> {
+        let nodes = self.nodes.read().await;
+        nodes.get(agent_id).cloned()
+    }
+
+    /// 移除节点（及其所有子节点）
+    pub async fn remove(&self, agent_id: &AgentId) -> Result<(), TreeError> {
+        // 1. 不能删除根智能体
+        let root_id = self.root_id.read().await;
+        if root_id.as_ref() == Some(agent_id) {
+            return Err(TreeError::CannotRemoveRoot);
+        }
+
+        let mut nodes = self.nodes.write().await;
+
+        // 2. 递归删除所有子节点
+        self.remove_recursive(&mut nodes, agent_id)?;
+
+        // 3. 从父节点的子列表中移除
+        if let Some(node) = nodes.get(agent_id) {
+            if let Some(parent_id) = &node.parent_id {
+                if let Some(parent) = nodes.get_mut(parent_id) {
+                    parent.children.retain(|id| id != agent_id);
+                }
+            }
+        }
+
+        // 4. 删除节点本身
+        nodes.remove(agent_id);
+
+        Ok(())
+    }
+
+    /// 递归删除子树
+    fn remove_recursive(
+        &self,
+        nodes: &mut HashMap<AgentId, AgentNode>,
+        agent_id: &AgentId,
+    ) -> Result<(), TreeError> {
+        if let Some(node) = nodes.get(agent_id) {
+            // 先删除所有子节点
+            for child_id in node.children.clone() {
+                self.remove_recursive(nodes, &child_id)?;
+            }
+            // 然后删除自己
+            nodes.remove(agent_id);
+        }
+        Ok(())
+    }
+
+    /// 广度优先遍历
+    pub async fn bfs_traverse<F>(&self, mut visitor: F)
+    where
+        F: FnMut(&AgentNode),
+    {
+        let nodes = self.nodes.read().await;
+        let mut queue = VecDeque::new();
+
+        // 从根节点开始
+        if let Some(root_id) = self.root_id.read().await.as_ref() {
+            if let Some(root) = nodes.get(root_id) {
+                queue.push_back(root.id.clone());
+            }
+        }
+
+        while let Some(agent_id) = queue.pop_front() {
+            if let Some(node) = nodes.get(&agent_id) {
+                visitor(node);
+                // 将子节点加入队列
+                for child_id in &node.children {
+                    queue.push_back(child_id.clone());
+                }
+            }
+        }
+    }
+
+    /// 获取节点路径（从根到该节点）
+    pub async fn get_path(&self, agent_id: &AgentId) -> Vec<AgentNode> {
+        let mut path = Vec::new();
+        let nodes = self.nodes.read().await;
+
+        let mut current_id = Some(agent_id.clone());
+        while let Some(id) = current_id {
+            if let Some(node) = nodes.get(&id) {
+                path.push(node.clone());
+                current_id = node.parent_id.clone();
+            } else {
+                break;
+            }
+        }
+
+        path.reverse();
+        path
+    }
+
+    /// 默认类型约束
+    fn default_constraints() -> HashMap<AgentNodeType, NodeTypeConstraints> {
+        let mut constraints = HashMap::new();
+
+        // Root: 可以创建子节点，无限制
+        constraints.insert(AgentNodeType::Root, NodeTypeConstraints {
+            can_create_children: true,
+            max_children: None,
+            allowed_child_types: vec![
+                AgentNodeType::Child,
+                AgentNodeType::ActOnly,
+            ],
+        });
+
+        // Child: 可以创建子节点，但ActOnly除外
+        constraints.insert(AgentNodeType::Child, NodeTypeConstraints {
+            can_create_children: true,
+            max_children: Some(10),  // 限制防止过度分叉
+            allowed_child_types: vec![
+                AgentNodeType::Child,
+                AgentNodeType::ActOnly,
+            ],
+        });
+
+        // ActOnly: 不能创建子节点
+        constraints.insert(AgentNodeType::ActOnly, NodeTypeConstraints {
+            can_create_children: false,
+            max_children: Some(0),
+            allowed_child_types: vec![],
+        });
+
+        constraints
+    }
+}
+```
+
+### 2. 协作架构（树形结构）
+
+```mermaid
+graph TB
+    subgraph "Level 0: 根智能体（Root Agent）"
+        Root[根智能体<br/>直接与用户对话<br/>任务分解与汇总]
+    end
+
+    subgraph "Level 1: 子智能体"
+        E1[Explore Agent<br/>探索代码库]
+        C1[Code Agent<br/>代码修改]
+        D1[Doc Agent<br/>文档生成]
+    end
+
+    subgraph "Level 2: 孙智能体"
+        E2[Explore-Sub1<br/>探索模块A]
+        E3[Explore-Sub2<br/>探索模块B]
+        C2[Code-Sub1<br/>实现功能]
+    end
+
+    subgraph "协调总线（全局）"
+        Bus[InMemoryMessageBus<br/>跨层级通信]
+    end
+
+    Root -->|任务拆分| E1
+    Root -->|并行任务| C1
+    Root -->|独立任务| D1
+
+    E1 -->|子探索| E2
+    E1 -->|子探索| E3
+    C1 -->|协助| C2
+
+    Root -.->|进度查询| Bus
+    E1 -.->|进度报告| Bus
+    C1 -.->|进度报告| Bus
+    E2 -.->|进度报告| Bus
+    E3 -.->|进度报告| Bus
+    C2 -.->|进度报告| Bus
+
+    Root -.->|纠正指令| E1
+    Root -.->|纠正指令| C1
+```
+
+### 3. 动态树形成过程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant Root as 根智能体
+    participant Tree as AgentTree
+    participant E1 as Explore Agent
+    participant E2 as Explore-Sub1
+    participant C1 as Code Agent
+
+    U->>Root: 用户请求："分析整个项目并修复bug"
+
+    Root->>Root: 分析任务
+    Root->>Root: 发现可以拆分为：
+    Root->>Root: - 探索项目结构
+    Root->>Root: - 修复代码bug
+
+    Note over Root,Tree: 步骤1: 创建Level 1节点
+    Root->>Tree: add_child(root, Explore, ...)
+    Tree-->>Root: agent_id_explore_1
+
+    Root->>Tree: add_child(root, Code, ...)
+    Tree-->>Root: agent_id_code_1
+
+    Root->>E1: 启动探索任务
+    activate E1
+
+    E1->>E1: 探索项目
+    E1->>E1: 发现项目很大，可以拆分
+
+    Note over E1,Tree: 步骤2: 创建Level 2节点
+    E1->>Tree: add_child(explore_1, Explore, ...)
+    Tree-->>E1: agent_id_explore_sub1
+
+    E1->>E2: 启动子探索
+    activate E2
+
+    Note over Root,E1: 步骤3: 树形结构形成
+    Root->>Tree: bfs_traverse()
+    Tree-->>Root: [Root, E1, C1, E2]
+
+    Note over Root,E2: 步骤4: 跨层级通信
+    Root->>Tree: get_path(explore_sub1)
+    Tree-->>Root: [Root, E1, E2]
+
+    E2->>E1: 进度报告
+    E1->>Root: 进度汇总
+    Root->>U: 整体进度
+
+    E2->>E2: 子任务完成
+    E1->>E1: 任务完成
+    Root->>C1: 开始修复bug
+```
+
+#### 树的形成规则
+
+1. **根智能体创建**：Session开始时自动创建
+2. **任务拆分**：根智能体分析任务，决定是否拆分
+3. **并行执行**：当子任务可以并行时，创建多个子节点
+4. **递归拆分**：子智能体可以继续拆分任务，形成更深的层级
+5. **动态调整**：根据实际情况添加或删除节点
+
+#### 树的约束规则
+
+```rust
+/// 树的约束规则
+impl AgentTree {
+    /// 验证树的结构完整性
+    pub async fn validate(&self) -> Result<(), TreeError> {
+        let nodes = self.nodes.read().await;
+
+        // 1. 检查是否有且仅有一个根节点
+        let root_count = nodes.values()
+            .filter(|n| n.node_type == AgentNodeType::Root)
+            .count();
+        if root_count != 1 {
+            return Err(TreeError::InvalidRootCount(root_count));
+        }
+
+        // 2. 检查所有非根节点都有父节点
+        for (id, node) in nodes.iter() {
+            if node.node_type != AgentNodeType::Root {
+                if node.parent_id.is_none() {
+                    return Err(TreeError::OrphanNode(id.clone()));
+                }
+            }
+        }
+
+        // 3. 检查父-子关系的一致性
+        for (id, node) in nodes.iter() {
+            for child_id in &node.children {
+                if let Some(child) = nodes.get(child_id) {
+                    if child.parent_id.as_ref() != Some(id) {
+                        return Err(TreeError::InconsistentParent(
+                            child_id.clone(),
+                            id.clone(),
+                            child.parent_id.clone().unwrap_or_default()
+                        ));
+                    }
+                } else {
+                    return Err(TreeError::MissingChild(child_id.clone()));
+                }
+            }
+        }
+
+        // 4. 检查节点类型约束
+        for node in nodes.values() {
+            let constraints = self.type_constraints.get(&node.node_type)
+                .ok_or_else(|| TreeError::UnknownNodeType(node.node_type.clone()))?;
+
+            if !constraints.can_create_children && !node.children.is_empty() {
+                return Err(TreeError::IllegalChildren(node.id.clone(), node.node_type.clone()));
+            }
+
+            if let Some(max) = constraints.max_children {
+                if node.children.len() > max {
+                    return Err(TreeError::TooManyChildren(node.id.clone()));
+                }
+            }
+
+            for child_id in &node.children {
+                if let Some(child) = nodes.get(child_id) {
+                    if !constraints.allowed_child_types.contains(&child.node_type) {
+                        return Err(TreeError::InvalidChildType(
+                            node.id.clone(),
+                            child.id.clone(),
+                            child.node_type.clone()
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+```
+
+### 4. 跨层级通信
 
 #### InMemoryMessageBus
 
@@ -2765,6 +3173,76 @@ future-apply = []
 | 单层（OpenClaw） | 简单 | 内存占用大 |
 | 三层（OpenViking） | 精确 | 需要额外模型 |
 | 两层（Neco） | 平衡 | 需要管理两层数据 |
+
+### 为什么选择树形智能体结构？
+
+**核心问题**：现有的多智能体协作方案（如Claude Code、OpenClaw）只提供扁平的智能体池，无法有效管理复杂的任务层级关系。
+
+**解决方案**：采用**多层智能体树形结构**，每个Session形成一个动态的智能体树。
+
+**架构优势**：
+
+| 维度 | 扁平结构（传统） | 树形结构（Neco） |
+|------|------------------|-----------------|
+| 任务分解 | 单层拆分，难以细化 | 递归拆分，无限层级 |
+| 责任划分 | 所有智能体平等 | 明确的上下级关系 |
+| 进度追踪 | 全局状态，难以定位 | 树形路径，精确定位 |
+| 并行控制 | 粗粒度并行 | 细粒度并行（子树级） |
+| 异常处理 | 全局重试 | 局部重试（子树） |
+| 通信模式 | 广播为主 | 定向通信（父子/兄弟） |
+
+**设计亮点**：
+
+1. **根智能体唯一性**
+   - 每个Session只有一个根智能体
+   - 根智能体直接与用户对话
+   - 负责全局任务规划和结果汇总
+
+2. **动态树形成**
+   - 根据任务复杂度自动扩展层级
+   - 并行任务自动创建兄弟节点
+   - 任务完成后自动回收子树
+
+3. **类型约束系统**
+   - `Root`: 可以创建子节点
+   - `Child`: 可以创建子节点（有限制）
+   - `ActOnly`: 不能创建子节点（叶子节点）
+
+4. **跨层级通信**
+   - 父子通信：任务委派和进度上报
+   - 兄弟通信：协作和资源共享
+   - 跨层级通信：根节点可达任意节点
+
+**灵感来源**：现代公司分工制度
+- CEO（根智能体）→ 部门经理（子智能体）→ 员工（孙智能体）
+- 明确的汇报线和责任边界
+- 灵活的任务分配和协调
+
+**实现示例**：
+
+```rust
+// 场景：分析大型项目并修复bug
+// 树形结构形成过程：
+
+Root (根智能体)
+├─ Explore Agent (探索项目结构)
+│  ├─ Explore-Sub1 (分析模块A)
+│  └─ Explore-Sub2 (分析模块B)
+├─ Code Agent (修复bug)
+│  └─ Code-Sub1 (实现具体修复)
+└─ Doc Agent (生成文档)
+
+// 对比扁平结构：
+// - 扁平：所有智能体在同一池中，难以追踪任务来源
+// - 树形：每个智能体有明确的父节点，便于管理和监控
+```
+
+**权衡**：
+- ✅ 更清晰的责任划分
+- ✅ 更细粒度的并行控制
+- ✅ 更精准的异常处理
+- ❌ 更复杂的实现（树管理算法）
+- ❌ 更高的通信开销（层级传递）
 
 ---
 
