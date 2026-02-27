@@ -993,7 +993,7 @@ pub struct ServerState {
 ```rust
 #[tokio::test]
 async fn test_server() {
-    let server = MyServer::new();
+    let server = MyServer;
 
     // 使用测试 transport
     let (client_transport, server_transport) = create_test_transport();

@@ -209,7 +209,6 @@ flowchart TD
 |-----|------|---------|
 | `invalid_tool_input` | 工具输入与架构不匹配 | 验证工具的 `input_schema` |
 | `tool_not_allowed` | 工具不允许请求的调用者类型 | 检查 `allowed_callers` 包含正确的上下文 |
-| `missing_beta_header` | 缺少必需的 beta header | 添加必需的 beta headers |
 
 ## 八、使用场景
 
