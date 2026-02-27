@@ -256,13 +256,15 @@ Neco 是一个**原生支持多智能体协作**的智能体应用，解决现�
 
 ### 技术栈
 
-- **语言**: Rust (Edition 2024)
+- **语言**: Rust (Edition 2024, rust-version 1.85)
 - **异步运行时**: Tokio
 - **LLM接口**: async-openai
 - **工具协议**: MCP (rmcp)
 - **技能系统**: AgentSkills兼容
 - **终端UI**: ratatui
 - **外部协议**: ACP (Agent Client Protocol)
+
+> **注意**: 建议在 Cargo.toml 中同时指定 `edition = "2024"` 和 `rust-version = "1.85"` 以确保最低版本要求。
 
 ---
 
