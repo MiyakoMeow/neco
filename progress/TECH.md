@@ -2638,7 +2638,9 @@ impl Agent for NecoAcpAgent {
 }
 ```
 
-### 3. ratatui界面设计
+### 3. ratatui界面设计(TUI模式)
+
+#### 3.1 TUI架构设计
 
 ```rust
 /// TUI界面
@@ -2649,75 +2651,633 @@ pub struct NecoTui {
     /// 终端后端
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
 
+    /// 应用状态(共享,支持异步更新)
+    app_state: Arc<RwLock<TuiAppState>>,
+
+    /// 事件通道(键盘事件)
+    tx_events: mpsc::Sender<Event>,
+
+    /// 智能体更新通道
+    rx_agent_updates: mpsc::Receiver<AgentUpdate>,
+}
+
+/// TUI应用状态
+#[derive(Debug, Clone)]
+pub struct TuiAppState {
+    /// 当前标签页
+    pub current_tab: Tab,
+
+    /// 输入模式
+    pub input_mode: InputMode,
+
+    /// 对话历史
+    pub messages: Vec<UIMessage>,
+
+    /// 用户输入缓冲区
+    pub input_buffer: String,
+
+    /// 光标位置
+    pub cursor_position: usize,
+
     /// 模型运行状态
-    model_status: ModelStatus,
+    pub model_status: ModelStatus,
+
+    /// 智能体树视图(折叠状态)
+    pub agent_tree_folding: HashMap<AgentId, bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tab {
+    Chat,      // 对话标签
+    Explorer,  // 探索标签
+    Agents,    // 智能体树标签
+    Memory,    // 记忆标签
+    Settings,  // 设置标签
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputMode {
+    Normal,    // 普通模式(浏览)
+    Editing,   // 编辑模式(输入)
 }
 
 #[derive(Debug, Clone)]
 pub enum ModelStatus {
-    Idle,
-    Thinking,
-    Streaming(String),
-    ExecutingTools(Vec<String>),
+    Idle,                          // 空闲
+    Thinking,                      // 思考中
+    Streaming(String),             // 流式输出
+    ExecutingTools(Vec<String>),   // 执行工具
+    Error(String),                 // 错误
 }
 
+/// UI消息
+#[derive(Debug, Clone)]
+pub enum UIMessage {
+    User { content: String, timestamp: DateTime<Utc> },
+    Assistant { content: String, reasoning: Option<String>, timestamp: DateTime<Utc> },
+    ToolCall { name: String, args: Value, timestamp: DateTime<Utc> },
+    ToolResult { output: String, timestamp: DateTime<Utc> },
+    System { content: String, level: LogLevel },
+}
+
+#[derive(Debug, Clone)]
+pub enum LogLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+/// 智能体更新(从后台任务推送)
+#[derive(Debug, Clone)]
+pub enum AgentUpdate {
+    /// 进度更新
+    Progress { agent_id: AgentId, progress: f32, message: String },
+    /// 状态变更
+    StatusChange { agent_id: AgentId, status: AgentStatus },
+    /// 工具调用
+    ToolCall { agent_id: AgentId, tool_name: String },
+    /// 工具完成
+    ToolComplete { agent_id: AgentId, result: String },
+    /// 新子节点创建
+    ChildCreated { parent_id: AgentId, child_id: AgentId },
+    /// 节点完成
+    Completed { agent_id: AgentId, result: String },
+}
+```
+
+#### 3.2 异步事件循环架构
+
+```mermaid
+graph TB
+    subgraph "TUI主循环"
+        A[绘制界面] --> B[等待事件]
+        B --> C{事件类型}
+        C -->|键盘| D[处理键盘输入]
+        C -->|智能体更新| E[更新状态]
+        C -->|超时| F[定时刷新]
+        D --> A
+        E --> A
+        F --> A
+    end
+    
+    subgraph "后台任务"
+        G[智能体树任务] -.->|AgentUpdate| E
+        H[LLM流式输出] -.->|Streaming| E
+        I[工具执行器] -.->|ToolResult| E
+    end
+```
+
+```rust
 impl NecoTui {
-    /// 运行TUI
+    /// 运行TUI(异步事件循环)
+    /// 
+    /// # 实现方式
+    /// - 使用 `tokio::select!` 实现多路事件源并发处理
+    /// - tick_rate 控制刷新率(~30 FPS)
+    /// - 支持键盘事件、智能体更新、定时刷新三种事件源
+    /// 
+    /// # 主要用途
+    /// - 主循环: 绘制界面 → 等待事件 → 处理事件 → 检查退出
+    /// - 异步非阻塞: 不等待LLM响应,保持界面响应性
     pub async fn run(&mut self) -> Result<(), TuiError> {
-        loop {
-            // 绘制界面
-            self.draw()?;
-
-            // 处理事件
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('c') => {
-                        // 用户输入
-                        let input = self.read_input()?;
-                        self.process_input(input).await?;
-                    }
-                    KeyCode::Esc => {
-                        // 退出
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        Ok(())
+        todo!()
     }
 
-    /// 绘制界面
-    fn draw(&mut self) -> Result<(), TuiError> {
-        self.terminal.draw(|f| {
-            // 布局
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),  // 标题
-                    Constraint::Min(0),     // 对话历史
-                    Constraint::Length(3),  // 输入框
-                ].as_ref())
-                .split(f.size());
+    /// 处理键盘事件
+    /// 
+    /// # 实现方式
+    /// - Normal模式: 浏览命令(q=退出, i=编辑, Tab=切换标签, 方向键=滚动)
+    /// - Editing模式: 文本编辑(Enter=提交, Backspace=删除, Esc=取消)
+    /// - 使用 `Arc<RwLock<TuiAppState>>` 保证并发安全
+    /// 
+    /// # 主要用途
+    /// - 用户交互入口
+    /// - 输入缓冲区管理
+    /// - 模式切换(Normal ↔ Editing)
+    async fn handle_key_event(&self, key: KeyEvent) -> Result<(), TuiError> {
+        todo!()
+    }
 
-            // 标题栏
-            let title = Paragraph::new("Neco - AI Agent")
-                .block(Block::borders(Borders::ALL).title("Neco"));
-            f.render_widget(title, chunks[0]);
+    /// 处理智能体更新
+    /// 
+    /// # 实现方式
+    /// - 从 mpsc::Receiver 接收后台任务推送的更新
+    /// - 根据更新类型更新UI状态
+    /// - 使用 tracing 记录调试信息
+    /// 
+    /// # 主要用途
+    /// - 实时显示智能体进度
+    /// - 更新工具执行状态
+    /// - 显示智能体树变化(子节点创建/完成)
+    async fn handle_agent_update(&self, update: AgentUpdate) -> Result<(), TuiError> {
+        todo!()
+    }
 
-            // 对话历史
-            let history = self.render_history();
-            f.render_widget(history, chunks[1]);
-
-            // 状态栏
-            let status = self.render_status();
-            f.render_widget(status, chunks[2]);
-        })?;
-        Ok(())
+    /// 提交消息(异步处理)
+    /// 
+    /// # 实现方式
+    /// - 添加用户消息到历史
+    /// - 更新状态为 Thinking
+    /// - 使用 tokio::spawn 在后台处理(不阻塞UI)
+    /// 
+    /// # 主要用途
+    /// - 将用户输入传递给根智能体
+    /// - 保持UI响应性(LLM处理时不冻结界面)
+    async fn submit_message(&self, input: String) -> Result<(), TuiError> {
+        todo!()
     }
 }
 ```
+
+#### 3.3 布局设计(分层结构)
+
+```rust
+/// 绘制界面
+/// 
+/// # 实现方式
+/// - 使用 `Layout` 垂直三分布局(标题/内容/状态栏)
+/// - 根据 `current_tab` 渲染不同的标签页内容
+/// - 使用 `blocking_read()` 避免在渲染时持有异步锁
+/// 
+/// # 主要用途
+/// - 渲染用户界面
+/// - 响应终端尺寸变化
+/// - 实时显示智能体状态
+fn draw(&mut self) -> Result<(), TuiError> {
+    todo!()
+}
+
+/// 渲染Agents标签页(智能体树视图)
+/// 
+/// # 实现方式
+/// - 左右分栏: 40%树形结构 + 60%详情面板
+/// - 使用 `agent_tree_folding` 控制节点展开/折叠
+/// - 根据智能体状态显示不同颜色/图标
+/// 
+/// # 主要用途
+/// - 可视化智能体树结构
+/// - 实时显示每个节点的状态和进度
+/// - 支持选择节点查看详情
+fn render_agents_tab(f: &mut Frame, area: Rect, state: &TuiAppState) {
+    todo!()
+}
+```
+
+#### 3.4 与智能体树的集成
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant T as TUI界面
+    participant R as 根智能体
+    participant C as 子智能体
+    participant B as 消息总线
+
+    U->>T: 输入消息("分析项目")
+    T->>T: 更新状态:Thinking
+    T->>R: process_message()
+    
+    R->>R: 分析任务
+    R->>R: 创建Explore Agent
+    R->>T: AgentUpdate(ChildCreated)
+    T->>T: 更新智能体树视图
+    
+    R->>C: 启动子任务
+    C->>B: 发送进度报告(50%)
+    B->>T: AgentUpdate(Progress)
+    T->>T: 更新进度条
+    
+    C->>B: 任务完成
+    B->>T: AgentUpdate(Completed)
+    T->>T: 更新状态:Idle
+    
+    T->>U: 显示最终结果
+```
+
+### 4. 智能模式(Auto Mode - 后台运行)
+
+#### 4.1 智能模式架构设计
+
+智能模式是Neco的核心创新,通过树形智能体架构实现**自主任务规划、执行和纠偏**:
+
+```mermaid
+graph TB
+    subgraph "用户交互层"
+        A[用户输入复杂任务] --> B[智能模式启动]
+    end
+    
+    subgraph "规划层"
+        B --> C[根智能体分析任务]
+        C --> D{任务可拆分?}
+        D -->|是| E[创建子智能体树]
+        D -->|否| F[直接执行]
+    end
+    
+    subgraph "执行层"
+        E --> G[并行执行子任务]
+        G --> H[子智能体1]
+        G --> I[子智能体2]
+        G --> J[子智能体3]
+    end
+    
+    subgraph "监控纠偏层"
+        K[监控器] -.->|定期查询| H
+        K -.->|定期查询| I
+        K -.->|定期查询| J
+        K --> L{检测异常?}
+        L -->|超时| M[发送取消指令]
+        L -->|偏航| N[发送纠偏指令]
+        L -->|卡住| O[发送调整参数指令]
+    end
+    
+    subgraph "结果汇总层"
+        H --> P[子节点完成]
+        I --> P
+        J --> P
+        P --> Q[根智能体汇总]
+        Q --> R[输出最终结果]
+    end
+```
+
+#### 4.2 智能模式数据结构
+
+```rust
+/// 智能模式配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutoModeConfig {
+    /// 是否启用自动规划
+    pub auto_planning: bool,
+
+    /// 是否启用主动监控
+    pub active_monitoring: bool,
+
+    /// 监控间隔(秒)
+    pub monitoring_interval_secs: u64,
+
+    /// 任务超时时间(秒)
+    pub task_timeout_secs: u64,
+
+    /// 最大重试次数
+    pub max_retries: usize,
+
+    /// 是否启用后台运行
+    pub background_execution: bool,
+}
+
+impl Default for AutoModeConfig {
+    fn default() -> Self {
+        Self {
+            auto_planning: true,
+            active_monitoring: true,
+            monitoring_interval_secs: 5,
+            task_timeout_secs: 600,  // 10分钟
+            max_retries: 3,
+            background_execution: true,
+        }
+    }
+}
+
+/// 智能模式运行器
+pub struct AutoModeRunner {
+    /// Session上下文
+    session: SessionContext,
+
+    /// 配置
+    config: AutoModeConfig,
+
+    /// 监控任务句柄
+    monitor_task: Option<JoinHandle<()>>,
+}
+
+/// 智能体任务监控器
+pub struct AgentMonitor {
+    /// 智能体树
+    agent_tree: Arc<AgentTree>,
+
+    /// 配置
+    config: AutoModeConfig,
+
+    /// 消息总线(用于发送指令)
+    message_bus: Arc<InMemoryMessageBus>,
+}
+
+/// 监控事件
+#[derive(Debug, Clone)]
+pub enum MonitorEvent {
+    /// 任务超时
+    Timeout { agent_id: AgentId, duration_secs: u64 },
+
+    /// 进度停滞(超过阈值时间无更新)
+    Stuck { agent_id: AgentId, last_progress: DateTime<Utc> },
+
+    /// 状态异常(错误率过高)
+    Abnormal { agent_id: AgentId, error_rate: f32 },
+
+    /// 任务完成
+    Completed { agent_id: AgentId },
+}
+```
+
+#### 4.3 自动任务规划流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant R as 根智能体
+    participant T as AgentTree
+    participant C1 as 子智能体1
+    participant C2 as 子智能体2
+    participant M as 监控器
+
+    U->>R: "分析整个项目并修复bug"
+
+    R->>R: 分析任务复杂度
+    R->>R: 判断: 可拆分为探索+修复
+
+    R->>T: add_child(Explore Agent)
+    T-->>R: explore_id
+
+    R->>T: add_child(Code Agent)
+    T-->>R: code_id
+
+    par 启动子任务
+        R->>C1: 启动探索
+        R->>C2: 启动修复(等待探索结果)
+    end
+
+    M->>M: 启动监控循环
+    loop 每5秒
+        M->>C1: 查询状态(Query(Status))
+        C1-->>M: 进度30%
+        M->>C2: 查询状态
+        C2-->>M: 等待中
+    end
+
+    C1->>R: 探索完成,报告问题
+    R->>C2: 开始修复
+
+    C2->>R: 修复完成
+    R->>U: 汇总结果
+```
+
+```rust
+impl AutoModeRunner {
+    /// 运行智能模式
+    /// 
+    /// # 实现方式
+    /// - 四步流程: 获取任务 → 分析规划 → 执行 → 返回结果
+    /// - 使用根智能体(Think模型)进行任务分析
+    /// - 支持同步和异步执行模式
+    /// 
+    /// # 主要用途
+    /// - 智能模式的主入口
+    /// - 协调整个自动化流程
+    pub async fn run(&mut self) -> Result<AutoModeResult, AutoModeError> {
+        todo!()
+    }
+
+    /// 分析任务并创建规划
+    /// 
+    /// # 实现方式
+    /// - 调用根智能体分析任务复杂度
+    /// - 请求LLM返回JSON格式的执行规划
+    /// - 包含: should_split标志, subtasks列表, 依赖关系
+    /// 
+    /// # 主要用途
+    /// - 判断任务是否需要拆分
+    /// - 生成子任务列表和依赖图
+    async fn analyze_and_plan(&self, task: &str)
+        -> Result<ExecutionPlan, AutoModeError>
+    {
+        todo!()
+    }
+
+    /// 执行规划
+    /// 
+    /// # 实现方式
+    /// - 如果不需要拆分: 直接执行
+    /// - 如果需要拆分:
+    ///   1. 根据规划创建子智能体树
+    ///   2. 按依赖顺序启动子任务(tokio::spawn)
+    ///   3. 启动监控器(如果启用)
+    ///   4. 等待所有任务完成
+    /// 
+    /// # 主要用途
+    /// - 管理智能体树的生命周期
+    /// - 协调子任务的并行执行
+    async fn execute_plan(&mut self, plan: ExecutionPlan)
+        -> Result<AutoModeResult, AutoModeError>
+    {
+        todo!()
+    }
+
+    /// 启动子任务
+    /// 
+    /// # 实现方式
+    /// - 查找对应子任务的AgentNode
+    /// - 使用 tokio::spawn 在后台异步执行
+    /// - 执行完成后更新节点状态(Completed/Failed)
+    /// 
+    /// # 主要用途
+    /// - 并行执行多个子任务
+    /// - 非阻塞启动,不等待结果
+    async fn start_subtask(&self, subtask: &SubTask) -> Result<(), AutoModeError> {
+        todo!()
+    }
+}
+```
+
+#### 4.4 主动监控和纠偏
+
+```rust
+impl AgentMonitor {
+    /// 启动监控循环
+    /// 
+    /// # 实现方式
+    /// - 使用 `tokio::time::interval` 定期触发检查
+    /// - 遍历所有运行中的智能体
+    /// - 对每个节点: 查询状态 → 分析异常 → 处理事件
+    /// - 所有任务完成时退出循环
+    /// 
+    /// # 主要用途
+    /// - 主动监控所有子节点状态
+    /// - 定期检查(默认每5秒)
+    pub async fn start(&self) -> Result<(), MonitorError> {
+        todo!()
+    }
+
+    /// 检查智能体状态
+    /// 
+    /// # 实现方式
+    /// - 通过 AgentTree 读取节点信息
+    /// - 构建状态报告(status, task, started_at, last_progress)
+    /// 
+    /// # 主要用途
+    /// - 获取智能体的当前状态
+    /// - 为异常检测提供数据
+    async fn check_agent_status(&self, agent_id: &AgentId)
+        -> Result<AgentStatusReport, MonitorError>
+    {
+        todo!()
+    }
+
+    /// 分析状态,检测异常
+    /// 
+    /// # 实现方式
+    /// - 三种异常检测:
+    ///   1. **超时**: elapsed > task_timeout_secs
+    ///   2. **停滞**: last_progress超过3倍监控间隔
+    ///   3. **异常**: 错误率 > 50%
+    /// - 返回对应的 MonitorEvent
+    /// 
+    /// # 主要用途
+    /// - 自动检测任务执行中的问题
+    /// - 提前发现卡住/超时/频繁错误
+    async fn analyze_status(&self, agent_id: &AgentId, status: &AgentStatusReport)
+        -> Option<MonitorEvent>
+    {
+        todo!()
+    }
+
+    /// 处理监控事件(主动纠偏)
+    /// 
+    /// # 实现方式
+    /// - **超时**: 发送Cancel指令 → 通知根智能体失败
+    /// - **停滞**: 发送Pause指令 → 父智能体诊断
+    /// - **异常**: 发送UpdateParameters指令(增加重试/超时倍数)
+    /// - **完成**: 记录日志
+    /// 
+    /// # 主要用途
+    /// - 自动纠偏,无需用户干预
+    /// - 通过父子通信发送指令
+    async fn handle_monitoring_event(&self, event: MonitorEvent)
+        -> Result<(), MonitorError>
+    {
+        todo!()
+    }
+
+    /// 发送指令给智能体
+    /// 
+    /// # 实现方式
+    /// - 构建 CoordinationEnvelope
+    /// - 通过 InMemoryMessageBus 发送
+    /// - 支持下行指令(Command/Query)
+    /// 
+    /// # 主要用途
+    /// - 监控器向智能体发送指令
+    /// - 实现纠偏操作
+    async fn send_command_to_agent(&self, agent_id: &AgentId, message: CoordinationMessage)
+        -> Result<(), MonitorError>
+    {
+        todo!()
+    }
+}
+```
+
+#### 4.5 智能模式数据流
+
+```mermaid
+stateDiagram-v2
+    [*] --> TaskAnalysis: 用户输入任务
+
+    TaskAnalysis --> DirectExecution: 单一任务
+    TaskAnalysis --> TreeCreation: 复杂任务
+
+    TreeCreation --> ParallelExecution: 创建智能体树
+
+    state ParallelExecution {
+        [*] --> SubtaskRunning
+        SubtaskRunning --> Monitoring: 启动监控器
+
+        state Monitoring {
+            [*] --> CheckStatus
+            CheckStatus --> Normal: 无异常
+            CheckStatus --> Timeout: 超时
+            CheckStatus --> Stuck: 停滞
+            CheckStatus --> Abnormal: 错误率高
+
+            Normal --> [*]
+            Timeout --> SendCancel
+            Stuck --> SendPause
+            Abnormal --> AdjustParams
+
+            SendCancel --> [*]
+            SendPause --> [*]
+            AdjustParams --> [*]
+        }
+
+        Monitoring --> SubtaskRunning: 继续
+        SubtaskRunning --> [*]: 任务完成
+    }
+
+    ParallelExecution --> ResultAggregation: 所有子任务完成
+
+    ResultAggregation --> FinalOutput: 汇总结果
+    FinalOutput --> [*]
+```
+
+#### 4.6 使用场景对比
+
+| 特性 | 直接执行模式 | REPL模式 | TUI模式 | 智能模式 |
+|------|-------------|----------|---------|----------|
+| **交互方式** | 单次命令 | 循环交互 | 图形界面 | 后台自主 |
+| **适用场景** | 快速查询 | 调试对话 | 可视化监控 | 复杂任务 |
+| **智能体树** | 无/简单 | 按需创建 | 实时展示 | 自动创建+管理 |
+| **进度反馈** | 无 | 实时输出 | 可视化 | 主动监控 |
+| **纠偏能力** | 无 | 手动 | 手动干预 | 自动纠偏 |
+| **并发执行** | 否 | 否 | 可视化 | 自动并行 |
+| **用户干预** | 无 | 实时 | 按键/鼠标 | 异步通知 |
+
+**智能模式优势总结**:
+
+1. **自主规划**: 根智能体自动分析任务复杂度,决定是否拆分
+2. **动态树构建**: 根据任务需求动态创建多层智能体树
+3. **并行执行**: 无依赖的子任务自动并行,提升效率
+4. **主动监控**: 监控器定期查询所有子节点状态
+5. **自动纠偏**: 检测到超时/停滞/异常时自动发送指令
+6. **细粒度控制**: 支持暂停/恢复/取消/参数调整
+7. **责任清晰**: 树形结构明确每个节点的责任范围
+8. **精确定位**: 通过agent_id精确定位问题节点
 
 ---
 
