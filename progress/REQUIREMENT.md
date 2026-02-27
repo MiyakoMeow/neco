@@ -156,6 +156,13 @@ env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 - OpenClaw扩展支持
 - 外部上下文管理系统支持
 
+## 要求
+
+- 只使用大语言模型。暂不添加对Embeddings、Rerank、Apply等额外模型的支持。
+
 ## 参考
 
 - [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
+- OpenAI API调用使用`async-openai`这个crate。
+- MCP部分使用`rmcp`。
+- Skills部分参考：https://agentskills.io/
