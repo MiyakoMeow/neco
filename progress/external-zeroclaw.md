@@ -2,7 +2,8 @@
 
 **探索日期**: 2026-02-27
 **项目地址**: https://github.com/zeroclaw-labs/zeroclaw
-**版本**: v0.1.7
+**版本**: v0.1.7 (2026-02-24)
+**GitHub Stars**: 20.3k+ | Forks: 2.5k+ | Contributors: 129+
 **探索目标**: 全面分析ZeroClaw的架构、设计模式和实现方式
 
 ---
@@ -17,8 +18,8 @@
 6. [MCP和Skills支持](#6-mcp和skills支持)
 7. [代码结构分析](#7-代码结构分析)
 8. [设计模式](#8-设计模式)
-9. [关键代码示例](#9-关键代码示例)
-10. [优缺点分析](#10-优缺点分析)
+9. [优缺点分析](#9-优缺点分析)
+10. [总结](#10-总结)
 
 ---
 
@@ -63,33 +64,50 @@ clap_complete = "4.5"  # Shell自动补全
 tokio = "1.42"         # 最小化feature集以减小二进制大小
 
 # HTTP客户端
-reqwest = "0.12"       # 仅启用必要的feature
+reqwest = "0.12"       # 仅启用必要的feature，rustls TLS
 
 # 序列化
 serde = "1.0"
 serde_json = "1.0"
+toml = "0.8"           # 配置文件解析
 
 # 内存/持久化
-rusqlite = "0.37"      # SQLite内存后端
+rusqlite = "0.37"      # SQLite内存后端（FTS5 + BLOB向量）
 postgres = "0.19"      # PostgreSQL内存后端（可选）
 
 # WebSocket客户端
 tokio-tungstenite = "0.28"
 
 # HTTP服务器
-axum = "0.8"
+axum = "0.8"           # Webhook服务器
+tower = "0.5"          # 中间件
+tower-http = "0.6"     # HTTP中间件（CORS, trace等）
 
 # 错误处理
-anyhow = "1.0"
-thiserror = "2.0"
+anyhow = "1.0"         # 应用层错误
+thiserror = "2.0"      # 库错误定义
 
 # 安全性
-chacha20poly1305 = "0.10"  # 认证加密
+chacha20poly1305 = "0.10"  # 认证加密（API密钥）
 rand = "0.10"               # CSPRNG
+zeroize = "1.8"             # 安全内存清零
 
 # Observability
 prometheus = "0.14"
 opentelemetry = "0.31"      # 可选
+tracing = "0.1"             # 结构化日志
+tracing-subscriber = "0.3"
+
+# WASM插件（可选，默认启用）
+wasmi = "0.39"         # WASM运行时
+wasm-tools = "1.217"   # WASM工具链
+
+# 浏览器自动化（可选）
+headless-chrome = "1.0"    # Rust-native backend
+thirtyfour = "0.33"        # WebDriver支持
+
+# WhatsApp（可选，需要feature flag）
+whatsapp = "0.1"            # WhatsApp Web模式支持
 ```
 
 ---
@@ -100,24 +118,26 @@ opentelemetry = "0.31"      # 可选
 
 | 功能类别 | 支持情况 | 备注 |
 |----------|----------|------|
-| **AI Providers** | 22+ | OpenRouter, Anthropic, OpenAI, Ollama, Groq, Mistral, xAI, DeepSeek, Together AI, Fireworks, Perplexity, Cohere, Cloudflare AI, Bedrock, Venice, llama.cpp, vLLM, Osaurus, custom endpoints |
-| **Channels** | 14+ | Telegram, Discord, Slack, iMessage, Matrix, Signal, WhatsApp, Webhook, Email, IRC, Lark, DingTalk, QQ, Nostr, Mattermost |
+| **AI Providers** | 25+ | OpenRouter, Anthropic, OpenAI, Ollama, Groq, Mistral, xAI, DeepSeek, Together AI, Fireworks, Perplexity, Cohere, Cloudflare AI, Bedrock, Venice, llama.cpp, vLLM, Osaurus, GLM-5, custom endpoints |
+| **Channels** | 16+ | Telegram, Discord, Slack, iMessage, Matrix, Signal, WhatsApp (Web + Cloud API), Webhook, Email, IRC, Lark, DingTalk, QQ, Nostr, Mattermost |
 | **Memory Backends** | 5 | SQLite, PostgreSQL, Lucid, Markdown, None |
-| **Tools** | 20+ | shell, file, memory, git, cron, schedule, browser, http_request, screenshot, pushover, WASM skills, Composio (1000+ OAuth apps) |
+| **Tools** | 25+ | shell, file, memory, git, cron, schedule, browser, http_request, screenshot, pushover, WASM skills (opt-in), Composio (1000+ OAuth apps), hardware tools, delegate |
 | **Tunnels** | 4 | Cloudflare, Tailscale, ngrok, Custom |
-| **Runtimes** | 2 | Native, Docker (WASM计划中) |
+| **Runtimes** | 2 | Native, Docker (WASM/edge计划中) |
 | **Languages** | 7 | English, 简体中文, 日本語, Русский, Français, Tiếng Việt, Ελληνικά |
 
 ### 2.2 独特特性
 
-1. **Provider Trait系统**: 22+ AI提供商统一接口，支持热切换
-2. **Channel Trait系统**: 14+消息通道统一抽象
+1. **Provider Trait系统**: 25+ AI提供商统一接口，支持热切换
+2. **Channel Trait系统**: 16+消息通道统一抽象
 3. **Memory Search Engine**: 全栈自研（向量DB + 关键词搜索 + 混合合并），零外部依赖
 4. **Security-by-Default**: Gateway配对、沙箱、白名单、工作区作用域、加密密钥
 5. **Identity-Agnostic**: 支持OpenClaw markdown和AIEOS v1.1 JSON格式
-6. **WASM Skills**: 可选的WASM插件运行时，支持WASI stdio协议
-7. **Composio集成**: 1000+ OAuth应用集成
-8. **Python Companion**: `zeroclaw-tools`包提供LangGraph工具调用包装
+6. **WASM Skills**: 可选的WASM插件运行时，支持WASI stdio协议，从ZeroMarket和ClawhHub安装
+7. **Research Phase**: 在生成响应前主动使用工具收集信息，减少幻觉
+8. **Composio集成**: 1000+ OAuth应用集成
+9. **Python Companion**: `zeroclaw-tools`包提供LangGraph工具调用包装
+10. **订阅认证**: 支持OpenAI Codex和Claude Code OAuth订阅原生认证
 
 ### 2.3 安全特性
 
@@ -137,241 +157,267 @@ opentelemetry = "0.31"      # 可选
 
 ## 3. 架构设计
 
-### 3.1 整体架构图
+### 3.1 整体架构
 
-```mermaid
-flowchart TB
-    subgraph "Chat Apps Layer"
-        TG[Telegram]
-        DC[Discord]
-        SL[Slack]
-        IM[iMessage]
-        MX[Matrix]
-        WH[Webhook]
-        CLI[CLI]
-    end
+ZeroClaw采用**Trait驱动的可插拔系统**，所有子系统（Provider、Channel、Memory、Tool、Runtime、Tunnel等）都基于Trait抽象，支持零代码更改的热切换。
 
-    subgraph "Security Layer"
-        GP[Gateway Pairing<br/>6-digit OTP + bearer]
-        AG[Auth Gate<br/>Allowlists + webhook_secret]
-        RL[Rate Limiter<br/>Sliding window]
-        FS[Filesystem Sandbox<br/>Path jail + traversal block]
-        ES[Encrypted Secrets<br/>XOR + key file]
-    end
-
-    subgraph "Tunnel Layer"
-        CF[Cloudflare]
-        TS[Tailscale]
-        NG[ngrok]
-        CT[Custom]
-    end
-
-    subgraph "AI Providers Layer"
-        OR[OpenRouter]
-        AC[Anthropic]
-        OI[OpenAI]
-        OL[Ollama]
-        GR[Groq]
-        MI[Mistral]
-        XA[xAI/Grok]
-        DS[DeepSeek]
-        CU[Custom:URL]
-    end
-
-    subgraph "Agent Loop"
-        MSG[Message In]
-        MR[Memory Recall<br/>ctx]
-        LLM[LLM AI]
-        TL[Tools exec]
-        MS[Memory Save<br/>store]
-        RSP[Response Out]
-        CP[Composio<br/>1000+ OAuth]
-    end
-
-    subgraph "Memory Search Engine"
-        VDB[Vector DB<br/>SQLite BLOB + cosine]
-        KW[Keyword<br/>FTS5 + BM25]
-        HM[Hybrid Merge<br/>Weighted fusion]
-        EB[Embeddings<br/>OpenAI/custom/noop]
-        CK[Chunking<br/>Markdown-aware]
-        EC[Caching<br/>LRU eviction]
-    end
-
-    subgraph "Sandbox"
-        CA[Command allowlist]
-        PJ[Path jail]
-        BD[Browser domain allowlist]
-        AL[Autonomy Levels<br/>ReadOnly/Supervised/Full]
-    end
-
-    subgraph "Heartbeat & Cron"
-        HB[HEARTBEAT.md<br/>Periodic tasks]
-        CR[Scheduled actions]
-        SK[Skills Loader<br/>TOML manifests]
-        IG[70+ Integrations]
-        OB[Observability<br/>noop/log/multi]
-    end
-
-    subgraph "Setup Wizard"
-        W1[1. Workspace]
-        W2[2. AI Provider]
-        W3[3. Channels]
-        W4[4. Tunnel]
-        W5[5. Tool Mode]
-        W6[6. Personalize]
-        W7[7. Scaffold]
-    end
-
-    TG --> AG
-    DC --> AG
-    SL --> AG
-    IM --> AG
-    MX --> AG
-    WH --> AG
-    CLI --> AG
-
-    AG --> GP
-    GP --> RL
-    RL --> FS
-    FS --> ES
-
-    OR --> LLM
-    AC --> LLM
-    OI --> LLM
-    OL --> LLM
-    GR --> LLM
-    MI --> LLM
-    XA --> LLM
-    DS --> LLM
-    CU --> LLM
-
-    ES --> MSG
-    MSG --> MR
-    MR --> LLM
-    LLM --> TL
-    TL --> MS
-    MS --> RSP
-
-    MR --> VDB
-    VDB --> HM
-    KW --> HM
-    HM --> EB
-    EB --> EC
-    EC --> CK
-
-    TL --> CA
-    CA --> PJ
-    PJ --> BD
-    BD --> AL
-
-    W1 --> W2
-    W2 --> W3
-    W3 --> W4
-    W4 --> W5
-    W5 --> W6
-    W6 --> W7
-
-    HB --> IG
-    CR --> SK
-    SK --> OB
-
-    ES <--> CF
-    ES <--> TS
-    ES <--> NG
-    ES <--> CT
-```
+核心层次：
+1. **Security Layer**: Gateway配对、认证网关、速率限制、文件系统沙箱、加密密钥
+2. **Agent Loop**: 消息输入 → 内存召回 → LLM调用 → 工具执行 → 内存存储 → 响应输出
+3. **Memory Search Engine**: 向量DB + 关键词搜索 + 混合合并
+4. **Provider Layer**: 25+ AI提供商统一接口
+5. **Channel Layer**: 16+消息通道统一抽象
+6. **Tool Layer**: 25+工具执行能力
+7. **Runtime Layer**: Native和Docker运行时适配器
+8. **Tunnel Layer**: Cloudflare、Tailscale、ngrok等隧道支持
 
 ### 3.2 Trait系统架构
 
-ZeroClaw的架构核心是**Trait驱动的可插拔系统**：
+#### Provider Trait
 
-```mermaid
-classDiagram
-    class Provider {
-        <<trait>>
-        +capabilities() ProviderCapabilities
-        +convert_tools(tools) ToolsPayload
-        +chat_with_system(system, message, model, temp) String
-        +chat_with_history(messages, model, temp) String
-        +chat(request, model, temp) ChatResponse
-        +supports_streaming() bool
-        +stream_chat_with_system(...) Stream
-    }
+```rust
+pub trait Provider: Send + Sync {
+    /// 返回Provider能力
+    fn capabilities(&self) -> ProviderCapabilities;
 
-    class Channel {
-        <<trait>>
-        +name() str
-        +send(message, recipient) Result
-        +listen(tx) Result
-        +health_check() bool
-    }
+    /// 转换工具为Provider格式
+    fn convert_tools(&self, tools: &[Tool]) -> Result<Value>;
 
-    class Memory {
-        <<trait>>
-        +name() str
-        +store(key, content, category, session) Result
-        +recall(query, limit, session) Vec~MemoryEntry~
-        +get(key) Option~MemoryEntry~
-        +list(category, session) Vec~MemoryEntry~
-        +forget(key) bool
-        +count() usize
-        +health_check() bool
-    }
+    /// 带系统提示的对话
+    async fn chat_with_system(
+        &self,
+        system_prompt: Option<&str>,
+        message: &str,
+        model: &str,
+        temperature: f64,
+    ) -> Result<String>;
 
-    class Tool {
-        <<trait>>
-        +name() str
-        +description() str
-        +parameters_schema() Value
-        +execute(args) ToolResult
-    }
+    /// 带历史消息的对话
+    async fn chat_with_history(
+        &self,
+        messages: &[ChatMessage],
+        model: &str,
+        temperature: f64,
+    ) -> Result<String>;
 
-    class Observer {
-        <<trait>>
-        +record_event(event)
-        +record_metric(metric)
-        +name() str
-    }
+    /// 带工具的对话
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[Value],
+        model: &str,
+        temperature: f64,
+    ) -> Result<ChatResponse>;
 
-    class RuntimeAdapter {
-        <<trait>>
-        +name() str
-        +execute(command, args) Result
-        +health_check() bool
-    }
+    /// 是否支持流式输出
+    fn supports_streaming(&self) -> bool;
 
-    class Tunnel {
-        <<trait>>
-        +name() str
-        +start() Result
-        +stop() Result
-        +status() Status
-    }
+    /// 流式对话
+    async fn stream_chat_with_system(
+        &self,
+        system_prompt: Option<&str>,
+        message: &str,
+        model: &str,
+        temperature: f64,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>>;
+}
+```
 
-    class SecurityPolicy {
-        <<trait>>
-        +check_path_access(path) Result
-        +check_command_allowed(cmd) Result
-        +check_domain_allowed(domain) Result
-    }
+#### Channel Trait
 
-    Provider <|-- OpenAIProvider
-    Provider <|-- AnthropicProvider
-    Provider <|-- OllamaProvider
-    Provider <|-- CustomProvider
+```rust
+#[async_trait]
+pub trait Channel: Send + Sync {
+    /// 通道名称
+    fn name(&self) -> &str;
 
-    Channel <|-- TelegramChannel
-    Channel <|-- DiscordChannel
-    Channel <|-- SlackChannel
+    /// 发送消息
+    async fn send(&self, message: &str, recipient: &str) -> Result<()>;
 
-    Memory <|-- SqliteMemory
-    Memory <|-- PostgresMemory
-    Memory <|-- LucidMemory
-    Memory <|-- MarkdownMemory
+    /// 监听消息
+    async fn listen(&self, tx: mpsc::Sender<ChannelMessage>) -> Result<()>;
 
-    Tool <|-- ShellTool
-    Tool <|-- FileTool
-    Tool <|-- MemoryTool
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+```
+
+#### Memory Trait
+
+```rust
+#[async_trait]
+pub trait Memory: Send + Sync {
+    /// 内存后端名称
+    fn name(&self) -> &str;
+
+    /// 存储记忆
+    async fn store(
+        &self,
+        key: &str,
+        content: &str,
+        category: MemoryCategory,
+        session_id: Option<&str>,
+    ) -> Result<()>;
+
+    /// 召回记忆
+    async fn recall(
+        &self,
+        query: &str,
+        limit: usize,
+        session_id: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>>;
+
+    /// 获取单个记忆
+    async fn get(&self, key: &str) -> Result<Option<MemoryEntry>>;
+
+    /// 列出记忆
+    async fn list(
+        &self,
+        category: Option<MemoryCategory>,
+        session_id: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>>;
+
+    /// 删除记忆
+    async fn forget(&self, key: &str) -> Result<bool>;
+
+    /// 记忆总数
+    async fn count(&self) -> Result<usize>;
+
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+```
+
+#### Tool Trait
+
+```rust
+#[async_trait]
+pub trait Tool: Send + Sync {
+    /// 工具名称
+    fn name(&self) -> &str;
+
+    /// 工具描述
+    fn description(&self) -> &str;
+
+    /// 参数JSON Schema
+    fn parameters_schema(&self) -> Value;
+
+    /// 执行工具
+    async fn execute(&self, args: Value) -> Result<ToolResult>;
+}
+```
+
+#### Observer Trait
+
+```rust
+pub trait Observer: Send + Sync {
+    /// 记录事件
+    fn record_event(&self, event: &ObserverEvent);
+
+    /// 记录指标
+    fn record_metric(&self, metric: &ObserverMetric);
+
+    /// 观察者名称
+    fn name(&self) -> &str;
+}
+```
+
+#### RuntimeAdapter Trait
+
+```rust
+#[async_trait]
+pub trait RuntimeAdapter: Send + Sync {
+    /// 运行时名称
+    fn name(&self) -> &str;
+
+    /// 执行命令
+    async fn execute(
+        &self,
+        command: &str,
+        args: &[String],
+        env: HashMap<String, String>,
+    ) -> Result<RuntimeOutput>;
+
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+```
+
+#### Tunnel Trait
+
+```rust
+#[async_trait]
+pub trait Tunnel: Send + Sync {
+    /// 隧道名称
+    fn name(&self) -> &str;
+
+    /// 启动隧道
+    async fn start(&mut self) -> Result<()>;
+
+    /// 停止隧道
+    async fn stop(&mut self) -> Result<()>;
+
+    /// 获取状态
+    fn status(&self) -> TunnelStatus;
+}
+```
+
+#### EmbeddingProvider Trait
+
+```rust
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    /// 嵌入提供商名称
+    fn name(&self) -> &str;
+
+    /// 生成文本嵌入向量
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
+
+    /// 批量嵌入（带大小限制）
+    async fn embed_batch(&self, texts: &[String], batch_size: usize) -> Result<Vec<Vec<f32>>>;
+
+    /// 获取向量维度
+    fn dimension(&self) -> usize;
+
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+```
+
+#### SecurityPolicy Trait
+
+```rust
+pub trait SecurityPolicy: Send + Sync {
+    /// 检查命令是否允许执行
+    fn check_command(&self, command: &str) -> Result<bool>;
+
+    /// 检查路径是否在允许范围内
+    fn check_path(&self, path: &str) -> Result<bool>;
+
+    /// 检查文件操作是否允许
+    fn check_file_operation(&self, operation: FileOperation, path: &str) -> Result<bool>;
+
+    /// 策略名称
+    fn name(&self) -> &str;
+
+    /// 策略级别
+    fn level(&self) -> AutonomyLevel;
+}
+
+/// 文件操作类型
+pub enum FileOperation {
+    Read,
+    Write,
+    Delete,
+    Execute,
+}
+
+/// 自主级别
+pub enum AutonomyLevel {
+    ReadOnly,      // 只读模式
+    Supervised,    // 监督模式（默认）
+    Full,          // 完全自主
+}
 ```
 
 ### 3.3 代码结构
@@ -392,14 +438,14 @@ src/
 │   ├── openai.rs
 │   ├── anthropic.rs
 │   ├── ollama.rs
-│   └── ...            # 22+ providers
+│   └── ...            # 25+ providers
 │
 ├── channels/           # 消息通道实现
 │   ├── traits.rs      # Channel trait定义
 │   ├── telegram.rs
 │   ├── discord.rs
 │   ├── slack.rs
-│   └── ...            # 14+ channels
+│   └── ...            # 16+ channels
 │
 ├── memory/             # 内存系统
 │   ├── traits.rs      # Memory trait定义
@@ -414,7 +460,7 @@ src/
 │   ├── file.rs        # 文件操作
 │   ├── memory.rs      # 内存操作
 │   ├── git.rs         # Git集成
-│   └── ...            # 20+ tools
+│   └── ...            # 25+ tools
 │
 ├── security/           # 安全策略
 │   ├── sandbox.rs     # 沙箱实现
@@ -459,6 +505,15 @@ src/
 ├── config/             # 配置管理
 │   └── schema.rs      # TOML配置结构
 │
+├── auth/               # 订阅认证
+│   └── mod.rs         # OAuth认证管理
+│
+├── browser/            # 浏览器工具
+│   └── mod.rs         # 多backend支持
+│
+├── hardware/           # 硬件外设
+│   └── mod.rs         # USB/外设支持
+│
 ├── identity.rs         # 身份系统（OpenClaw/AIEOS）
 ├── main.rs             # CLI入口
 └── lib.rs              # 库入口
@@ -472,101 +527,42 @@ src/
 
 ZeroClaw采用**单一Agent循环 + 编排器模式**，而非多智能体独立运行：
 
-```rust
-// Agent主循环 (src/agent/loop_.rs)
-pub async fn run(
-    config: Config,
-    user_message: Option<String>,
-    session_id: Option<String>,
-    attachments: Vec<Attachment>,
-    temperature: f64,
-    tools: Vec<String>,
-    stream: bool,
-) -> anyhow::Result<String> {
-    // 1. 消息预处理
-    // 2. 内存召回
-    // 3. LLM调用（带工具）
-    // 4. 工具执行循环
-    // 5. 内存存储
-    // 6. 响应生成
-}
-```
+- **单一Agent循环**: 一个主循环处理所有消息
+- **编排器模式**: Dispatcher负责消息分类、Provider选择、工具集选择
+- **研究阶段**: 在生成响应前主动使用工具收集信息
+- **工具循环**: 持续调用工具直到任务完成
 
 ### 4.2 消息流程
 
-```mermaid
-sequenceDiagram
-    participant C as Channel
-    participant S as Security
-    participant A as Agent
-    participant M as Memory
-    participant P as Provider
-    participant T as Tools
-
-    C->>S: 接收消息
-    S->>S: 白名单检查<br/>速率限制
-    S->>A: 转发消息
-
-    A->>M: 召回上下文
-    M-->>A: 相关记忆
-
-    A->>P: 构建请求<br/>(系统提示 + 历史 + 工具)
-    P-->>A: LLM响应<br/>(可能包含工具调用)
-
-    loop 工具执行循环
-        A->>T: 执行工具
-        T-->>A: 工具结果
-        A->>P: 发送工具结果
-        P-->>A: 下一步响应
-    end
-
-    A->>M: 存储交互
-    A->>C: 发送响应
+```
+Channel → Security (白名单检查/速率限制) → Agent
+    ↓
+Memory Recall (召回相关记忆)
+    ↓
+LLM Call (系统提示 + 历史 + 工具)
+    ↓
+Tool Execution Loop (执行工具调用)
+    ↓
+Memory Save (存储交互)
+    ↓
+Response Out (发送响应)
 ```
 
 ### 4.3 研究阶段（Research Phase）
 
 ZeroClaw引入了**研究阶段**概念，在生成响应前主动使用工具收集信息：
 
-```rust
-// src/agent/research.rs
-pub async fn run_research_phase(
-    message: &str,
-    config: &Config,
-    tools: &[ToolSpec],
-) -> anyhow::Result<Vec<ToolExecutionResult>> {
-    // 分析用户查询，确定需要哪些工具
-    // 并行执行工具调用
-    // 收集结果用于上下文增强
-}
-```
+- 分析用户查询，确定需要哪些工具
+- 并行执行工具调用
+- 收集结果用于上下文增强
 
 ### 4.4 编排器模式
 
-```rust
-// src/agent/dispatcher.rs
-pub struct Dispatcher {
-    config: Config,
-    providers: HashMap<String, Box<dyn Provider>>,
-    tools: HashMap<String, Box<dyn Tool>>,
-}
-
-impl Dispatcher {
-    pub async fn route_message(&self, message: Message) -> Response {
-        // 1. 消息分类
-        let category = self.classifier.classify(&message);
-
-        // 2. 选择provider
-        let provider = self.select_provider(&category);
-
-        // 3. 选择工具集
-        let tools = self.select_tools(&category);
-
-        // 4. 执行Agent循环
-        self.run_agent_loop(provider, tools, message).await
-    }
-}
-```
+Dispatcher负责：
+- 消息分类（确定消息类型）
+- Provider选择（根据消息类型选择合适的AI提供商）
+- 工具集选择（根据消息类型选择合适的工具）
+- Agent循环执行
 
 ### 4.5 与传统多智能体对比
 
@@ -590,54 +586,26 @@ ZeroClaw中的Session是**可选的**，主要用于：
 - 对话上下文关联
 - 多租户隔离
 
-```rust
-// src/memory/traits.rs
-pub struct MemoryEntry {
-    pub id: String,
-    pub key: String,
-    pub content: String,
-    pub category: MemoryCategory,
-    pub timestamp: String,
-    pub session_id: Option<String>,  // 可选的session关联
-    pub score: Option<f64>,
-}
-```
-
 ### 5.2 Session生命周期
 
-```mermaid
-stateDiagram-v2
-    [*] --> None: 初始状态
-    None --> Active: 首次交互<br/>生成session_id
-    Active --> Active: 持续交互
-    Active --> Inactive: 超时<br/>（未实现）
-    Active --> Closed: 显式关闭<br/>（未实现）
-    Inactive --> Active: 新交互
-    Closed --> [*]
+```
+None (初始状态)
+  ↓ 首次交互
+Active (生成session_id)
+  ↓ 持续交互
+Active → Inactive (超时，未实现)
+  ↓ 新交互
+Active
+  ↓ 显式关闭（未实现）
+Closed
 ```
 
 ### 5.3 Session在代码中的使用
 
-```rust
-// Agent运行时可以指定session_id
-pub async fn run(
-    config: Config,
-    user_message: Option<String>,
-    session_id: Option<String>,  // 可选
-    attachments: Vec<Attachment>,
-    temperature: f64,
-    tools: Vec<String>,
-    stream: bool,
-) -> anyhow::Result<String>
-
-// 内存召回时可以按session过滤
-async fn recall(
-    &self,
-    query: &str,
-    limit: usize,
-    session_id: Option<&str>,  // 可选过滤
-) -> anyhow::Result<Vec<MemoryEntry>>
-```
+- Agent运行时可以指定`session_id`（可选参数）
+- 内存召回时可以按session过滤
+- Session是**横向切分**（按时间/租户）
+- Category是**纵向切分**（按类型）
 
 ### 5.4 Session vs 内存分类
 
@@ -649,8 +617,6 @@ pub enum MemoryCategory {
     Custom(String), // 用户自定义
 }
 ```
-
-Session是**横向切分**（按时间/租户），Category是**纵向切分**（按类型）。
 
 ---
 
@@ -670,7 +636,7 @@ Session是**横向切分**（按时间/租户），Category是**纵向切分**�
 
 ZeroClaw有自己独特的**Skills系统**：
 
-#### 6.2.1 Skill定义
+#### Skill定义
 
 Skill是一个**TOML manifest + SKILL.md指令**的包：
 
@@ -708,70 +674,26 @@ Use when navigating Rust code, finding definitions, or locating references.
 ...
 ```
 
-#### 6.2.2 Skill加载器
+#### Skill加载器
 
-```rust
-// src/skills/forge.rs
-pub struct SkillForge {
-    skills: HashMap<String, Skill>,
-}
+- `load_from_url()`: 从URL加载skill
+- `load_from_file()`: 从本地文件加载skill
+- `find_skill()`: 根据trigger找到匹配的skill
 
-impl SkillForge {
-    pub async fn load_from_url(&mut self, url: &str) -> Result<()> {
-        // 从URL加载skill
-    }
-
-    pub async fn load_from_file(&mut self, path: &Path) -> Result<()> {
-        // 从本地文件加载skill
-    }
-
-    pub fn find_skill(&self, trigger: &str) -> Option<&Skill> {
-        // 根据trigger找到匹配的skill
-    }
-}
-```
-
-#### 6.2.3 WASM Skills
+#### WASM Skills
 
 ZeroClaw支持**WASM插件**：
-
-```toml
-[features]
-default = ["wasm-tools"]
-wasm-tools = ["dep:wasmtime", "dep:wasmtime-wasi"]
-```
-
-```rust
-// src/plugins/wasmi.rs
-pub struct WasmPlugin {
-    module: wasmi::Module,
-    store: wasmi::Store<WasiState>,
-}
-
-impl Tool for WasmPlugin {
-    fn execute(&self, args: Value) -> Result<ToolResult> {
-        // 使用WASI stdio协议执行WASM
-        // 从stdin读取JSON，向stdout写入JSON
-    }
-}
-```
+- 使用WASM runtime (wasmi)
+- 支持WASI stdio协议
+- 从stdin读取JSON，向stdout写入JSON
+- 支持从ZeroMarket和ClawhHub安装
 
 ### 6.3 Composio集成
 
 ZeroClaw集成了**Composio**（1000+ OAuth应用）：
-
-```toml
-[composio]
-enabled = false        # opt-in
-# api_key = "cmp_..."  # 加密存储
-entity_id = "default"
-```
-
-```rust
-// 执行时使用Composio工具
-// 如果execute要求connected_account_id
-// 运行 composio action='list_accounts' 来获取账户ID
-```
+- Opt-in功能（默认禁用）
+- 支持OAuth应用集成
+- 运行时可获取账户ID
 
 ### 6.4 Skills vs MCP对比
 
@@ -792,22 +714,25 @@ entity_id = "default"
 
 | 模块 | 职责 | 行数估算 |
 |------|------|----------|
-| `agent/` | Agent循环、编排、提示工程 | ~2000 |
-| `providers/` | 22+ AI提供商实现 | ~5000 |
-| `channels/` | 14+ 消息通道实现 | ~4000 |
-| `memory/` | 内存系统（向量+搜索） | ~1500 |
-| `tools/` | 20+ 工具实现 | ~2000 |
-| `security/` | 安全策略、沙箱 | ~1000 |
-| `daemon/` | 守护进程、监督树 | ~800 |
-| `gateway/` | Webhook服务器 | ~600 |
-| `cron/` | 调度器 | ~400 |
-| `heartbeat/` | 心跳引擎 | ~300 |
-| `skills/` | Skills系统 | ~500 |
-| `plugins/` | WASM插件 | ~300 |
-| `config/` | 配置管理 | ~1000 |
-| `observability/` | 可观测性 | ~400 |
-| `tunnel/` | 隧道集成 | ~600 |
-| **总计** | | **~20,000行** |
+| `agent/` | Agent循环、编排、提示工程、研究阶段 | ~2200 |
+| `providers/` | 25+ AI提供商实现 | ~5500 |
+| `channels/` | 16+ 消息通道实现（含WhatsApp双模式） | ~4500 |
+| `memory/` | 内存系统（向量+FTS5+混合搜索） | ~1600 |
+| `tools/` | 25+ 工具实现（含WASM skills） | ~2400 |
+| `security/` | 安全策略、沙箱、配对机制 | ~1200 |
+| `daemon/` | 守护进程、监督树 | ~900 |
+| `gateway/` | Webhook服务器（含WhatsApp webhook） | ~700 |
+| `cron/` | 调度器 | ~450 |
+| `heartbeat/` | 心跳引擎 | ~350 |
+| `skills/` | Skills系统（TOML manifest + WASM） | ~700 |
+| `plugins/` | WASM插件运行时（wasmi） | ~400 |
+| `config/` | 配置管理 | ~1100 |
+| `observability/` | 可观测性（Prometheus/OTel） | ~500 |
+| `tunnel/` | 隧道集成 | ~700 |
+| `auth/` | 订阅认证系统 | ~400 |
+| `browser/` | 浏览器工具（多backend） | ~600 |
+| `hardware/` | 硬件外设支持 | ~300 |
+| **总计** | | **~25,000行** |
 
 ### 7.2 代码组织原则
 
@@ -819,78 +744,27 @@ entity_id = "default"
 
 ### 7.3 关键设计模式
 
-```rust
-// 1. 工厂模式
-pub fn create_provider(id: &str, api_key: Option<&str>) -> Result<Box<dyn Provider>> {
-    match id {
-        "openai" => Ok(Box::new(openai::OpenAIProvider::new(api_key))),
-        "anthropic" => Ok(Box::new(anthropic::AnthropicProvider::new(api_key))),
-        "ollama" => Ok(Box::new(ollama::OllamaProvider::new(api_key))),
-        // ...
-        _ => anyhow::bail!("Unknown provider: {}", id),
-    }
-}
+#### 工厂模式
 
-// 2. 建造者模式
-pub struct AgentBuilder {
-    config: Config,
-    session_id: Option<String>,
-    temperature: Option<f64>,
-    tools: Vec<String>,
-    stream: bool,
-}
+- `create_provider()`: 根据ID创建Provider实例
+- `create_memory()`: 根据配置创建Memory实例
+- `create_tool_registry()`: 创建工具注册表
 
-impl AgentBuilder {
-    pub fn new(config: Config) -> Self {
-        Self {
-            config,
-            session_id: None,
-            temperature: None,
-            tools: vec![],
-            stream: false,
-        }
-    }
+#### 建造者模式
 
-    pub fn with_session(mut self, id: String) -> Self {
-        self.session_id = Some(id);
-        self
-    }
+- `AgentBuilder`: 构建Agent实例
+- 支持链式调用设置参数
 
-    pub fn with_temperature(mut self, temp: f64) -> Self {
-        self.temperature = Some(temp);
-        self
-    }
+#### 策略模式
 
-    pub fn build(self) -> Agent {
-        // ...
-    }
-}
+- `SecurityPolicy`: 安全策略接口
+- `SupervisedPolicy`: 监督模式策略
+- `ReadOnlyPolicy`: 只读模式策略
 
-// 3. 策略模式
-pub trait SecurityPolicy {
-    fn check_path_access(&self, path: &Path) -> Result<()>;
-    fn check_command_allowed(&self, cmd: &str) -> Result<()>;
-}
+#### 观察者模式
 
-pub struct SupervisedPolicy {
-    allowed_commands: Vec<String>,
-    workspace_only: bool,
-}
-
-pub struct ReadOnlyPolicy {
-    // ...
-}
-
-// 4. 观察者模式
-pub trait Observer {
-    fn record_event(&self, event: &ObserverEvent);
-    fn record_metric(&self, metric: &ObserverMetric);
-}
-
-pub struct MultiObserver {
-    observers: Vec<Box<dyn Observer>>,
-}
-```
+- `Observer`: 观察者接口
+- `MultiObserver`: 多观察者组合
 
 ---
 
@@ -898,615 +772,51 @@ pub struct MultiObserver {
 
 ### 8.1 Trait驱动架构
 
-```mermaid
-classDiagram
-    class Provider {
-        <<trait>>
-        +chat() Result~String~
-        +chat_with_tools() Result~ChatResponse~
-    }
-
-    class Channel {
-        <<trait>>
-        +send() Result
-        +listen() Result
-    }
-
-    class Memory {
-        <<trait>>
-        +store() Result
-        +recall() Result~Vec~MemoryEntry~~
-    }
-
-    class Tool {
-        <<trait>>
-        +execute() Result~ToolResult~
-    }
-
-    class Config {
-        +provider_type: String
-        +channel_type: String
-        +memory_backend: String
-        +tools: Vec~String~
-    }
-
-    class Agent {
-        -provider: Box~dyn Provider~
-        -channels: HashMap~String, Box~dyn Channel~~
-        -memory: Box~dyn Memory~
-        -tools: HashMap~String, Box~dyn Tool~~
-        +run() Result~String~
-    }
-
-    Config --> Agent: creates
-    Agent --> Provider: uses
-    Agent --> Channel: uses
-    Agent --> Memory: uses
-    Agent --> Tool: uses
-```
+所有子系统都基于Trait抽象：
+- Provider: AI提供商统一接口
+- Channel: 消息通道统一接口
+- Memory: 内存系统统一接口
+- Tool: 工具统一接口
+- RuntimeAdapter: 运行时统一接口
+- Tunnel: 隧道统一接口
+- EmbeddingProvider: 嵌入提供商统一接口
+- SecurityPolicy: 安全策略统一接口
 
 ### 8.2 监督树架构
 
-```mermaid
-graph TB
-    Daemon[Daemon Supervisor]
-    Gateway[Gateway Server]
-    Channels[Channels Supervisor]
-    Heartbeat[Heartbeat Worker]
-    Scheduler[Cron Scheduler]
-    StateWriter[State Writer]
+Daemon Supervisor管理多个子组件：
+- Gateway Server
+- Channels Supervisor
+- Heartbeat Worker
+- Cron Scheduler
+- State Writer
 
-    Daemon --> Gateway
-    Daemon --> Channels
-    Daemon --> Heartbeat
-    Daemon --> Scheduler
-    Daemon --> StateWriter
-
-    Gateway -.->|restart on failure| Gateway
-    Channels -.->|restart on failure| Channels
-    Heartbeat -.->|restart on failure| Heartbeat
-    Scheduler -.->|restart on failure| Scheduler
-```
-
-```rust
-// src/daemon/mod.rs
-fn spawn_component_supervisor<F, Fut>(
-    name: &'static str,
-    initial_backoff_secs: u64,
-    max_backoff_secs: u64,
-    mut run_component: F,
-) -> JoinHandle<()>
-where
-    F: FnMut() -> Fut + Send + 'static,
-    Fut: Future<Output = Result<()>> + Send + 'static,
-{
-    tokio::spawn(async move {
-        let mut backoff = initial_backoff_secs.max(1);
-        let max_backoff = max_backoff_secs.max(backoff);
-
-        loop {
-            match run_component().await {
-                Ok(()) => {
-                    // 组件正常退出 - 重置退避
-                    backoff = initial_backoff_secs.max(1);
-                }
-                Err(e) => {
-                    // 记录错误，增加重启计数
-                    tracing::error!("Component '{}' failed: {}", name, e);
-                }
-            }
-
-            // 指数退避重启
-            tokio::time::sleep(Duration::from_secs(backoff)).await;
-            backoff = backoff.saturating_mul(2).min(max_backoff);
-        }
-    })
-}
-```
+每个组件都有独立的监督逻辑，失败时自动重启（指数退避）。
 
 ### 8.3 安全分层架构
 
-```mermaid
-graph TB
-    Request[入站请求]
-    GatewayPairing[Gateway配对<br/>6-digit OTP]
-    AuthGate[认证网关<br/>白名单检查]
-    RateLimiter[速率限制<br/>滑动窗口]
-    FilesystemSandbox[文件系统沙箱<br/>路径监狱]
-    EncryptedSecrets[加密密钥<br/>XOR + key file]
-
-    Request --> GatewayPairing
-    GatewayPairing --> AuthGate
-    AuthGate --> RateLimiter
-    RateLimiter --> FilesystemSandbox
-    FilesystemSandbox --> EncryptedSecrets
-```
+多层安全防护：
+1. Gateway配对（6-digit OTP）
+2. 认证网关（白名单检查）
+3. 速率限制（滑动窗口）
+4. 文件系统沙箱（路径监狱）
+5. 加密密钥（XOR + key file）
 
 ### 8.4 内存搜索架构
 
-```mermaid
-graph LR
-    Query[用户查询]
-    VectorDB[向量DB<br/>SQLite BLOB + cosine]
-    Keyword[关键词搜索<br/>FTS5 + BM25]
-    HybridMerge[混合合并<br/>加权融合]
-    Results[排序结果]
-
-    Query --> VectorDB
-    Query --> Keyword
-    VectorDB --> HybridMerge
-    Keyword --> HybridMerge
-    HybridMerge --> Results
-```
-
-```rust
-// 混合搜索实现
-pub async fn hybrid_search(
-    &self,
-    query: &str,
-    limit: usize,
-) -> Result<Vec<MemoryEntry>> {
-    // 1. 向量搜索（余弦相似度）
-    let vector_results = self.vector_search(query, limit * 2).await?;
-
-    // 2. 关键词搜索（BM25）
-    let keyword_results = self.keyword_search(query, limit * 2).await?;
-
-    // 3. 加权合并
-    let merged = self.merge_results(
-        vector_results,
-        keyword_results,
-        self.config.vector_weight,
-        self.config.keyword_weight,
-    );
-
-    // 4. 排序并返回top-K
-    Ok(merged.into_iter().take(limit).collect())
-}
-```
+全栈自研的内存搜索系统：
+- **向量DB**: SQLite BLOB + cosine相似度
+- **关键词搜索**: FTS5 + BM25
+- **混合合并**: 加权融合算法
+- **嵌入**: OpenAI/custom/noop
+- **分块**: Markdown-aware
+- **缓存**: LRU驱逐
 
 ---
 
-## 9. 关键代码示例
+## 9. 优缺点分析
 
-### 9.1 Provider Trait实现
-
-```rust
-use async_trait::async_trait;
-use anyhow::Result;
-
-pub struct AnthropicProvider {
-    api_key: String,
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl Provider for AnthropicProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities {
-            native_tool_calling: true,
-            vision: true,
-        }
-    }
-
-    async fn chat_with_system(
-        &self,
-        system_prompt: Option<&str>,
-        message: &str,
-        model: &str,
-        temperature: f64,
-    ) -> Result<String> {
-        let response = self.client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&serde_json::json!({
-                "model": model,
-                "max_tokens": 4096,
-                "system": system_prompt.unwrap_or("You are a helpful assistant."),
-                "messages": [{"role": "user", "content": message}]
-            }))
-            .send()
-            .await?;
-
-        let json: serde_json::Value = response.json().await?;
-        Ok(json["content"][0]["text"].as_str().unwrap().to_string())
-    }
-
-    async fn chat_with_tools(
-        &self,
-        messages: &[ChatMessage],
-        tools: &[serde_json::Value],
-        model: &str,
-        temperature: f64,
-    ) -> Result<ChatResponse> {
-        // Anthropic原生工具调用
-        let response = self.client
-            .post("https://api.anthropic.com/v1/messages")
-            .json(&serde_json::json!({
-                "model": model,
-                "max_tokens": 4096,
-                "tools": tools,
-                "messages": messages
-            }))
-            .send()
-            .await?;
-
-        let json: serde_json::Value = response.json().await?;
-
-        // 解析工具调用
-        let tool_calls = parse_tool_calls(&json)?;
-
-        Ok(ChatResponse {
-            text: extract_text(&json),
-            tool_calls,
-            usage: extract_usage(&json),
-            reasoning_content: None,
-        })
-    }
-}
-```
-
-### 9.2 Channel Trait实现
-
-```rust
-use async_trait::async_trait;
-use tokio::sync::mpsc;
-use anyhow::Result;
-
-pub struct TelegramChannel {
-    bot_token: String,
-    allowed_users: Vec<String>,
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl Channel for TelegramChannel {
-    fn name(&self) -> &str {
-        "telegram"
-    }
-
-    async fn send(&self, message: &str, recipient: &str) -> Result<()> {
-        self.client
-            .post(format!(
-                "https://api.telegram.org/bot{}/sendMessage",
-                self.bot_token
-            ))
-            .json(&serde_json::json!({
-                "chat_id": recipient,
-                "text": message
-            }))
-            .send()
-            .await?;
-
-        Ok(())
-    }
-
-    async fn listen(&self, tx: mpsc::Sender<ChannelMessage>) -> Result<()> {
-        let mut offset = 0;
-        loop {
-            let updates = self.get_updates(offset).await?;
-            for update in updates {
-                offset = update.update_id + 1;
-
-                // 检查白名单
-                if !self.is_allowed(&update.from_user.id) {
-                    continue;
-                }
-
-                let channel_msg = ChannelMessage {
-                    channel: self.name().to_string(),
-                    sender: update.from_user.id.clone(),
-                    content: update.message.text,
-                    timestamp: Utc::now().to_rfc3339(),
-                    attachments: vec![],
-                };
-
-                tx.send(channel_msg).await?;
-            }
-        }
-    }
-
-    async fn health_check(&self) -> bool {
-        self.client
-            .get(format!(
-                "https://api.telegram.org/bot{}/getMe",
-                self.bot_token
-            ))
-            .send()
-            .await
-            .is_ok()
-    }
-}
-```
-
-### 9.3 Memory Trait实现
-
-```rust
-use async_trait::async_trait;
-
-pub struct SqliteMemory {
-    db: Arc<Mutex<Connection>>,
-    embedding_provider: Arc<dyn EmbeddingProvider>,
-}
-
-#[async_trait]
-impl Memory for SqliteMemory {
-    fn name(&self) -> &str {
-        "sqlite"
-    }
-
-    async fn store(
-        &self,
-        key: &str,
-        content: &str,
-        category: MemoryCategory,
-        session_id: Option<&str>,
-    ) -> Result<()> {
-        let db = self.db.lock().await;
-
-        // 1. 生成嵌入向量
-        let embedding = self.embedding_provider.embed(content).await?;
-
-        // 2. 存储到数据库
-        db.execute(
-            "INSERT INTO memories (id, key, content, category, session_id, embedding, timestamp)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            [
-                Uuid::new_v4().to_string(),
-                key,
-                content,
-                &category.to_string(),
-                session_id.unwrap_or(""),
-                &embedding.to_blob(),
-                &Utc::now().to_rfc3339(),
-            ],
-        )?;
-
-        Ok(())
-    }
-
-    async fn recall(
-        &self,
-        query: &str,
-        limit: usize,
-        session_id: Option<&str>,
-    ) -> Result<Vec<MemoryEntry>> {
-        let db = self.db.lock().await;
-
-        // 1. 查询嵌入向量
-        let query_embedding = self.embedding_provider.embed(query).await?;
-
-        // 2. 向量搜索（余弦相似度）
-        let vector_sql = "
-            SELECT
-                id, key, content, category, session_id, timestamp,
-                cosine_similarity(embedding, ?1) as score
-            FROM memories
-            WHERE (?2 IS NULL OR session_id = ?2)
-            ORDER BY score DESC
-            LIMIT ?3
-        ";
-
-        let mut stmt = db.prepare(vector_sql)?;
-        let vector_results = stmt.query_map(
-            [&query_embedding.to_blob(), session_id, &(limit as i32)],
-            |row| {
-                Ok(MemoryEntry {
-                    id: row.get(0)?,
-                    key: row.get(1)?,
-                    content: row.get(2)?,
-                    category: row.get(3)?,
-                    timestamp: row.get(5)?,
-                    session_id: Some(row.get(4)?),
-                    score: Some(row.get(6)?),
-                })
-            },
-        )?.collect::<Result<Vec<_>, _>>()?;
-
-        // 3. 关键词搜索（FTS5）
-        let keyword_sql = "
-            SELECT
-                id, key, content, category, session_id, timestamp,
-                bm25(memories) as score
-            FROM memories
-            WHERE memories MATCH ?1
-                AND (?2 IS NULL OR session_id = ?2)
-            ORDER BY score
-            LIMIT ?3
-        ";
-
-        let mut stmt = db.prepare(keyword_sql)?;
-        let keyword_results = stmt.query_map(
-            [query, session_id, &(limit as i32)],
-            |row| {
-                Ok(MemoryEntry {
-                    id: row.get(0)?,
-                    key: row.get(1)?,
-                    content: row.get(2)?,
-                    category: row.get(3)?,
-                    timestamp: row.get(5)?,
-                    session_id: Some(row.get(4)?),
-                    score: Some(row.get(6)?),
-                })
-            },
-        )?.collect::<Result<Vec<_>, _>>()?;
-
-        // 4. 混合合并
-        let merged = self.merge_results(
-            vector_results,
-            keyword_results,
-            0.7, // vector_weight
-            0.3, // keyword_weight
-        );
-
-        Ok(merged.into_iter().take(limit).collect())
-    }
-}
-```
-
-### 9.4 安全策略实现
-
-```rust
-pub struct SecurityPolicy {
-    workspace_only: bool,
-    allowed_commands: Vec<String>,
-    forbidden_paths: Vec<PathBuf>,
-    allowed_roots: Vec<PathBuf>,
-}
-
-impl SecurityPolicy {
-    pub fn check_path_access(&self, path: &Path) -> Result<()> {
-        // 1. 解析规范路径
-        let canonical = path.canonicalize()?;
-
-        // 2. 检查禁止路径
-        for forbidden in &self.forbidden_paths {
-            if canonical.starts_with(forbidden) {
-                anyhow::bail!("Access denied: path in forbidden list");
-            }
-        }
-
-        // 3. 检查工作区限制
-        if self.workspace_only {
-            let workspace = std::env::current_dir()?.canonicalize()?;
-            if !canonical.starts_with(&workspace) {
-                // 检查allowed_roots例外
-                let allowed = self.allowed_roots.iter().any(|root| {
-                    canonical.starts_with(root.canonicalize().unwrap_or_default())
-                });
-                if !allowed {
-                    anyhow::bail!("Access denied: path outside workspace");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn check_command_allowed(&self, cmd: &str) -> Result<()> {
-        // 1. 检查空字节注入
-        if cmd.contains('\0') {
-            anyhow::bail!("Null byte detected in command");
-        }
-
-        // 2. 检查命令白名单
-        let command_name = cmd.split_whitespace().next().unwrap_or("");
-        if !self.allowed_commands.iter().any(|allowed| {
-            command_name == allowed || command_name.ends_with(&format!("/{}", allowed))
-        }) {
-            anyhow::bail!("Command not allowed: {}", command_name);
-        }
-
-        Ok(())
-    }
-}
-```
-
-### 9.5 Agent循环实现
-
-```rust
-pub async fn run(
-    config: Config,
-    user_message: Option<String>,
-    session_id: Option<String>,
-    attachments: Vec<Attachment>,
-    temperature: f64,
-    tools: Vec<String>,
-    stream: bool,
-) -> Result<String> {
-    // 1. 加载Provider
-    let provider = create_provider(
-        &config.default_provider,
-        config.api_key.as_deref(),
-    )?;
-
-    // 2. 加载Memory
-    let memory = create_memory(&config.memory).await?;
-
-    // 3. 加载Tools
-    let tool_registry = create_tool_registry(&config, &tools).await?;
-
-    // 4. 构建系统提示
-    let system_prompt = build_system_prompt(&config)?;
-
-    // 5. 召回相关记忆
-    let context = if let Some(msg) = &user_message {
-        memory.recall(msg, 5, session_id.as_deref()).await?
-    } else {
-        vec![]
-    };
-
-    // 6. 构建消息历史
-    let mut messages = vec![ChatMessage::system(system_prompt)];
-
-    // 添加上下文
-    for entry in context {
-        messages.push(ChatMessage::system(format!(
-            "[Memory] {}",
-            entry.content
-        )));
-    }
-
-    // 添加用户消息
-    if let Some(msg) = user_message {
-        messages.push(ChatMessage::user(msg));
-    }
-
-    // 7. LLM调用
-    let response = if tool_registry.is_empty() {
-        provider.chat_with_history(&messages, &config.default_model, temperature).await?
-    } else {
-        // 工具调用循环
-        loop {
-            let tool_specs = tool_registry.to_spec();
-            let chat_response = provider.chat_with_tools(
-                &messages,
-                &tool_specs,
-                &config.default_model,
-                temperature,
-            ).await?;
-
-            if !chat_response.has_tool_calls() {
-                break chat_response.text.unwrap_or_default();
-            }
-
-            // 执行工具
-            for tool_call in chat_response.tool_calls {
-                let result = tool_registry.execute(&tool_call).await?;
-
-                // 添加工具结果到历史
-                messages.push(ChatMessage::tool(result.content));
-            }
-        }
-    };
-
-    // 8. 存储到记忆
-    if let Some(msg) = &user_message {
-        memory.store(
-            &Uuid::new_v4().to_string(),
-            msg,
-            MemoryCategory::Conversation,
-            session_id.as_deref(),
-        ).await?;
-
-        memory.store(
-            &Uuid::new_v4().to_string(),
-            &response,
-            MemoryCategory::Conversation,
-            session_id.as_deref(),
-        ).await?;
-    }
-
-    Ok(response)
-}
-```
-
----
-
-## 10. 优缺点分析
-
-### 11.1 ZeroClaw优势
+### 9.1 ZeroClaw优势
 
 1. **极致性能**
    - <5MB内存占用
@@ -1528,20 +838,28 @@ pub async fn run(
    - Gateway配对机制
    - 多层安全防护（沙箱、白名单、加密）
    - 路径监狱和符号链接逃逸检测
+   - Channel白名单（deny-by-default）
 
 5. **丰富的集成**
-   - 22+ AI提供商
-   - 14+ 消息通道
-   - 20+ 内置工具
+   - 25+ AI提供商（含本地推理服务器）
+   - 16+ 消息通道（含WhatsApp双模式）
+   - 25+ 内置工具（含WASM skills）
    - 70+ 第三方集成
+   - 1000+ OAuth应用（Composio）
 
 6. **生产就绪**
    - 监督树架构
    - 健康检查
    - 可观测性（Prometheus/OTel）
    - 完善的文档（多语言）
+   - 跨平台支持（Linux/macOS/Windows, ARM/x86/RISC-V）
 
-### 11.2 ZeroClaw劣势
+7. **研究阶段**
+   - 主动工具调用减少幻觉
+   - 并行工具执行提高效率
+   - 上下文增强机制
+
+### 9.2 ZeroClaw劣势
 
 1. **无MCP支持**
    - 不支持MCP协议
@@ -1573,7 +891,7 @@ pub async fn run(
    - 配置项较多
    - 文档虽然完善但分散
 
-### 11.3 适用场景
+### 9.3 适用场景
 
 **非常适合**:
 - 边缘设备部署（资源受限）
@@ -1590,15 +908,45 @@ pub async fn run(
 
 ---
 
-## 11. 总结
+## 10. 总结
 
-### 11.1 ZeroClaw的核心价值
+### 10.1 ZeroClaw的核心价值
 
 1. **极致性能**: 零开销、零妥协、100% Rust
 2. **可插拔架构**: Trait驱动、所有子系统可替换
 3. **安全-by-default**: 多层防护、白名单、沙箱
 4. **零外部依赖**: 自研内存系统、减少供应链风险
 5. **生产就绪**: 监督树、健康检查、可观测性
+
+### 10.2 技术亮点
+
+- **Trait驱动架构**: 所有子系统可插拔
+- **自研内存搜索**: 向量+关键词混合搜索
+- **安全-by-default**: 多层安全防护
+- **监督树架构**: 组件级故障恢复
+- **WASM Skills**: 可选的WASM插件系统
+- **研究阶段**: 主动工具调用减少幻觉
+
+### 10.3 与OpenClaw的关系
+
+ZeroClaw是OpenClaw的**Rust重写版本**，但不是简单的移植：
+- 架构完全重新设计
+- 性能提升显著（99%内存减少，400倍启动速度提升）
+- 安全性大幅增强
+- 移除了对Node.js生态的依赖
+
+### 10.4 社区生态
+
+- **GitHub Stars**: 20.3k+
+- **Forks**: 2.5k+
+- **Contributors**: 129+
+- **Releases**: 5个版本（最新v0.1.7，2026-02-24）
+- **文档**: 7种语言支持（English, 简体中文, 日本語, Русский, Français, Tiếng Việt, Ελληνικά）
+- **社区**: Telegram (@zeroclawlabs)、Discord、Reddit (r/zeroclawlabs)、Facebook Group、X (@zeroclawlabs)、小红书、微信群
+- **官方渠道**:
+  - 官网: https://zeroclawlabs.ai
+  - 唯一官方仓库: https://github.com/zeroclaw-labs/zeroclaw
+  - ⚠️ 警告: `zeroclaw.org` 和 `zeroclaw.net` 非官方网站，系 `openagen/zeroclaw` 仿冒仓库
 
 ---
 
