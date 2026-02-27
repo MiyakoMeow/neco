@@ -1330,6 +1330,36 @@ See [REFERENCE.md](references/REFERENCE.md) for advanced features.
 
 ---
 
-**文档版本：** 1.0  
-**最后更新：** 2026-02-27  
+## Neco集成参考
+
+### Skills系统实现
+
+Neco兼容AgentSkills格式的技能系统。完整的Skills管理器接口契约参见 [TECH.md §10.2 Skills系统](TECH.md#skills接口契约)。
+
+**关键集成点**：
+- SkillMetadata结构定义
+- 两阶段加载策略（Full/Compact模式）
+- Skills目录扫描和索引
+- 提示注入机制
+
+### 提示注入策略
+
+Neco支持Full和Compact两种提示注入模式。接口契约参见 [TECH.md §10.2](TECH.md#skills接口契约)。
+
+**Full模式**：注入完整Skill内容到系统提示
+**Compact模式**：仅注入元数据，Agent按需读取
+
+### 安全审计
+
+Neco实现Skill安全审计器，检查路径遍历、文件大小、脚本权限等。接口契约参见 [TECH.md §10.2](TECH.md#skills接口契约)。
+
+### 返回TECH.md
+
+← [返回Neco技术设计文档](TECH.md)
+
+---
+
+**文档版本：** 1.0
+**最后更新：** 2026-02-27
 **许可：** CC-BY-4.0
+

@@ -1059,5 +1059,39 @@ impl From<MyError> for McpError {
 
 ---
 
+## Neco集成参考
+
+### MCP传输抽象
+
+Neco使用rmcp实现MCP传输层抽象，支持stdio和http等多种传输方式。完整的传输层设计参见 [TECH.md §9.1 MCP集成](TECH.md#mcp接口契约)。
+
+**关键集成点**：
+- McpTransport trait实现
+- StdioTransport子进程通信
+- HttpTransport远程服务调用
+
+### MCP客户端实现
+
+Neco通过rmcp的MCP客户端与MCP服务器交互。完整的客户端接口参见 [TECH.md §9.1](TECH.md#mcp接口契约)。
+
+### MCP注册表管理
+
+Neco实现MCP服务器注册表，支持懒加载和工具索引。接口契约参见 [TECH.md §9.1](TECH.md#mcp接口契约)。
+
+### 工具执行器
+
+Neco的工具执行器集成MCP工具调用。接口契约参见 [TECH.md §6.2 工具执行层](TECH.md#toolexecutor接口契约)。
+
+### 实用示例
+
+MCP集成示例参见 [external-rmcp-examples.md](external-rmcp-examples.md)。
+
+### 返回TECH.md
+
+← [返回Neco技术设计文档](TECH.md)
+
+---
+
 **文档版本**: 1.0.0
 **最后更新**: 2026-02-27
+

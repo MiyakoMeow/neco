@@ -1228,6 +1228,32 @@ async-openai 0.33.0
 
 ---
 
+## Neco集成参考
+
+### OpenAIAdapter实现
+
+Neco使用async-openai crate实现OpenAI兼容的LLM接口适配器。完整的接口契约参见 [TECH.md §6.1 LLM接口层](TECH.md#llmclient-trait接口契约)。
+
+**关键集成点**：
+- LLMClient trait实现
+- ProviderCapabilities声明
+- ChatCompletionRequest/Response转换
+- 流式输出处理
+
+### 推理模型支持
+
+Neco通过async-openai支持推理模型的`reasoning_content`字段（如DeepSeek-R1、GLM-4.7）。接口说明参见 [TECH.md §6.1](TECH.md#llmclient-trait接口契约)。
+
+### 工具调用循环
+
+Neco的工具调用循环基于async-openai的工具调用API。接口契约参见 [TECH.md §6.1](TECH.md#llmclient-trait接口契约)。
+
+### 返回TECH.md
+
+← [返回Neco技术设计文档](TECH.md)
+
+---
+
 **文档生成时间**: 2026年2月27日  
 **分析版本**: async-openai 0.33.0
 
