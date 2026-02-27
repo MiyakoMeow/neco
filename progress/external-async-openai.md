@@ -251,6 +251,7 @@ while let Some(response) = stream.next().await {
 ```rust
 use async_openai::{Client, types::chat::*};
 use futures::stream::StreamExt;
+use serde_json::json;
 use std::io::Write;
 
 let client = Client::new();

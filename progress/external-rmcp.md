@@ -993,7 +993,9 @@ pub struct ServerState {
 ```rust
 #[tokio::test]
 async fn test_server() {
-    let server = MyServer;
+    let server = MyServer {
+        state: Arc::new(Mutex::new(ServerState { counter: 0 })),
+    };
 
     // 使用测试 transport
     let (client_transport, server_transport) = create_test_transport();
