@@ -15,25 +15,37 @@ Neco的技术架构围绕**多层智能体树形结构**展开，各模块通过
 
 ### 一、树形架构作为核心组织形式
 
-```
-Session (1) ←→ AgentTree (1) ←→ AgentNode (N)
-     ↓                ↓               ↓
- MemoryContext    CoordinationBus   ModelSelector
+```mermaid
+graph TB
+    Session[Session 1:1]
+    AgentTree[AgentTree 1:1]
+    AgentNodes[AgentNode N]
+    MemoryContext[MemoryContext]
+    CoordinationBus[CoordinationBus]
+    ModelSelector[ModelSelector]
+
+    Session --> AgentTree
+    Session --> MemoryContext
+    AgentTree --> AgentNodes
+    AgentTree --> CoordinationBus
+    AgentNodes --> ModelSelector
 ```
 
 **内生关系**：
 - **Session ↔ AgentTree**：一对一绑定，Session生命周期 = 智能体树生命周期
 - **AgentTree ↔ AgentNode**：树形管理，根智能体（Root）直接与用户对话，递归创建子节点
 - **AgentNode.nodeType ↔ ModelGroup**：不同类型智能体使用不同模型（think/balanced/act）
+- **CoordinationBus ↔ 父子通信**：基于InMemoryMessageBus，仅支持父子路由（上行汇报/下行指令）
 
 ### 二、两层记忆系统的设计约束
 
-```
-纯LLM架构 (无Embeddings)
-     ↓
-记忆检索依赖关键词匹配
-     ↓
-需要两层结构：索引层（快速检索）+ 内容层（按需加载）
+```mermaid
+graph LR
+    A[纯LLM架构] --> B[无Embeddings]
+    B --> C[关键词检索]
+    C --> D[两层记忆结构]
+    D --> E[索引层：快速筛选]
+    D --> F[内容层：按需加载]
 ```
 
 **内生关系**：
@@ -41,18 +53,61 @@ Session (1) ←→ AgentTree (1) ←→ AgentNode (N)
 - **workspace分类 ↔ 智能体树**：特定目录会话只加载相关记忆，减少上下文污染
 - **MemoryLibrary → SessionContext**：Session启动时激活记忆，形成MemoryContext
 
-### 三、并发模型贯穿全栈
+### 三、Trait驱动的模块化架构（借鉴ZeroClaw）
 
+```mermaid
+graph TB
+    subgraph "Provider Trait抽象"
+        LLMClient[LLMClient Trait]
+        OpenAI[OpenAIAdapter]
+        Anthropic[AnthropicAdapter]
+    end
+
+    subgraph "Transport Trait抽象"
+        McpTransport[McpTransport Trait]
+        Stdio[StdioTransport]
+        Http[HttpTransport]
+    end
+
+    subgraph "Memory Trait抽象"
+        Memory[Memory Trait]
+        Filesystem[FilesystemBackend]
+        Jujutsu[JujutsuBackend]
+    end
+
+    LLMClient --> OpenAI
+    LLMClient --> Anthropic
+    McpTransport --> Stdio
+    McpTransport --> Http
+    Memory --> Filesystem
+    Memory --> Jujutsu
 ```
-Arc<T> (共享不可变)
-  ├── Config (全局配置)
-  ├── ModelConfig.current_index (AtomicUsize, 无锁轮询)
-  └── AgentTree.nodes (Arc<RwLock<HashMap>>)
 
-Arc<RwLock<T>> (共享可变，读多写少)
-  ├── AgentTree.nodes (智能体树管理)
-  ├── SharedState (跨智能体通信)
-  └── MemoryIndex (记忆索引)
+**内生关系**：
+- **Trait抽象 → 多提供商支持**：统一的LLMClient trait支持OpenAI/Anthropic/等
+- **Transport抽象 → 多传输协议**：MCP支持stdio/http/sse传输层
+- **Memory抽象 → 多后端存储**：Session和记忆可存储于文件系统或Jujutsu
+
+### 四、并发模型贯穿全栈
+
+```mermaid
+graph TB
+    subgraph "Arc<T> 共享不可变"
+        Config[Config 全局配置]
+        ModelIndex[ModelConfig.current_index<br/>AtomicUsize 无锁轮询]
+    end
+
+    subgraph "Arc<RwLock<T>> 共享可变"
+        AgentTree[AgentTree.nodes<br/>HashMap<AgentId, AgentNode>]
+        SharedState[SharedState 跨智能体通信]
+        MemoryIndex[MemoryIndex 记忆索引]
+        McpRegistry[McpRegistry 服务器连接]
+    end
+
+    subgraph "mpsc<T> 单向通道"
+        ParentChannel[ParentChannel<br/>tx_to_parent 上行]
+        ChildChannel[ChildChannels<br/>rx_from_children 下行]
+    end
 ```
 
 **内生关系**：
@@ -60,52 +115,39 @@ Arc<RwLock<T>> (共享可变，读多写少)
 - **模型轮询 → AtomicUsize**：无锁轮询支持高并发，避免Mutex竞争
 - **父子通信 → 单向通道**：上行汇报和下行指令，无循环依赖风险
 
-### 四、懒加载与按需启动策略
+### 五、懒加载与按需启动策略
 
-```
-MCP服务器懒加载
-     ↓
-McpServerManager.get_client() (按需连接)
-     ↓
-ToolExecutor.execute() (触发工具调用)
-     ↓
-AgentNode (创建子智能体)
+```mermaid
+graph LR
+    A[MCP服务器配置] --> B{首次调用?}
+    B -->|是| C[McpServerManager.get_client]
+    B -->|否| D[使用缓存连接]
+    C --> E[建立连接]
+    E --> F[工具发现]
+    F --> G[ToolExecutor.execute]
+
+    H[Skills配置] --> I{Compact模式?}
+    I -->|是| J[仅注入元数据]
+    I -->|否| K[注入完整内容]
+    J --> L[Agent按需读取]
+    K --> L
 ```
 
 **内生关系**：
 - **MCP懒加载 ↔ 工具执行**：只有智能体调用工具时才启动MCP服务器
-- **Skills懒加载 ↔ 记忆激活**：按上下文关键词激活Skills，避免全量加载
+- **Skills懒加载 ↔ 记忆激活**：按上下文关键词激活Skills（Compact模式），避免全量加载
 - **子智能体生命周期 ↔ 任务分解**：根智能体根据任务复杂度动态创建子节点
 
-### 五、树形架构驱动的通信协议
+### 六、设计决策连锁反应
 
-```
-AgentNode (父子关系)
-     ↓
-CoordinationEnvelope (消息类型：Report/Command)
-     ↓
-InMemoryMessageBus (父子路由：上行汇报/下行指令)
-```
-
-**内生关系**：
-- **树形结构 → 消息路由**：仅支持父子通信（上行汇报进度、下行发送指令）
-- **消息总线 ↔ AgentTree**：每个节点维护父节点引用，直接向父节点发送消息
-- **进度追踪 → 父子链式传递**：子节点→父节点→根智能体，形成清晰的汇报线
-
-### 六、纯LLM架构的技术约束
-
-```
-无Embeddings/Rerank/Apply模型
-     ↓
-记忆检索依赖关键词匹配
-     ↓
-两层记忆结构：索引层（快速检索）+ 内容层（按需加载）
-```
-
-**内生关系**：
-- **纯LLM → 关键词检索**：MemoryLibrary.recall使用标题匹配+相似度分数
-- **两层记忆 → 内容激活**：先检索索引层，再加载完整内容
-- **workspace分类 → 上下文隔离**：特定目录会话只加载相关记忆
+| 决策 | 直接影响 | 间接影响 |
+|------|----------|----------|
+| 采用树形智能体结构 | 需要AgentTree管理器 | 消息总线支持父子路由；Session持久化需要序列化树 |
+| 使用纯LLM架构 | 无Embeddings模型 | 两层记忆结构；关键词检索匹配；LLM重新排序 |
+| Trait驱动模块化 | 统一抽象接口 | 多提供商支持；易测试和扩展 |
+| MCP懒加载策略 | 延迟启动服务器 | 工具执行触发连接；需要连接复用机制 |
+| Arc+RwLock并发模型 | 共享可变状态 | 智能体树并发访问；模型无锁轮询 |
+| Jujutsu版本控制 | Session持久化 | Git Workspace兼容层；提交历史管理 |
 
 ### 设计决策连锁反应
 
@@ -635,35 +677,84 @@ pub enum MemoryCategory {
 
 ### 1. LLM接口层
 
-#### LLMClient Trait
+#### LLMClient Trait（借鉴async-openai最佳实践）
 
 ```rust
 /// LLM客户端trait
 ///
 /// # 设计原则
-/// - 提供商无关抽象
+/// - 提供商无关抽象（借鉴ZeroClaw的Provider trait）
 /// - 支持流式和非流式调用
-/// - 统一的错误处理
+/// - 统一的错误处理和响应格式
+/// - 支持原生工具调用和Prompt-Guided回退
 #[async_trait]
 pub trait LLMClient: Send + Sync {
+    /// 获取提供商能力
+    fn capabilities(&self) -> ProviderCapabilities;
+
     /// 聊天补全（非流式）
     async fn chat_completion(
         &self,
         request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LLMError>;
+    ) -> Result<ChatResponse, LLMError>;
 
     /// 聊天补全（流式）
     async fn chat_completion_stream(
         &self,
         request: ChatCompletionRequest,
-    ) -> impl Stream<Item = Result<ChatCompletionChunk, LLMError>> + Send;
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk, LLMError>> + Send>>;
 
-    /// 支持工具调用
-    fn supports_tools(&self) -> bool;
+    /// 转换工具定义（提供商原生格式）
+    fn convert_tools(&self, tools: &[ToolSpec]) -> ToolsPayload;
+}
+
+/// 提供商能力声明
+#[derive(Debug, Clone, Default)]
+pub struct ProviderCapabilities {
+    /// 原生工具调用（非Prompt-Guided）
+    pub native_tool_calling: bool,
+
+    /// 视觉能力（图像输入）
+    pub vision: bool,
+
+    /// 推理模型支持（reasoning_content）
+    pub reasoning: bool,
+
+    /// 流式响应支持
+    pub streaming: bool,
+}
+
+/// 聊天响应（统一格式）
+#[derive(Debug, Clone)]
+pub struct ChatResponse {
+    /// 文本内容
+    pub text: Option<String>,
+
+    /// 推理内容（reasoning models）
+    pub reasoning: Option<String>,
+
+    /// 工具调用
+    pub tool_calls: Vec<ToolCall>,
+
+    /// Token使用统计
+    pub usage: Option<TokenUsage>,
+}
+
+/// 流式分块
+#[derive(Debug, Clone)]
+pub struct StreamChunk {
+    /// 增量文本
+    pub delta: String,
+
+    /// 是否为最终分块
+    pub is_final: bool,
+
+    /// Token计数
+    pub token_count: usize,
 }
 ```
 
-#### OpenAIAdapter
+#### OpenAIAdapter（async-openai实现）
 
 ```rust
 /// OpenAI兼容接口适配器
@@ -671,11 +762,11 @@ pub trait LLMClient: Send + Sync {
 /// 使用 async-openai crate 实现
 /// 支持的提供商：OpenAI、ZhipuAI、MiniMax等兼容OpenAI Chat API的服务
 pub struct OpenAIAdapter {
-    /// 客户端
-    client: Client<OpenAIConfig>,
+    /// async-openai客户端
+    client: async_openai::Client<async_openai::config::OpenAIConfig>,
 
     /// 模型配置
-    model_config: ModelConfig,
+    model_config: Arc<ModelConfig>,
 
     /// 重试策略
     retry: RetryStrategy,
@@ -683,18 +774,29 @@ pub struct OpenAIAdapter {
 
 impl OpenAIAdapter {
     /// 创建新适配器
-    pub fn new(config: &ProviderConfig, model_config: ModelConfig)
+    pub fn new(config: &ProviderConfig, model_config: Arc<ModelConfig>)
         -> Result<Self, ConfigError>
     {
-        // 从环境变量读取API密钥
+        // 从环境变量读取API密钥（支持多个）
         let api_key = Self::find_api_key(&config.env_keys)?;
 
         // 构建OpenAI配置
-        let openai_config = OpenAIConfig::new()
+        let openai_config = async_openai::config::OpenAIConfig::default()
             .with_api_key(api_key)
-            .with_api_base(&config.base);
+            .with_api_base(&config.base)
+            .with_org_id(config.org_id.as_deref().unwrap_or(""));
 
-        let client = Client::with_config(openai_config);
+        // 配置HTTP客户端（超时、代理）
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .map_err(ConfigError::HttpClientBuild)?;
+
+        let client = async_openai::Client::with_config(
+            async_openai::config::ClientConfig::new(api_key, config.base.parse()?)
+                .with_http_client(http_client)
+        );
 
         Ok(Self {
             client,
@@ -703,7 +805,7 @@ impl OpenAIAdapter {
         })
     }
 
-    /// 查找可用的API密钥
+    /// 查找可用的API密钥（循环故障转移）
     fn find_api_key(env_keys: &[String]) -> Result<String, ConfigError> {
         for key in env_keys {
             if let Ok(value) = std::env::var(key) {
@@ -718,94 +820,191 @@ impl OpenAIAdapter {
 
 #[async_trait]
 impl LLMClient for OpenAIAdapter {
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            native_tool_calling: true,
+            vision: true,
+            reasoning: self.model_config.models.iter()
+                .any(|m| m.model.contains("glm-4.7") || m.model.contains("deepseek")),
+            streaming: true,
+        }
+    }
+
     async fn chat_completion(
         &self,
-        mut request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LLMError> {
+        request: ChatCompletionRequest,
+    ) -> Result<ChatResponse, LLMError> {
         // 选择模型（带故障转移）
-        let model_ref = self.select_model().await?;
+        let model_ref = self.select_model_with_fallback().await?;
 
-        request.model = model_ref.model.clone();
+        // 转换为async-openai格式
+        let openai_req = self.to_openai_request(&request, &model_ref.model)?;
 
-        // 重试逻辑
-        self.retry.execute(|| async {
-            let openai_req = self.to_openai_request(&request)?;
-            let response = self.client.chat().create(openai_req).await?;
-            Ok(self.from_openai_response(response))
-        }).await
+        // 执行请求（带重试）
+        let response = self.retry.execute(|| async {
+            self.client.chat().create(openai_req.clone()).await
+                .map_err(LLMError::from)
+        }).await?;
+
+        // 转换响应（支持reasoning_content）
+        Ok(self.from_openai_response(response))
     }
 
     async fn chat_completion_stream(
         &self,
-        mut request: ChatCompletionRequest,
-    ) -> impl Stream<Item = Result<ChatCompletionChunk, LLMError>> + Send {
+        request: ChatCompletionRequest,
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamChunk, LLMError>> + Send>> {
         // 选择模型
-        let model_ref = self.select_model().await.unwrap();
-        request.model = model_ref.model.clone();
+        let model_ref = match self.select_model_with_fallback().await {
+            Ok(m) => m,
+            Err(e) => return Box::pin(stream::once(Err(e))),
+        };
+
+        let openai_req = match self.to_openai_request(&request, &model_ref.model) {
+            Ok(req) => req,
+            Err(e) => return Box::pin(stream::once(Err(e))),
+        };
 
         // 创建流
-        let stream = self.client.chat()
-            .create_stream(self.to_openai_request(&request).unwrap())
-            .await
-            .unwrap();
+        let stream = match self.client.chat().create_stream(openai_req).await {
+            Ok(s) => s,
+            Err(e) => return Box::pin(stream::once(Err(e.into()))),
+        };
 
         // 转换流
-        async_stream::stream! {
-            while let Some(chunk) = stream.next().await {
-                match chunk {
-                    Ok(c) => yield Ok(self.from_openai_chunk(c)),
+        Box::pin(async_stream::stream! {
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => yield Ok(self.from_openai_chunk(chunk)),
                     Err(e) => yield Err(LLMError::from(e)),
                 }
             }
+        })
+    }
+
+    fn convert_tools(&self, tools: &[ToolSpec]) -> ToolsPayload {
+        // 转换为OpenAI原生格式
+        let openai_tools: Vec<serde_json::Value> = tools.iter()
+            .map(|t| serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters_schema
+                }
+            }))
+            .collect();
+
+        ToolsPayload::OpenAI { tools: openai_tools }
+    }
+}
+```
+
+#### 推理模型支持（reasoning_content）
+
+```rust
+/// 响应消息（支持推理模型）
+#[derive(Debug, Deserialize)]
+pub struct ResponseMessage {
+    /// 主要内容
+    #[serde(default)]
+    pub content: Option<String>,
+
+    /// 推理/思考内容（DeepSeek-R1, Kimi, GLM-4.7）
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
+}
+
+impl ResponseMessage {
+    /// 获取有效内容
+    fn effective_content(&self) -> String {
+        match &self.content {
+            Some(c) if !c.is_empty() => c.clone(),
+            _ => self.reasoning_content.clone().unwrap_or_default(),
+        }
+    }
+}
+
+/// 转换响应（支持reasoning_content）
+impl OpenAIAdapter {
+    fn from_openai_response(&self, response: ChatCompletionResponse)
+        -> ChatResponse
+    {
+        let message = &response.choices[0].message;
+
+        ChatResponse {
+            text: message.content.clone(),
+            reasoning: message.reasoning_content.clone(),
+            tool_calls: message.tool_calls.as_ref()
+                .map(|t| t.iter().map(|tc| self.from_openai_tool_call(tc)).collect())
+                .unwrap_or_default(),
+            usage: response.usage.map(|u| TokenUsage {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                total_tokens: u.total_tokens,
+            }),
         }
     }
 }
 ```
 
-#### 未来提供商支持计划
-
-当前版本（v0.1.0）主要支持OpenAI兼容API。以下是计划支持的提供商：
-
-| 提供商 | 状态 | 计划版本 | 说明 |
-|--------|------|----------|------|
-| ✅ OpenAI | 已支持 | v0.1.0 | 通过async-openai |
-| ✅ ZhipuAI | 已支持 | v0.1.0 | 兼容OpenAI API |
-| ✅ MiniMax | 已支持 | v0.1.0 | 兼容OpenAI API |
-| 🔄 Anthropic | 计划中 | v0.2.0 | 需要独立适配器 |
-| 🔄 OpenRouter | 计划中 | v0.2.0 | 聚合多个提供商 |
-| 🔄 GitHub Copilot | 计划中 | v0.3.0 | 需要特殊认证 |
-| ❌ Google Gemini | 未计划 | - | 低优先级 |
-| ❌ Claude API | 未计划 | - | 已有Anthropic |
-
-**Anthropic适配器设计（预留）**：
+#### 工具调用处理（Native + Prompt-Guided）
 
 ```rust
-#[cfg(feature = "anthropic")]
-/// Anthropic Claude适配器
-pub struct AnthropicAdapter {
-    /// 客户端
-    client: anthropic::Client,
+/// 工具负载类型（支持多种提供商格式）
+#[derive(Debug, Clone)]
+pub enum ToolsPayload {
+    /// OpenAI原生格式
+    OpenAI { tools: Vec<serde_json::Value> },
 
-    /// 模型配置
-    model_config: ModelConfig,
+    /// Anthropic格式
+    Anthropic { tools: Vec<serde_json::Value> },
+
+    /// Gemini格式
+    Gemini { function_declarations: Vec<serde_json::Value> },
+
+    /// Prompt-Guided回退（非原生支持）
+    PromptGuided { instructions: String },
 }
 
-#[cfg(feature = "anthropic")]
-#[async_trait]
-impl LLMClient for AnthropicAdapter {
-    async fn chat_completion(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse, LLMError> {
-        // 转换为Anthropic格式
-        let anthropic_req = self.to_anthropic_request(request)?;
+/// 工具调用循环（参考ZeroClaw）
+pub async fn tool_call_loop(
+    client: &dyn LLMClient,
+    initial_messages: Vec<ConversationMessage>,
+    tools: &[ToolSpec],
+    max_iterations: usize,
+) -> Result<String, LLMError> {
+    let mut messages = initial_messages;
+    let mut last_text = String::new();
 
-        // 调用API
-        let response = self.client.messages().create(&anthropic_req).await?;
+    for _iteration in 0..max_iterations {
+        // 1. 调用LLM
+        let request = ChatCompletionRequest {
+            messages: messages.clone(),
+            tools: Some(client.convert_tools(tools)),
+            tool_choice: Some("auto".to_string()),
+            ..Default::default()
+        };
 
-        // 转换回通用格式
-        Ok(self.from_anthropic_response(response))
+        let response = client.chat_completion(request).await?;
+
+        // 2. 检查是否有工具调用
+        if response.tool_calls.is_empty() {
+            return Ok(response.text.unwrap_or_default());
+        }
+
+        // 3. 并行执行工具
+        let results = execute_tools_parallel(response.tool_calls).await?;
+
+        // 4. 将结果添加到历史
+        for result in results {
+            messages.push(ConversationMessage::Tool(result));
+        }
+
+        last_text = response.text.unwrap_or_default();
     }
+
+    Ok(last_text)
 }
 ```
 
@@ -1621,7 +1820,7 @@ impl AgentTree {
 }
 ```
 
-### 4. 父子通信
+### 4. 父子通信（借鉴ZeroClaw InMemoryMessageBus）
 
 Neco采用严格的**父子通信模式**，智能体只能与其直接父节点或直接子节点通信。
 
@@ -1647,20 +1846,113 @@ graph TB
     end
 ```
 
-#### CoordinationEnvelope
+#### InMemoryMessageBus（简化版）
+
+```rust
+/// 内存消息总线（父子通信）
+///
+/// # 设计原则（借鉴ZeroClaw）
+/// - 仅支持父子路由（上行汇报/下行指令）
+/// - 每个Agent有独立的消息队列
+/// - 支持关联追踪（correlation_id）
+pub struct InMemoryMessageBus {
+    /// 消息队列（agent_id -> receiver）
+    queues: Arc<RwLock<HashMap<AgentId, mpsc::Sender<CoordinationEnvelope>>>>,
+
+    /// 死信队列（无效消息）
+    dead_letter: Arc<Mutex<Vec<CoordinationEnvelope>>>,
+}
+
+impl InMemoryMessageBus {
+    /// 创建新总线
+    pub fn new() -> Self {
+        Self {
+            queues: Arc::new(RwLock::new(HashMap::new())),
+            dead_letter: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// 注册Agent队列
+    pub async fn register(&self, agent_id: &AgentId)
+        -> mpsc::Receiver<CoordinationEnvelope>
+    {
+        let (tx, rx) = mpsc::channel(100);
+        self.queues.write().await.insert(agent_id.clone(), tx);
+        rx
+    }
+
+    /// 发送消息（父子路由验证）
+    pub async fn send(&self, envelope: CoordinationEnvelope)
+        -> Result<(), ChannelError>
+    {
+        // TODO: 验证父子关系
+        let queues = self.queues.read().await;
+
+        if let Some(tx) = queues.get(&envelope.to) {
+            tx.send(envelope).await
+                .map_err(ChannelError::SendFailed)
+        } else {
+            // 目标Agent不存在，进入死信队列
+            self.dead_letter.lock().await.push(envelope);
+            Err(ChannelError::AgentNotFound)
+        }
+    }
+
+    /// 广播消息（仅限下行：父节点 → 所有子节点）
+    pub async fn broadcast_to_children(
+        &self,
+        from: &AgentId,
+        message: CoordinationMessage,
+        child_ids: &[AgentId],
+    ) -> Result<(), ChannelError> {
+        let queues = self.queues.read().await;
+
+        for child_id in child_ids {
+            if let Some(tx) = queues.get(child_id) {
+                let envelope = CoordinationEnvelope {
+                    id: MessageId::new(),
+                    from: from.clone(),
+                    to: child_id.clone(),
+                    message: message.clone(),
+                    timestamp: Utc::now(),
+                };
+
+                let _ = tx.send(envelope).await;
+            }
+        }
+
+        Ok(())
+    }
+}
+```
+
+#### CoordinationEnvelope（增强版）
 
 ```rust
 /// 协调信封（父子通信消息）
+///
+/// # 增强特性（借鉴ZeroClaw）
+/// - correlation_id: 用于请求-响应关联
+/// - causation_id: 用于因果追踪
 #[derive(Debug, Clone)]
 pub struct CoordinationEnvelope {
     /// 消息ID（唯一）
     pub id: MessageId,
+
+    /// 会话ID
+    pub session_id: SessionId,
 
     /// 发送者（子节点或父节点）
     pub from: AgentId,
 
     /// 接收者（必须为父子关系）
     pub to: AgentId,
+
+    /// 关联ID（请求-响应匹配）
+    pub correlation_id: Option<MessageId>,
+
+    /// 因果ID（追踪消息链）
+    pub causation_id: Option<MessageId>,
 
     /// 消息类型
     pub message: CoordinationMessage,
@@ -1669,7 +1961,7 @@ pub struct CoordinationEnvelope {
     pub timestamp: DateTime<Utc>,
 }
 
-/// 协调消息类型
+/// 协调消息类型（增强版）
 #[derive(Debug, Clone)]
 pub enum CoordinationMessage {
     /// 上行：进度报告
@@ -1686,6 +1978,7 @@ pub enum CoordinationMessage {
     /// 上行：错误报告
     Error {
         error: String,
+        details: Option<String>,
     },
 
     /// 下行：任务委派
@@ -1696,6 +1989,15 @@ pub enum CoordinationMessage {
     /// 下行：查询状态
     Query {
         query: Query,
+        /// correlation_id用于响应匹配
+        correlation_id: MessageId,
+    },
+
+    /// 下行：查询响应
+    QueryResponse {
+        query: Query,
+        result: serde_json::Value,
+        correlation_id: MessageId,
     },
 }
 
@@ -1704,7 +2006,8 @@ pub enum Command {
     Pause,
     Resume,
     Cancel,
-    UpdateParameters { params: Value },
+    UpdateParameters { params: serde_json::Value },
+    RequestReport,  // 请求子节点汇报进度
 }
 
 #[derive(Debug, Clone)]
@@ -1712,149 +2015,177 @@ pub enum Query {
     Status,
     Progress,
     Result,
+    Capabilities,
 }
 ```
 
-#### ParentChannel（父子通信通道）
-
-```rust
-/// 父子通信通道
-///
-/// # 设计原则
-/// - 每个AgentNode维护一个到其父节点的通道
-/// - 父节点通过AgentTree.children管理所有子节点的通道
-pub struct ParentChannel {
-    /// 发送到父节点的通道（上行）
-    tx_to_parent: mpsc::Sender<CoordinationEnvelope>,
-
-    /// 从子节点接收的通道（下行）
-    rx_from_children: Arc<Mutex<HashMap<AgentId, mpsc::Receiver<CoordinationEnvelope>>>>,
-}
-
-impl ParentChannel {
-    /// 创建父子通信通道
-    pub fn new(parent_id: Option<AgentId>) -> (Self, Vec<mpsc::Receiver<CoordinationEnvelope>>) {
-        // 如果有父节点，创建上行通道
-        let (tx_to_parent, _rx_for_parent) = mpsc::channel(100);
-
-        // 下行通道由父节点统一管理
-        let rx_from_children = Arc::new(Mutex::new(HashMap::new()));
-
-        (
-            Self {
-                tx_to_parent,
-                rx_from_children,
-            },
-            vec![_rx_for_parent],
-        )
-    }
-
-    /// 发送消息给父节点（上行）
-    pub async fn send_to_parent(&self, envelope: CoordinationEnvelope)
-        -> Result<(), ChannelError>
-    {
-        self.tx_to_parent.send(envelope)
-            .await
-            .map_err(ChannelError::SendFailed)
-    }
-
-    /// 从子节点接收消息（下行）
-    pub async fn receive_from_child(&self, child_id: &AgentId)
-        -> Option<CoordinationEnvelope>
-    {
-        let mut receivers = self.rx_from_children.lock().await;
-        receivers.get_mut(child_id)?.recv().await.ok()
-    }
-
-    /// 注册子节点通道（由父节点调用）
-    pub fn register_child(&self, child_id: AgentId, rx: mpsc::Receiver<CoordinationEnvelope>) {
-        let mut receivers = self.rx_from_children.lock().unwrap();
-        receivers.insert(child_id, rx);
-    }
-}
-```
-
-#### 在AgentNode中的集成
+#### AgentNode中的通信集成
 
 ```rust
 impl AgentNode {
-    /// 发送进度报告给父节点
-    pub async fn report_progress(&self, progress: f32, message: String)
-        -> Result<(), ChannelError>
-    {
-        if let Some(ref parent_channel) = self.parent_channel {
+    /// 发送进度报告给父节点（上行）
+    pub async fn report_progress(
+        &self,
+        bus: &InMemoryMessageBus,
+        progress: f32,
+        message: String,
+    ) -> Result<(), ChannelError> {
+        if let Some(ref parent_id) = self.parent_id {
             let envelope = CoordinationEnvelope {
                 id: MessageId::new(),
+                session_id: self.session_id.clone(),
                 from: self.id.clone(),
-                to: self.parent_id.clone().unwrap(),
+                to: parent_id.clone(),
+                correlation_id: None,
+                causation_id: Some(self.last_message_id),  // 因果追踪
                 message: CoordinationMessage::Report { progress, message },
                 timestamp: Utc::now(),
             };
-            parent_channel.send_to_parent(envelope).await?;
+
+            bus.send(envelope).await?;
         }
         Ok(())
     }
 
-    /// 发送任务完成给父节点
-    pub async fn report_completion(&self, result: ToolResult)
-        -> Result<(), ChannelError>
-    {
-        if let Some(ref parent_channel) = self.parent_channel {
+    /// 发送任务完成给父节点（上行）
+    pub async fn report_completion(
+        &self,
+        bus: &InMemoryMessageBus,
+        result: ToolResult,
+    ) -> Result<(), ChannelError> {
+        if let Some(ref parent_id) = self.parent_id {
             let envelope = CoordinationEnvelope {
                 id: MessageId::new(),
+                session_id: self.session_id.clone(),
                 from: self.id.clone(),
-                to: self.parent_id.clone().unwrap(),
+                to: parent_id.clone(),
+                correlation_id: None,
+                causation_id: Some(self.last_message_id),
                 message: CoordinationMessage::Completed { result },
                 timestamp: Utc::now(),
             };
-            parent_channel.send_to_parent(envelope).await?;
+
+            bus.send(envelope).await?;
         }
         Ok(())
     }
 
-    /// 发送指令给子节点
-    pub async fn send_command_to_child(&self, child_id: &AgentId, command: Command)
-        -> Result<(), ChannelError>
-    {
-        if let Some(ref parent_channel) = self.parent_channel {
-            // 找到子节点的上行通道
-            let envelope = CoordinationEnvelope {
-                id: MessageId::new(),
-                from: self.id.clone(),
-                to: child_id.clone(),
-                message: CoordinationMessage::Command { command },
-                timestamp: Utc::now(),
-            };
+    /// 发送指令给所有子节点（下行广播）
+    pub async fn send_command_to_children(
+        &self,
+        bus: &InMemoryMessageBus,
+        command: Command,
+    ) -> Result<(), ChannelError> {
+        bus.broadcast_to_children(
+            &self.id,
+            CoordinationMessage::Command { command },
+            &self.children,
+        ).await
+    }
 
-            // 通过子节点的下行通道发送
-            // (实际实现需要AgentTree维护子节点的通道引用)
+    /// 查询子节点状态（下行查询）
+    pub async fn query_child(
+        &self,
+        bus: &InMemoryMessageBus,
+        child_id: &AgentId,
+        query: Query,
+    ) -> Result<serde_json::Value, ChannelError> {
+        let correlation_id = MessageId::new();
+
+        // 发送查询
+        let envelope = CoordinationEnvelope {
+            id: MessageId::new(),
+            session_id: self.session_id.clone(),
+            from: self.id.clone(),
+            to: child_id.clone(),
+            correlation_id: Some(correlation_id.clone()),
+            causation_id: Some(self.last_message_id),
+            message: CoordinationMessage::Query {
+                query,
+                correlation_id: correlation_id.clone(),
+            },
+            timestamp: Utc::now(),
+        };
+
+        bus.send(envelope).await?;
+
+        // 等待响应（超时保护）
+        timeout(Duration::from_secs(5), async {
+            let mut rx = self.message_rx.lock().await;
+            loop {
+                if let Some(envelope) = rx.recv().await {
+                    if let CoordinationMessage::QueryResponse { correlation_id: resp_id, result, .. } = envelope.message {
+                        if resp_id == correlation_id {
+                            return Ok(result);
+                        }
+                    }
+                }
+            }
+        }).await?
+    }
+
+    /// 处理消息循环
+    pub async fn handle_messages(&self, bus: &InMemoryMessageBus) {
+        let mut rx = self.message_rx.lock().await;
+
+        while let Some(envelope) = rx.recv().await {
+            match envelope.message {
+                CoordinationMessage::Command { command } => {
+                    self.handle_command(command).await;
+                }
+                CoordinationMessage::Query { query, correlation_id } => {
+                    let result = self.handle_query(query).await;
+                    let response = CoordinationEnvelope {
+                        id: MessageId::new(),
+                        session_id: self.session_id.clone(),
+                        from: self.id.clone(),
+                        to: envelope.from,
+                        correlation_id: Some(correlation_id),
+                        causation_id: Some(envelope.id),
+                        message: CoordinationMessage::QueryResponse {
+                            query,
+                            result,
+                            correlation_id,
+                        },
+                        timestamp: Utc::now(),
+                    };
+                    let _ = bus.send(response).await;
+                }
+                _ => {}
+            }
         }
-        Ok(())
     }
 }
 ```
 
-#### 通信流程示例
+#### 通信流程示例（增强版）
 
 ```mermaid
 sequenceDiagram
     participant Root as 根智能体
     participant Child as 子智能体
     participant GrandChild as 孙智能体
+    participant Bus as InMemoryMessageBus
 
-    Note over Root,GrandChild: 任务委派（下行）
-    Root->>Child: Command(任务分解)
-    Child->>GrandChild: Command(执行任务)
+    Note over Root,Bus: 任务委派（下行）
+    Root->>Bus: send(Command(任务分解))
+    Bus->>Child: deliver(Command)
+    Child->>Bus: send(Command(执行任务))
+    Bus->>GrandChild: deliver(Command)
 
-    Note over Root,GrandChild: 进度汇报（上行）
-    GrandChild->>Child: Report(50%)
-    Child->>Root: Report(25%)
+    Note over Root,Bus: 进度汇报（上行）
+    GrandChild->>Bus: send(Report(50%))
+    Bus->>Child: deliver(Report)
+    Child->>Bus: send(Report(25%))
+    Bus->>Root: deliver(Report)
 
-    Note over Root,GrandChild: 任务完成（上行）
-    GrandChild->>Child: Completed(结果)
-    Child->>Root: Completed(汇总结果)
+    Note over Root,Bus: 查询状态（下行查询+响应）
+    Root->>Bus: send(Query(Status) + correlation_id)
+    Bus->>Child: deliver(Query)
+    Child->>Bus: send(QueryResponse(result, correlation_id))
+    Bus->>Root: deliver(QueryResponse)
 
-    Note over Root,GrandChild: 跨层级不可达
+    Note over Root,Bus: 跨层级不可达
     Root-.x. GrandChild: 不能直接通信
 ```
 
@@ -2496,170 +2827,445 @@ impl NecoTui {
 
 ## 扩展系统
 
-### 1. MCP集成
+### 1. MCP集成（基于rmcp）
+
+#### MCP传输抽象（借鉴ZeroClaw）
 
 ```rust
-/// MCP客户端包装器
-pub struct McpClientWrapper {
-    /// RMCP客户端
-    client: DynService,
+/// MCP传输trait（支持多种传输协议）
+#[async_trait]
+pub trait McpTransport: Send + Sync {
+    /// 发送JSON-RPC请求并接收响应
+    async fn send_and_recv(&mut self, request: &JsonRpcRequest)
+        -> Result<JsonRpcResponse, McpError>;
 
-    /// 服务器信息
-    info: ServerInfo,
+    /// 关闭连接
+    async fn close(&mut self) -> Result<(), McpError>;
 }
 
-impl McpClientWrapper {
-    /// 连接MCP服务器
-    pub async fn connect(config: &McpServerConfig)
-        -> Result<Self, McpError>
-    {
-        let client = match config.transport.clone() {
-            McpTransport::Stdio { command } => {
-                // 子进程
-                let child = TokioChildProcess::new(Command::new(command));
-                ().serve(child).await?
-            }
-            McpTransport::Http { url } => {
-                // HTTP客户端
-                let transport = StreamableHttpClientTransport::new(&url);
-                ().serve(transport).await?
-            }
-        };
+/// Stdio传输（子进程通信）
+pub struct StdioTransport {
+    child: tokio::process::Child,
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+}
 
-        Ok(Self {
-            client,
-            info: ServerInfo {
-                name: config.name.clone(),
-                capabilities: ServerCapabilities::default(),
-            },
-        })
+#[async_trait]
+impl McpTransport for StdioTransport {
+    async fn send_and_recv(&mut self, request: &JsonRpcRequest)
+        -> Result<JsonRpcResponse, McpError>
+    {
+        // 发送请求到stdin
+        let request_line = serde_json::to_string(request)?;
+        writeln!(self.stdin, "{}", request_line).await?;
+
+        // 从stdout读取响应
+        let mut response_line = String::new();
+        self.stdout.read_line(&mut response_line).await?;
+
+        // 解析JSON-RPC响应
+        Ok(serde_json::from_str(&response_line)?)
     }
 
-    /// 列出工具
-    pub async fn list_tools(&self)
-        -> Result<Vec<Tool>, McpError>
+    async fn close(&mut self) -> Result<(), McpError> {
+        self.child.kill().await?;
+        Ok(())
+    }
+}
+
+/// HTTP传输
+pub struct HttpTransport {
+    client: reqwest::Client,
+    base_url: String,
+    headers: HashMap<String, String>,
+}
+
+#[async_trait]
+impl McpTransport for HttpTransport {
+    async fn send_and_recv(&mut self, request: &JsonRpcRequest)
+        -> Result<JsonRpcResponse, McpError>
     {
-        // 调用MCP list_tools
-        let response = self.client.list_tools(()).await?;
-        Ok(response.tools)
+        let response = self.client
+            .post(&self.base_url)
+            .headers(self.headers.iter()
+                .map(|(k, v)| (HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                           HeaderValue::from_str(v).unwrap()))
+                .collect())
+            .json(request)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await?;
+
+        Ok(response.json().await?)
     }
 
-    /// 调用工具
-    pub async fn call_tool(
-        &self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<ToolResult, McpError> {
-        // 调用MCP call_tool
-        let response = self.client.call_tool(
-            name.to_string(),
-            Some(arguments)
-        ).await?;
-
-        Ok(ToolResult {
-            content: response.content,
-            is_error: response.is_error.unwrap_or(false),
-        })
+    async fn close(&mut self) -> Result<(), McpError> {
+        // HTTP无状态，无需关闭
+        Ok(())
     }
 }
 ```
 
-### 2. Skills系统
+#### MCP客户端（连接握手）
 
 ```rust
-/// Skill管理器
-pub struct SkillManager {
-    /// Skill目录
-    skills_dir: PathBuf,
+/// MCP客户端
+pub struct McpClient {
+    /// 传输层
+    transport: Box<dyn McpTransport>,
 
-    /// 懒加载：Skill索引
-    index: Arc<RwLock<SkillIndex>>,
+    /// 服务器配置
+    config: McpServerConfig,
+
+    /// 原子请求ID生成器
+    next_id: Arc<AtomicU64>,
+
+    /// 工具缓存
+    tools: Arc<RwLock<HashMap<String, McpToolDef>>>,
 }
 
-/// Skill索引
-struct SkillIndex {
-    /// 名称 -> Skill路径
-    by_name: HashMap<String, PathBuf>,
+impl McpClient {
+    /// 连接MCP服务器（初始化握手）
+    pub async fn connect(config: McpServerConfig) -> Result<Self, McpError> {
+        // 1. 创建传输层
+        let mut transport = Self::create_transport(&config)?;
 
-    /// 关键词 -> Skill列表
-    by_keyword: HashMap<String, Vec<String>>,
+        // 2. 发送initialize请求
+        let init_id = 0;
+        let init_req = JsonRpcRequest::new(
+            init_id,
+            "initialize",
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "neco",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            })
+        );
 
-    /// 加载状态
-    loaded: HashMap<String, Arc<Skill>>,
+        let init_response = transport.send_and_recv(&init_req).await?;
+        // 验证初始化响应...
+
+        // 3. 发送initialized通知
+        let notif = JsonRpcRequest::notification(
+            "notifications/initialized",
+            json!(null)
+        );
+        transport.send_and_recv(&notif).await.ok(); // 通知无响应
+
+        // 4. 获取工具列表
+        let list_req = JsonRpcRequest::new(
+            1,
+            "tools/list",
+            json!(null)
+        );
+        let tools_response = transport.send_and_recv(&list_req).await?;
+        let tools_list: McpToolsListResult = serde_json::from_value(tools_response.result)?;
+
+        // 5. 缓存工具定义
+        let mut tools_map = HashMap::new();
+        for tool in tools_list.tools {
+            tools_map.insert(tool.name.clone(), tool);
+        }
+
+        Ok(Self {
+            transport: Box::new(transport),
+            config,
+            next_id: Arc::new(AtomicU64::new(2)),
+            tools: Arc::new(RwLock::new(tools_map)),
+        })
+    }
+
+    /// 创建传输层（工厂模式）
+    fn create_transport(config: &McpServerConfig) -> Result<Box<dyn McpTransport>, McpError> {
+        match &config.transport {
+            McpTransportType::Stdio { command } => {
+                let args: Vec<&str> = command.split_whitespace().collect();
+                let mut child = tokio::process::Command::new(args[0])
+                    .args(&args[1..])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .spawn()?;
+
+                let stdin = child.stdin.take().ok_or(McpError::NoStdin)?;
+                let stdout = child.stdout.take().ok_or(McpError::NoStdout)?;
+
+                Ok(Box::new(StdioTransport { child, stdin, stdout }))
+            }
+            McpTransportType::Http { url, headers } => {
+                Ok(Box::new(HttpTransport {
+                    client: reqwest::Client::new(),
+                    base_url: url.clone(),
+                    headers: headers.clone(),
+                }))
+            }
+        }
+    }
+
+    /// 调用工具（命名空间隔离：server__tool）
+    pub async fn call_tool(
+        &self,
+        tool_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, McpError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+
+        let request = JsonRpcRequest::new(
+            id,
+            "tools/call",
+            json!({
+                "name": tool_name,
+                "arguments": arguments
+            })
+        );
+
+        let response = self.transport.send_and_recv(&request).await?;
+
+        // 超时保护（可配置，默认180s）
+        timeout(Duration::from_secs(self.config.tool_timeout_secs.unwrap_or(180)), async {
+            Ok(response.result)
+        }).await?
+    }
+
+    /// 列出所有工具
+    pub async fn list_tools(&self) -> Vec<McpToolDef> {
+        self.tools.read().await.values().cloned().collect()
+    }
+}
+```
+
+#### MCP注册表（懒加载管理）
+
+```rust
+/// MCP服务器注册表
+pub struct McpRegistry {
+    /// 服务器配置
+    configs: Vec<McpServerConfig>,
+
+    /// 活跃连接（懒加载）
+    connections: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+
+    /// 工具索引（扁平化：server__tool）
+    tool_index: Arc<RwLock<HashMap<String, ToolIndexEntry>>>,
 }
 
-/// Skill（内存表示）
-pub struct Skill {
-    /// 名称
+/// 工具索引条目
+struct ToolIndexEntry {
+    server_name: String,
+    original_name: String,
+    description: Option<String>,
+}
+
+impl McpRegistry {
+    /// 创建注册表（不立即连接）
+    pub fn new(configs: Vec<McpServerConfig>) -> Self {
+        Self {
+            configs,
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            tool_index: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// 获取MCP客户端（懒加载）
+    pub async fn get_client(&self, server_name: &str)
+        -> Result<Arc<McpClient>, McpError>
+    {
+        // 1. 检查缓存
+        {
+            let conns = self.connections.read().await;
+            if let Some(client) = conns.get(server_name) {
+                return Ok(client.clone());
+            }
+        }
+
+        // 2. 查找配置
+        let config = self.configs.iter()
+            .find(|c| c.name == server_name)
+            .ok_or_else(|| McpError::ServerNotFound(server_name.to_string()))?;
+
+        // 3. 检查是否启用
+        if !config.enabled {
+            return Err(McpError::ServerDisabled(server_name.to_string()));
+        }
+
+        // 4. 建立连接
+        let client = McpClient::connect(config.clone()).await?;
+
+        // 5. 缓存连接
+        let client = Arc::new(client);
+        let mut conns = self.connections.write().await;
+        conns.insert(server_name.to_string(), client.clone());
+
+        // 6. 更新工具索引
+        self.update_tool_index(server_name, &client).await;
+
+        Ok(client)
+    }
+
+    /// 更新工具索引
+    async fn update_tool_index(&self, server_name: &str, client: &McpClient) {
+        let tools = client.list_tools().await;
+        let mut index = self.tool_index.write().await;
+
+        for tool in tools {
+            // 命名空间隔离：server__tool
+            let prefixed = format!("{}__{}", server_name, tool.name);
+            index.insert(prefixed, ToolIndexEntry {
+                server_name: server_name.to_string(),
+                original_name: tool.name.clone(),
+                description: tool.description,
+            });
+        }
+    }
+
+    /// 列出所有可用工具（跨所有服务器）
+    pub async fn list_all_tools(&self) -> Vec<(String, String)> {
+        let mut all_tools = Vec::new();
+
+        for config in &self.configs {
+            if !config.enabled {
+                continue;
+            }
+
+            match self.get_client(&config.name).await {
+                Ok(client) => {
+                    let tools = client.list_tools().await;
+                    for tool in tools {
+                        let prefixed = format!("{}__{}", config.name, tool.name);
+                        all_tools.push((prefixed, tool.description.unwrap_or_default()));
+                    }
+                }
+                Err(_) => continue, // 非致命：跳过失败的服务器
+            }
+        }
+
+        all_tools
+    }
+
+    /// 路由工具调用（server__tool → client.call_tool）
+    pub async fn call_tool(
+        &self,
+        prefixed_name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, McpError> {
+        // 1. 解析工具名
+        let parts: Vec<&str> = prefixed_name.split("__").collect();
+        if parts.len() != 2 {
+            return Err(McpError::InvalidToolName(prefixed_name.to_string()));
+        }
+
+        let server_name = parts[0];
+        let tool_name = parts[1];
+
+        // 2. 获取客户端（懒加载）
+        let client = self.get_client(server_name).await?;
+
+        // 3. 调用工具
+        client.call_tool(tool_name, arguments).await
+    }
+}
+```
+
+### 2. Skills系统（懒加载架构，借鉴ZeroClaw）
+
+#### 两阶段加载策略
+
+```rust
+/// Skills提示注入模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillsPromptInjectionMode {
+    /// 完整模式：将所有Skill内容注入系统提示
+    Full,
+
+    /// 紧凑模式：仅注入元数据，Agent按需读取
+    Compact,
+}
+
+/// Skill元数据（紧凑模式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillMetadata {
+    /// Skill名称
     pub name: String,
 
-    /// 描述
+    /// 简短描述
     pub description: String,
+
+    /// 存储位置（Agent按需读取）
+    pub location: PathBuf,
 
     /// 触发关键词
     pub triggers: Vec<String>,
 
-    /// 内容
-    pub content: String,
-
-    /// 允许的工具
+    /// 允许的工具列表
     pub allowed_tools: Option<Vec<String>>,
 }
 
+/// Skill完整内容（Full模式）
+#[derive(Debug, Clone)]
+pub struct SkillContent {
+    /// 元数据
+    pub metadata: SkillMetadata,
+
+    /// 完整内容
+    pub content: String,
+}
+```
+
+#### Skill管理器（懒加载）
+
+```rust
+/// Skill管理器
+pub struct SkillManager {
+    /// Skills目录
+    skills_dir: PathBuf,
+
+    /// 元数据索引（始终加载）
+    metadata_index: Arc<RwLock<HashMap<String, SkillMetadata>>>,
+
+    /// 完整内容缓存（按需加载）
+    content_cache: Arc<RwLock<HashMap<String, Arc<SkillContent>>>>,
+
+    /// 提示注入模式
+    injection_mode: SkillsPromptInjectionMode,
+}
+
 impl SkillManager {
-    /// 按上下文激活Skills
-    pub async fn activate_skills(
-        &self,
-        context: &str,
-    ) -> Vec<Arc<Skill>> {
-        let mut activated = Vec::new();
-        let index = self.index.read().await;
+    /// 扫描Skills目录（仅加载元数据）
+    pub async fn scan_skills(&self) -> Result<(), SkillError> {
+        let mut index = self.metadata_index.write().await;
 
-        // 1. 匹配关键词
-        for (keyword, skill_names) in &index.by_keyword {
-            if context.contains(keyword) {
-                for skill_name in skill_names {
-                    if let Some(skill) = index.loaded.get(skill_name) {
-                        activated.push(skill.clone());
-                    }
-                }
+        // 递归扫描所有SKILL.md文件
+        let mut entries = fs::read_dir(&self.skills_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+
+            // 读取SKILL.md
+            let skill_path = path.join("SKILL.md");
+            if !skill_path.exists() {
+                continue;
             }
+
+            // 解析YAML frontmatter（仅元数据）
+            let content = fs::read_to_string(&skill_path).await?;
+            let metadata = Self::parse_metadata(&content, &skill_path)?;
+
+            // 构建关键词索引
+            for trigger in &metadata.triggers {
+                // TODO: 构建倒排索引
+            }
+
+            index.insert(metadata.name.clone(), metadata);
         }
 
-        // 2. 去重
-        activated.sort_by_key(|s| s.name.clone());
-        activated.dedup_by_key(|s| s.name.clone());
-
-        activated
+        Ok(())
     }
 
-    /// 加载Skill（懒加载）
-    async fn load_skill(&self, name: &str) -> Result<Arc<Skill>, SkillError> {
-        let mut index = self.index.write().await;
-
-        // 检查缓存
-        if let Some(skill) = index.loaded.get(name) {
-            return Ok(skill.clone());
-        }
-
-        // 加载文件
-        let path = index.by_name.get(name)
-            .ok_or_else(|| SkillError::NotFound(name.to_string()))?;
-
-        let content = fs::read_to_string(path).await?;
-
-        // 解析
-        let skill = Self::parse_skill(&content)?;
-
-        // 缓存
-        let skill = Arc::new(skill);
-        index.loaded.insert(name.to_string(), skill.clone());
-
-        Ok(skill)
-    }
-
-    /// 解析SKILL.md
-    fn parse_skill(content: &str) -> Result<Skill, SkillError> {
+    /// 解析Skill元数据（仅YAML frontmatter）
+    fn parse_metadata(content: &str, location: &Path)
+        -> Result<SkillMetadata, SkillError>
+    {
         // 提取YAML frontmatter
         let parts: Vec<&str> = content.splitn(3, "---").collect();
         if parts.len() < 3 {
@@ -2667,28 +3273,249 @@ impl SkillManager {
         }
 
         // 解析YAML
-        let meta: SkillMetadata = serde_yaml::from_str(parts[1])?;
+        let meta: SkillMetadataYaml = serde_yaml::from_str(parts[1])?;
 
-        // 提取内容
-        let body = parts[2].to_string();
+        // 提取触发词
+        let triggers = Self::extract_triggers(&meta.description);
 
-        Ok(Skill {
+        Ok(SkillMetadata {
             name: meta.name,
             description: meta.description,
-            triggers: Self::extract_triggers(&meta.description),
-            content: body,
+            location: location.to_path_buf(),
+            triggers,
             allowed_tools: meta.allowed_tools,
         })
     }
+
+    /// 激活Skills（根据注入模式）
+    pub async fn activate_skills(
+        &self,
+        context: &str,
+    ) -> Vec<ActivatedSkill> {
+        let index = self.metadata_index.read().await;
+        let mut activated = Vec::new();
+
+        // 匹配关键词
+        for (name, metadata) in index.iter() {
+            if metadata.triggers.iter().any(|t| context.contains(t)) {
+                match self.injection_mode {
+                    SkillsPromptInjectionMode::Full => {
+                        // 完整模式：加载内容
+                        if let Ok(content) = self.load_content(name).await {
+                            activated.push(ActivatedSkill::Full(content));
+                        }
+                    }
+                    SkillsPromptInjectionMode::Compact => {
+                        // 紧凑模式：仅元数据
+                        activated.push(ActivatedSkill::Compact(metadata.clone()));
+                    }
+                }
+            }
+        }
+
+        activated
+    }
+
+    /// 加载Skill完整内容（懒加载）
+    async fn load_content(&self, name: &str)
+        -> Result<Arc<SkillContent>, SkillError>
+    {
+        // 1. 检查缓存
+        {
+            let cache = self.content_cache.read().await;
+            if let Some(content) = cache.get(name) {
+                return Ok(content.clone());
+            }
+        }
+
+        // 2. 读取文件
+        let metadata = {
+            let index = self.metadata_index.read().await;
+            index.get(name).cloned()
+                .ok_or_else(|| SkillError::NotFound(name.to_string()))?
+        };
+
+        let content = fs::read_to_string(&metadata.location).await?;
+
+        // 3. 解析完整内容
+        let skill_content = SkillContent {
+            metadata: metadata.clone(),
+            content,
+        };
+
+        // 4. 缓存
+        let skill_content = Arc::new(skill_content);
+        let mut cache = self.content_cache.write().await;
+        cache.insert(name.to_string(), skill_content.clone());
+
+        Ok(skill_content)
+    }
 }
 
-/// Skill元数据（YAML frontmatter）
-#[derive(Debug, Deserialize)]
-struct SkillMetadata {
-    name: String,
-    description: String,
-    #[serde(default)]
-    allowed_tools: Option<Vec<String>>,
+/// 激活的Skill
+#[derive(Debug, Clone)]
+pub enum ActivatedSkill {
+    /// 完整内容（Full模式）
+    Full(Arc<SkillContent>),
+
+    /// 仅元数据（Compact模式）
+    Compact(SkillMetadata),
+}
+```
+
+#### 提示注入（Full vs Compact）
+
+```rust
+/// 将Skills注入到系统提示
+impl SkillManager {
+    /// 生成Skills提示（根据模式）
+    pub async fn inject_into_prompt(
+        &self,
+        activated: Vec<ActivatedSkill>,
+    ) -> String {
+        match self.injection_mode {
+            SkillsPromptInjectionMode::Full => {
+                // Full模式：注入完整内容
+                let mut prompt = String::from("<skills>\n");
+
+                for skill in activated {
+                    if let ActivatedSkill::Full(content) = skill {
+                        prompt.push_str(&format!(
+                            "  <skill name=\"{}\">\n{}\n  </skill>\n",
+                            content.metadata.name,
+                            content.content
+                        ));
+                    }
+                }
+
+                prompt.push_str("</skills>");
+                prompt
+            }
+
+            SkillsPromptInjectionMode::Compact => {
+                // Compact模式：仅注入元数据
+                let mut prompt = String::from("<skills>\n");
+
+                for skill in activated {
+                    if let ActivatedSkill::Compact(metadata) = skill {
+                        prompt.push_str(&format!(
+                            "  <skill>\n\
+                             <name>{}</name>\n\
+                             <description>{}</description>\n\
+                             <location>{}</location>\n\
+                             </skill>\n",
+                            metadata.name,
+                            metadata.description,
+                            metadata.location.display()
+                        ));
+                    }
+                }
+
+                prompt.push_str("\n\
+                 INSTRUCTION: When you need to use a skill, read the SKILL.md file \
+                 at the specified <location> to get the full content.\n\
+                 Only read the file when actually needed for the task.");
+                prompt.push_str("</skills>");
+                prompt
+            }
+        }
+    }
+}
+```
+
+#### 安全审计（借鉴ZeroClaw）
+
+```rust
+/// Skill安全审计器
+pub struct SkillAuditor {
+    /// 是否允许脚本
+    allow_scripts: bool,
+
+    /// 最大文件大小（防止zip bomb）
+    max_file_size: usize,
+}
+
+impl SkillAuditor {
+    /// 审计Skill目录
+    pub async fn audit_skill_directory(
+        &self,
+        skill_dir: &Path,
+    ) -> Result<AuditReport, SkillError> {
+        let mut report = AuditReport {
+            skill_name: skill_dir.file_name().unwrap().to_string_lossy().to_string(),
+            issues: Vec::new(),
+            is_safe: true,
+        };
+
+        // 1. 检查文件大小
+        for entry in fs::read_dir(skill_dir).await? {
+            let entry = entry.await?;
+            let metadata = entry.metadata().await?;
+
+            if metadata.len() > self.max_file_size as u64 {
+                report.issues.push(AuditIssue::FileTooLarge {
+                    path: entry.path(),
+                    size: metadata.len(),
+                });
+                report.is_safe = false;
+            }
+        }
+
+        // 2. 检查路径遍历
+        if skill_dir.components().any(|c| c.as_os_str() == "..") {
+            report.issues.push(AuditIssue::PathTraversal);
+            report.is_safe = false;
+        }
+
+        // 3. 检查原生二进制（仅允许WASM）
+        for entry in fs::read_dir(skill_dir).await? {
+            let entry = entry.await?;
+            if entry.path().extension().and_then(|s| s.to_str()) == Some("exe")
+                || entry.path().extension().and_then(|s| s.to_str()) == Some("bin")
+            {
+                report.issues.push(AuditIssue::NativeBinary {
+                    path: entry.path(),
+                });
+                report.is_safe = false;
+            }
+        }
+
+        // 4. 检查脚本（如果禁止）
+        if !self.allow_scripts {
+            for entry in fs::read_dir(skill_dir).await? {
+                let entry = entry.await?;
+                if let Some(ext) = entry.path().extension() {
+                    match ext.to_str() {
+                        Some("sh") | Some("ps1") | Some("bat") => {
+                            report.issues.push(AuditIssue::ScriptNotAllowed {
+                                path: entry.path(),
+                            });
+                            report.is_safe = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(report)
+    }
+}
+
+/// 审计报告
+#[derive(Debug, Clone)]
+pub struct AuditReport {
+    pub skill_name: String,
+    pub issues: Vec<AuditIssue>,
+    pub is_safe: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuditIssue {
+    FileTooLarge { path: PathBuf, size: u64 },
+    PathTraversal,
+    NativeBinary { path: PathBuf },
+    ScriptNotAllowed { path: PathBuf },
 }
 ```
 
