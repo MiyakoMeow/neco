@@ -1210,7 +1210,7 @@ impl Channel for TelegramChannel {
     async fn health_check(&self) -> bool {
         self.client
             .get(format!(
-                "https://api.telegraf.org/bot{}/getMe",
+                "https://api.telegram.org/bot{}/getMe",
                 self.bot_token
             ))
             .send()

@@ -1293,7 +1293,7 @@ Use this skill when you want to say hello in different languages.
 
 #### 复杂示例
 
-```yaml
+```markdown
 ---
 name: data-analysis
 description: Analyze datasets, generate charts, and create summary reports. Use when working with CSV files, Excel spreadsheets, or any structured data that needs analysis or visualization.

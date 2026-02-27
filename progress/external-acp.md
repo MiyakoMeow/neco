@@ -472,10 +472,7 @@ flowchart TB
         AgentTool[代理->工具]
         AgentAgent[代理->代理]
     end
-    
-    ACP --> EditorAgent
-    MCP --> AgentTool
-    A2A --> 
+
     ACP --> EditorAgent
     MCP --> AgentTool
     A2A --> AgentAgent

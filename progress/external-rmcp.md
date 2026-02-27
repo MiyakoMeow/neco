@@ -852,22 +852,23 @@ RMCP 支持按需加载服务器功能，避免初始化时加载所有资源。
 #### 1. 延迟初始化
 
 ```rust
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::Lazy;
 
 pub struct LazyServer {
-    heavy_resource: Arc<Mutex<Option<HeavyResource>>>,
+    heavy_resource: Arc<Mutex<Option<Arc<HeavyResource>>>>,
 }
 
 impl LazyServer {
-    async fn get_resource(&self) -> Result<&HeavyResource, McpError> {
+    async fn get_resource(&self) -> Result<Arc<HeavyResource>, McpError> {
         let mut guard = self.heavy_resource.lock().await;
 
         if guard.is_none() {
-            *guard = Some(HeavyResource::load().await?);
+            *guard = Some(Arc::new(HeavyResource::load().await?));
         }
 
-        Ok(guard.as_ref().unwrap())
+        Ok(guard.as_ref().unwrap().clone())
     }
 }
 ```

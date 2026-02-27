@@ -12,8 +12,8 @@ sequenceDiagram
     Note over Host,Server: 初始化阶段
     Host->>Client: 启动连接
     Client->>Server: initialize (初始化请求)
-    Server->>Client: initialized (已初始化)
-    Server->>Client:capabilities (能力声明)
+    Server->>Client: initialize 响应 (包含 capabilities)
+    Client->>Server: initialized (已初始化通知)
 
     Note over Host,Server: 发现阶段
     Client->>Server: tools/list (列出工具)
@@ -184,7 +184,7 @@ sequenceDiagram
     S->>S: 验证客户端能力
     S->>S: 确定服务器能力
 
-    S->>C: initialized 响应<br/>包含服务器能力
+    S->>C: initialize 响应<br/>包含服务器能力
     Note over C,S: 服务器声明支持的功能<br/>（工具、资源、提示、日志等）
 
     C->>S: 发送功能请求<br/>基于协商的能力
@@ -201,7 +201,7 @@ sequenceDiagram
     participant Server as HTTP 服务器
     participant MCP as MCP 处理器
 
-    Client->>Server: POST /messages<br/>Content-Type: text/event-stream
+    Client->>Server: POST /messages<br/>Content-Type: application/json
 
     Server->>MCP: 建立 SSE 连接
     MCP->>Server: 连接就绪

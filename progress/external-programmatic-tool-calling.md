@@ -87,17 +87,21 @@ caller字段出现在工具使用块中，用于指示工具是如何被调用�
 }
 ```
 
-#### 2.2.3 server_tool_use与code_execution_tool_result
+#### 2.2.3 tool_use与code_execution_tool_result
 
-当代码执行环境调用工具时，API会返回server_tool_use块，这是Programmatic Tool Calling中的一个特殊内容块类型：
+当代码执行环境调用工具时，API会返回tool_use块（带有caller字段），这是Programmatic Tool Calling中的一个特殊内容块类型：
 
 ```json
 {
-  "type": "server_tool_use",
+  "type": "tool_use",
   "id": "srvtoolu_abc123",
-  "name": "code_execution",
+  "name": "query_database",
   "input": {
-    "code": "results = await query_database('SELECT * FROM sales')"
+    "sql": "SELECT * FROM sales"
+  },
+  "caller": {
+    "type": "code_execution_20260120",
+    "tool_id": "srvtoolu_abc123"
   }
 }
 ```
@@ -122,7 +126,7 @@ flowchart TD
     B --> C[Claude编写Python脚本调用工具]
     C --> D{脚本是否调用工具?}
     D -->|是| E[代码执行暂停]
-    E --> F[API返回server_tool_use块]
+    E --> F[API返回tool_use块]
     F --> G[开发者执行工具]
     G --> H[返回tool_result]
     H --> I[代码执行恢复]

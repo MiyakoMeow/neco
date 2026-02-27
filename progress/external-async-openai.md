@@ -357,7 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
 
     // 定义工具
-    let get_weather = Function {
+    let weather_function = Function {
         name: "get_weather".to_string(),
         description: Some("Get the current weather in a given location".to_string()),
         parameters: Some(json!({
@@ -381,7 +381,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..Default::default()
             }
         ])
-        .tools(vec![Tool::Function(get_weather)])
+        .tools(vec![Tool::Function(weather_function)])
         .build()?;
 
     let response = client.chat().create(request).await?;
@@ -438,6 +438,7 @@ async-openai 支持流式工具调用：
 
 ```rust
 use async_openai::{Client, types::chat::*};
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -749,7 +750,7 @@ let client = Client::with_config(config);
 
 ```rust
 use async_openai::{Client, config::OpenAIConfig};
-use reqwest::Client;
+use reqwest::Client as ReqwestClient;
 
 let http_client = reqwest::ClientBuilder::new()
     .user_agent("MyApp/1.0")

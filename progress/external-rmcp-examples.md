@@ -148,24 +148,79 @@ impl FileSystemServer {
     // 安全路径解析
     fn safe_path(&self, path: &str) -> Result<std::path::PathBuf, McpError> {
         let full_path = self.base_path.join(path);
-
-        // 规范化路径并检查是否在基础路径内
-        let canonical = full_path.canonicalize()
+        
+        // 规范化基础路径
+        let base_canonical = self.base_path.canonicalize()
             .map_err(|e| McpError {
                 code: ErrorCode::InternalError,
-                message: format!("Invalid path: {}", e),
+                message: format!("Invalid base path: {}", e),
                 data: None,
             })?;
-
-        if !canonical.starts_with(&*self.base_path) {
-            return Err(McpError {
-                code: ErrorCode::InvalidParams,
-                message: "Path traversal detected".into(),
-                data: None,
-            });
+        
+        // 尝试规范化完整路径
+        match full_path.canonicalize() {
+            Ok(canonical) => {
+                // 检查是否在基础路径内
+                if !canonical.starts_with(&base_canonical) {
+                    return Err(McpError {
+                        code: ErrorCode::InvalidParams,
+                        message: "Path traversal detected".into(),
+                        data: None,
+                    });
+                }
+                Ok(canonical)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // 文件不存在，手动检查路径遍历
+                // 从基础路径开始，逐步添加路径组件
+                let mut normalized = base_canonical.clone();
+                let relative_path = std::path::Path::new(path);
+                
+                for component in relative_path.components() {
+                    match component {
+                        std::path::Component::CurDir => {}
+                        std::path::Component::ParentDir => {
+                            if !normalized.pop() {
+                                return Err(McpError {
+                                    code: ErrorCode::InvalidParams,
+                                    message: "Path traversal detected".into(),
+                                    data: None,
+                                });
+                            }
+                        }
+                        std::path::Component::Normal(name) => {
+                            normalized.push(name);
+                        }
+                        _ => {
+                            // 不应该出现前缀或根目录，因为 path 是相对路径
+                            return Err(McpError {
+                                code: ErrorCode::InvalidParams,
+                                message: "Absolute path not allowed".into(),
+                                data: None,
+                            });
+                        }
+                    }
+                }
+                
+                // 检查是否仍在基础路径内（应该总是成立，但再次确认）
+                if !normalized.starts_with(&base_canonical) {
+                    return Err(McpError {
+                        code: ErrorCode::InvalidParams,
+                        message: "Path traversal detected".into(),
+                        data: None,
+                    });
+                }
+                
+                Ok(normalized)
+            }
+            Err(e) => {
+                Err(McpError {
+                    code: ErrorCode::InternalError,
+                    message: format!("Invalid path: {}", e),
+                    data: None,
+                })
+            }
         }
-
-        Ok(canonical)
     }
 }
 
@@ -1036,7 +1091,7 @@ struct ServerConfig {
     limits: LimitsSection,
 }
 
-fn load_config(path: &str) -> Result<ServerConfig, Box<dyn std::error::Error>> {
+async fn load_config(path: &str) -> Result<ServerConfig, Box<dyn std::error::Error>> {
     let content = tokio::fs::read_to_string(path).await?;
     Ok(toml::from_str(&content)?)
 }

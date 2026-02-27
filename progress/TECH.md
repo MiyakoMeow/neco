@@ -2854,7 +2854,7 @@ graph TD
     D --> K[crossterm]
     E --> L[futures]
     F --> N[serde_json]
-    M --> O[uuid]
+    M --> O[getrandom]
     P --> R[time]
 ```
 
