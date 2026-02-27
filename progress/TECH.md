@@ -2845,11 +2845,17 @@ graph TD
     A --> F[serde]
     A --> G[anyhow]
     A --> H[thiserror]
+    A --> M[uuid]
+    A --> P[chrono]
+    A --> Q[async-trait]
 
     B --> I[reqwest]
     C --> J[schemars]
     D --> K[crossterm]
     E --> L[futures]
+    F --> N[serde_json]
+    M --> O[uuid]
+    P --> R[time]
 ```
 
 ---
