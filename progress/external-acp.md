@@ -1,609 +1,467 @@
-# Agent Client Protocol (ACP) SDK 彻底探索报告
+# Agent Client Protocol (ACP) 参考指南
 
-> 探索目标：https://github.com/agentclientprotocol/agent-client-protocol
-> 协议版本：v1 (0.6.3)
+> **协议版本**: v1 (最新版本 v0.10.8，2026年2月)  
+> **官方仓库**: https://github.com/agentclientprotocol/agent-client-protocol  
+> **官方网站**: https://agentclientprotocol.com/
+
+---
 
 ## 目录
 
 1. [协议概述](#1-协议概述)
-2. [核心概念与架构](#2-核心概念与架构)
-3. [消息格式与通信机制](#3-消息格式与通信机制)
-4. [客户端与服务器实现](#4-客户端与服务器实现)
-5. [支持的功能与能力](#5-支持的功能与能力)
-6. [与其他协议的对比](#6-与其他协议的对比)
-7. [集成方式与示例代码](#7-集成方式与示例代码)
-8. [生态系统与社区](#8-生态系统与社区)
-9. [总结与展望](#9-总结与展望)
+2. [核心概念](#2-核心概念)
+3. [协议方法详解](#3-协议方法详解)
+4. [SDK与集成](#4-sdk与集成)
+5. [协议对比](#5-协议对比)
 
 ---
 
 ## 1. 协议概述
 
-### 1.1 什么是 Agent Client Protocol
+### 1.1 什么是 ACP
 
-Agent Client Protocol（ACP）是一个开放标准，旨在标准化代码编辑器（IDE、文本编辑器等）与AI编码代理之间的通信。ACP 由 Zed Industries 主导开发，并在 GitHub 上开源。
+Agent Client Protocol (ACP) 是一个开放标准，用于标准化代码编辑器（IDE、文本编辑器等）与 AI 编码代理之间的通信。由 Zed Industries 主导开发。
 
-**官方仓库**：https://github.com/agentclientprotocol/agent-client-protocol
+**核心定位**: 类似于 LSP 标准化语言服务器集成，ACP 标准化了 AI 代理与编辑器的集成，实现"一次实现，到处运行"。
 
-**核心定位**：类似于 Language Server Protocol（LSP）如何标准化语言服务器的集成，ACP 标准化了AI代理与代码编辑器的集成，使得任何实现ACP的代理都可以与任何兼容ACP的编辑器配合工作。
+### 1.2 设计原则
 
-### 1.2 协议设计目标
+- **可信优先**: 编辑器保留对代理工具调用的控制权
+- **用户体验优先**: 解决与 AI 代理交互的 UX 挑战
+- **MCP 友好**: 基于 JSON-RPC 2.0，重用 MCP 类型定义
 
-ACP 协议的设计遵循以下核心原则：
+### 1.3 通信模型
 
-1. **可信（Trusted）**：ACP在用户使用代码编辑器与可信模型交互时工作，编辑器仍保留对代理工具调用的控制权
-2. **用户体验优先（UX-first）**：设计解决与AI代理交互的用户体验挑战
-3. **MCP友好（MCP-friendly）**：协议基于JSON-RPC构建，尽可能重用MCP类型
+ACP 遵循 JSON-RPC 2.0 规范，支持两种消息类型：
 
-### 1.3 协议基本信息
+| 类型 | 描述 | 用途 |
+|------|------|------|
+| **Methods** | 请求-响应对 | 需要返回结果或错误的操作 |
+| **Notifications** | 单向消息 | 不需要响应的事件通知 |
 
-| 属性 | 值 |
-|------|-----|
-| 当前版本 | Protocol Version 1 |
-| 最新发布 | v0.6.3（2025年10月30日） |
-| 许可证 | Apache 2.0 |
-| Stars | 1.2k+ |
-| Forks | 80+ |
-| 官方网站 | https://agentclientprotocol.com/ |
+### 1.4 协议生命周期
+
+```
+初始化阶段 → 会话建立阶段 → 提示词交互阶段
+```
+
+1. **初始化**: 客户端调用 `initialize` 协商版本和能力
+2. **会话建立**: 调用 `session/new` 创建新会话或 `session/load` 加载已有会话
+3. **提示词交互**: 通过 `session/prompt` 发送用户消息，接收 `session/update` 流式更新
 
 ---
 
-## 2. 核心概念与架构
+## 2. 核心概念
 
-### 2.1 协议架构概览
+### 2.1 架构组件
 
-
-```mermaid
-flowchart TB
-    subgraph Client["客户端（代码编辑器）"]
-        UI[用户界面]
-        SessionMgr[会话管理]
-        Transport[传输层]
-    end
-    
-    subgraph Agent["代理（AI编程助手）"]
-        LLM[大语言模型]
-        ToolMgr[工具管理]
-        MCPTool[MCP工具]
-    end
-    
-    subgraph TransportLayer["传输层"]
-        Stdio[Stdio传输]
-        HTTP[HTTP传输]
-        WebSocket[WebSocket传输]
-    end
-    
-    UI --> SessionMgr
-    SessionMgr --> Transport
-    Transport --> Stdio
-    Transport --> HTTP
-    Transport --> WebSocket
-    
-    Agent --> LLM
-    Agent --> ToolMgr
-    ToolMgr --> MCPTool
+```
+┌─────────────┐     JSON-RPC      ┌─────────────┐
+│   Client    │ ←──────────────→  │   Agent     │
+│ (编辑器)     │   Stdio/HTTP/WS   │ (AI代理)     │
+└─────────────┘                   └─────────────┘
+      │                                  │
+      ├─ 文件系统                         ├─ LLM
+      ├─ 终端                            ├─ 工具
+      └─ 用户界面                        └─ MCP服务器
 ```
 
-### 2.2 核心组件
-
-#### 2.2.1 客户端（Client）
-
-客户端通常是代码编辑器（IDE、文本编辑器），负责：
-
-- 管理环境（工作目录、文件系统访问）
-- 处理用户交互
+#### 客户端 (Client)
+- 管理环境（工作目录、文件系统）
 - 控制资源访问权限
+- 处理用户交互
 - 启动和管理代理进程
-- 转发用户提示词给代理
-- 接收并显示代理的流式响应
 
-#### 2.2.2 代理（Agent）
-
-代理是使用生成式AI自主修改代码的程序，负责：
-
-- 处理来自客户端的请求
+#### 代理 (Agent)
+- 处理客户端请求
 - 使用语言模型和工具执行任务
 - 管理会话状态和上下文
-- 向客户端发送流式更新
-- 请求文件系统和终端操作权限
+- 发送流式更新
 
-### 2.3 通信模型
+### 2.2 传输层
 
-ACP遵循JSON-RPC 2.0规范，采用两种消息类型：
+ACP 支持多种传输机制：
 
-1. **通知（Notifications）**：单向消息，不期望响应
-2. **方法（Methods）**：请求-响应对，期望返回结果或错误
+- **Stdio**: 标准输入输出（本地进程）
+- **HTTP**: HTTP 请求（远程代理）
+- **WebSocket**: 实时双向通信
 
----
+### 2.3 内容块 (Content Blocks)
 
-## 3. 消息格式与通信机制
+ACP 使用与 MCP 相同的内容块结构：
 
-### 3.1 协议生命周期
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Agent
-
-    Note over Client,Agent: 初始化阶段
-    Client->>Agent: authenticate (如果需要)
-    Client->>Agent: initialize
-    Agent-->>Client: initialize响应
-
-    Note over Client,Agent: 会话建立阶段
-    alt 支持加载会话
-        Client->>Agent: session/load
-        Agent-->>Client: session/load响应
-    else 创建新会话
-        Client->>Agent: session/new
-        Agent-->>Client: session/new响应 (包含sessionId)
-    end
-
-    Note over Client,Agent: 提示词交互阶段
-    loop 提示词循环
-        Client->>Agent: session/prompt
-        Agent-->>Client: session/update (流式更新)
-        Agent->>Client: fs/read_text_file (如需要)
-        Client-->>Agent: fs/read_text_file响应
-        Agent->>Client: terminal/create (如需要)
-        Agent->>Client: session/request_permission (如需要)
-        Client-->>Agent: session/request_permission响应
-        Agent-->>Client: session/prompt响应 (stopReason)
-    end
-    
-    Client->>Agent: session/cancel (可选)
-```
-
-### 3.2 消息格式示例
-
-#### 3.2.1 初始化请求
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": 1,
-        "clientCapabilities": {
-            "fs": {
-                "readTextFile": true,
-                "writeTextFile": true
-            },
-            "terminal": true
-        },
-        "clientInfo": {
-            "name": "zed",
-            "version": "0.1.0"
-        }
-    }
-}
-```
-
-#### 3.2.2 初始化响应
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "result": {
-        "protocolVersion": 1,
-        "agentCapabilities": {
-            "loadSession": true,
-            "promptCapabilities": {
-                "image": true,
-                "audio": true,
-                "embeddedContext": true
-            },
-            "mcpCapabilities": {
-                "http": true,
-                "sse": false
-            }
-        },
-        "agentInfo": {
-            "name": "claude",
-            "version": "1.0.0"
-        }
-    }
-}
-```
-
-### 3.3 内容块（Content Blocks）
-
-ACP使用与MCP相同的内容块结构：
-
-| 类型 | 描述 | 必需能力 |
+| 类型 | 描述 | 能力要求 |
 |------|------|----------|
-| text | 文本内容 | 必需支持 |
-| image | 图像内容 | image能力 |
-| audio | 音频内容 | audio能力 |
-| resource | 嵌入资源 | embeddedContext能力 |
-| resource_link | 资源链接 | 必需支持 |
-
-### 3.4 传输层
-
-ACP支持多种传输机制：
-
-```mermaid
-flowchart TB
-    subgraph Editor["编辑器进程"]
-        stdin1[stdin]
-        stdout1[stdout]
-    end
-    
-    subgraph AgentProcess["代理进程"]
-        stdout2[stdout]
-        stdin2[stdin]
-    end
-    
-    subgraph Remote["远程代理"]
-        HTTPConn[HTTP连接]
-    end
-    
-    stdin1 -->|JSON-RPC| stdin2
-    stdout2 -->|JSON-RPC| stdout1
-    Editor -.->|HTTP/WebSocket| HTTPConn
-    HTTPConn --> Agent
-```
+| `text` | 纯文本内容 | 必需 |
+| `image` | 图像数据 | `image` |
+| `audio` | 音频数据 | `audio` |
+| `resource` | 嵌入资源 | `embeddedContext` |
+| `resource_link` | 资源链接 | 必需 |
 
 ---
 
-## 4. 客户端与服务器实现
+## 3. 协议方法详解
 
-### 4.1 官方SDK支持
+### 3.1 代理端方法 (Agent Methods)
 
-| 语言 | SDK仓库 | 状态 |
+#### 3.1.1 `initialize` ⭐ 必需
+
+**用途**: 建立连接并协商协议版本和能力
+
+**请求参数**:
+- `protocolVersion` (number, 必需): 客户端支持的协议版本
+- `clientCapabilities` (ClientCapabilities): 客户端能力声明
+- `clientInfo` (ClientInfo, 可选): 客户端名称和版本
+
+**响应结果**:
+- `protocolVersion` (number): 协商的协议版本
+- `agentCapabilities` (AgentCapabilities): 代理能力声明
+- `agentInfo` (AgentInfo, 可选): 代理名称和版本
+- `authMethods` (AuthMethod[], 可选): 支持的认证方法
+
+#### 3.1.2 `authenticate`
+
+**用途**: 使用指定方法进行身份验证
+
+**请求参数**:
+- `methodId` (string, 必需): 认证方法 ID（来自 initialize 响应）
+
+**响应结果**: 空对象表示成功
+
+#### 3.1.3 `session/new` ⭐ 必需
+
+**用途**: 创建新的对话会话
+
+**请求参数**:
+- `cwd` (string, 必需): 工作目录（绝对路径）
+- `mcpServers` (McpServer[], 必需): MCP 服务器列表
+
+**响应结果**:
+- `sessionId` (string, 必需): 会话唯一标识符
+- `configOptions` (SessionConfigOptions, 可选): 初始配置选项
+- `modes` (SessionModes, 可选): 初始模式状态
+
+**错误**: 可能返回 `auth_required` 错误，表示需要先认证
+
+#### 3.1.4 `session/load`
+
+**用途**: 加载已有会话（需要 `loadSession` 能力）
+
+**请求参数**:
+- `sessionId` (string, 必需): 要加载的会话 ID
+- `cwd` (string, 必需): 工作目录
+- `mcpServers` (McpServer[], 必需): MCP 服务器列表
+
+**响应结果**:
+- `configOptions` (SessionConfigOptions, 可选): 配置选项
+- `modes` (SessionModes, 可选): 模式状态
+
+**行为**: 代理会通过 `session/update` 通知流式发送完整对话历史
+
+#### 3.1.5 `session/prompt` ⭐ 必需
+
+**用途**: 发送用户提示词到代理
+
+**请求参数**:
+- `sessionId` (string, 必需): 目标会话 ID
+- `prompt` (ContentBlock[], 必需): 用户消息内容块数组
+
+**响应结果**:
+- `stopReason` (StopReason, 必需): 停止原因
+  - `end_turn`: 代理完成响应
+  - `cancelled`: 客户端取消
+  - `max_tokens`: 达到 token 限制
+  - `error`: 发生错误
+
+**行为**: 
+1. 代理通过 `session/update` 通知发送流式更新
+2. 可能调用客户端方法（读取文件、创建终端等）
+3. 可能通过 `session/request_permission` 请求权限
+4. 最终返回 `stopReason`
+
+#### 3.1.6 `session/set_mode`
+
+**用途**: 切换会话模式（如 "ask"、"architect"、"code"）
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `modeId` (string, 必需): 模式 ID（必须是 availableModes 之一）
+
+**响应结果**: 空对象
+
+#### 3.1.7 `session/set_config_option`
+
+**用途**: 设置会话配置选项
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `configId` (string, 必需): 配置选项 ID
+- `value` (string, 必需): 配置值 ID
+
+**响应结果**:
+- `configOptions` (SessionConfigOptions, 必需): 更新后的完整配置
+
+#### 3.1.8 `session/cancel` (通知)
+
+**用途**: 取消正在进行的操作
+
+**参数**:
+- `sessionId` (string, 必需)
+
+**行为**: 代理应停止所有 LLM 请求和工具调用，发送待处理的 `session/update` 通知，然后返回 `stopReason: "cancelled"`
+
+---
+
+### 3.2 客户端方法 (Client Methods)
+
+#### 3.2.1 `session/request_permission` ⭐ 必需
+
+**用途**: 请求用户授权执行工具调用
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `toolCall` (ToolCall, 必需): 工具调用详情
+- `options` (PermissionOption[], 必需): 用户可选的权限选项
+
+**响应结果**:
+- `outcome` (RequestPermissionOutcome, 必需): 用户决定
+  - `granted`: 授权
+  - `denied`: 拒绝
+  - `cancelled`: 取消提示
+
+#### 3.2.2 `fs/read_text_file`
+
+**用途**: 读取文本文件内容（需要 `fs.readTextFile` 能力）
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `path` (string, 必需): 文件绝对路径
+- `line` (number, 可选): 起始行号（1-based）
+- `limit` (number, 可选): 最大读取行数
+
+**响应结果**:
+- `content` (string, 必需): 文件内容
+
+#### 3.2.3 `fs/write_text_file`
+
+**用途**: 写入文本文件（需要 `fs.writeTextFile` 能力）
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `path` (string, 必需): 文件绝对路径
+- `content` (string, 必需): 写入内容
+
+**响应结果**: 空对象
+
+#### 3.2.4 `terminal/create`
+
+**用途**: 创建新终端并执行命令（需要 `terminal` 能力）
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `command` (string, 必需): 要执行的命令
+- `args` (string[], 可选): 命令参数
+- `cwd` (string, 可选): 工作目录
+- `env` (object, 可选): 环境变量
+- `outputByteLimit` (number, 可选): 输出字节限制
+
+**响应结果**:
+- `terminalId` (string, 必需): 终端唯一标识符
+
+#### 3.2.5 `terminal/output`
+
+**用途**: 获取终端输出和退出状态
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `terminalId` (string, 必需)
+
+**响应结果**:
+- `output` (string, 必需): 终端输出
+- `exitStatus` (number, 可选): 退出状态码
+- `truncated` (boolean, 必需): 是否被截断
+
+#### 3.2.6 `terminal/wait_for_exit`
+
+**用途**: 等待终端命令退出
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `terminalId` (string, 必需)
+
+**响应结果**:
+- `exitCode` (number, 可选): 进程退出码
+- `signal` (string, 可选): 终止信号
+
+#### 3.2.7 `terminal/kill`
+
+**用途**: 终止终端命令但不释放终端
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `terminalId` (string, 必需)
+
+**响应结果**: 空对象
+
+#### 3.2.8 `terminal/release`
+
+**用途**: 释放终端资源（会终止命令）
+
+**请求参数**:
+- `sessionId` (string, 必需)
+- `terminalId` (string, 必需)
+
+**响应结果**: 空对象
+
+---
+
+### 3.3 会话更新 (Session Update Notifications)
+
+#### 3.3.1 `session/update` (通知) ⭐ 核心
+
+**用途**: 代理向客户端发送流式更新
+
+**参数**:
+- `sessionId` (string, 必需)
+- `update` (SessionUpdate, 必需): 更新内容
+
+**更新类型**:
+
+| 类型 | 描述 |
+|------|------|
+| `agent_message_chunk` | 代理文本响应片段 |
+| `user_message_chunk` | 用户消息片段 |
+| `thought_message_chunk` | 代理推理过程片段 |
+| `tool_call` | 新工具调用 |
+| `tool_call_update` | 工具调用进度/结果 |
+| `plan` | 代理执行计划 |
+| `available_commands` | 可用命令列表 |
+| `current_mode_update` | 当前模式更新 |
+| `config_option_update` | 配置选项更新 |
+
+---
+
+## 4. SDK与集成
+
+### 4.1 官方 SDK
+
+| 语言 | SDK 包名 | 仓库 |
 |------|---------|------|
-| Rust | agent-client-protocol | 官方 |
-| Python | python-sdk | 官方 |
-| TypeScript | typescript-sdk | 官方 |
-| Kotlin | acp-kotlin-sdk | 官方 |
-| Java | java-sdk | 官方 |
-| Go | acp-go-sdk (Coder) | 社区 |
-| Crystal | acp.cr | 社区 |
-| Elixir | ACPex | 社区 |
+| **Rust** | `agent-client-protocol` | 官方参考实现 |
+| **Python** | `agent-client-protocol` | python-sdk |
+| **TypeScript** | `@agentclientprotocol/sdk` | typescript-sdk |
+| **Kotlin** | `acp-kotlin` | kotlin-sdk |
 
-### 4.2 Rust实现
+### 4.2 社区 SDK
 
-Rust SDK是协议的参考实现，提供了最完整的功能。
+| 语言 | SDK 包名 | 说明 |
+|------|---------|------|
+| Go | acp-go-sdk | Coder 实现 |
+| Java | java-sdk | 官方支持 |
+| Crystal | acp.cr | 社区实现 |
+| Elixir | ACPex | 社区实现 |
 
-核心特性：
+### 4.3 编辑器支持
 
-- 异步运行时支持（tokio）
-- 类型安全的协议定义
-- 传输层抽象
-- 完整的协议覆盖
+| 编辑器 | 状态 |
+|--------|------|
+| **Zed** | 原生支持，主要推动者 |
+| **JetBrains** | 正在集成中 |
+| **VS Code** | 社区插件支持 |
 
-### 4.3 Python实现
+### 4.4 代理支持
 
-#### 安装
+| 代理 | 状态 |
+|------|------|
+| **Claude Code** | 原生支持 |
+| **Gemini CLI** | 实验性支持 (`--experimental-acp`) |
+| **OpenCode** | 完整支持 |
 
-```bash
-pip install agent-client-protocol
-# 或
-uv add agent-client-protocol
+---
+
+## 5. 协议对比
+
+### 5.1 ACP vs MCP vs A2A
+
+| 特性 | ACP | MCP | A2A |
+|------|-----|-----|-----|
+| **目标** | 编辑器 ↔ 代理 | 代理 ↔ 工具/数据源 | 代理 ↔ 代理 |
+| **协议基础** | JSON-RPC 2.0 | JSON-RPC 2.0 | JSON-RPC 2.0 |
+| **传输层** | Stdio/HTTP/WS | Stdio/HTTP/SSE | 待定 |
+| **复杂度** | 中等 | 较低 | 较高 |
+| **典型场景** | AI 编程助手 | 工具调用 | 多代理协作 |
+
+### 5.2 协议选择
+
+```
+需要连接编辑器 → 使用 ACP
+需要访问工具/数据 → 使用 MCP
+需要代理间通信 → 使用 A2A
 ```
 
-#### 代理实现示例
+### 5.3 ACP 与 MCP 的协同
 
-```python
-from acp_sdk.server import Server
-from acp_sdk.models import Message, MessagePart
+ACP 代理可以同时作为 MCP 客户端：
 
-server = Server()
-
-@server.agent()
-async def chatbot(messages: list[Message]) -> AsyncGenerator[RunYield, None]:
-    # 处理消息
-    query = " ".join(
-        part.content
-        for m in messages
-        for part in m.parts
-    )
-    
-    # 发送流式更新
-    yield RunYield(
-        message={"type": "agent_message_chunk", "content": {"type": "text", "text": "处理中..."}}
-    )
-    
-    # 返回最终响应
-    yield RunYieldResume(
-        message={"type": "agent_message_chunk", "content": {"type": "text", "text": "完成！"}},
-        stop_reason="end_turn"
-    )
-
-# 启动服务器
-server.run()
+```
+编辑器 → ACP → AI代理 → MCP → 工具/数据源
 ```
 
-### 4.4 TypeScript实现
+这种设计允许代理通过 MCP 访问丰富的工具生态系统。
 
+---
+
+## 附录
+
+### A. 能力声明 (Capabilities)
+
+#### 客户端能力 (ClientCapabilities)
 ```typescript
-import { Client, textBlock } from '@agentclientprotocol/sdk';
-
-const client = new Client({
-  transport: 'stdio',
-  command: 'path/to/agent',
-  args: ['--stdio'],
-});
-
-await client.initialize();
-
-const session = await client.createSession({
-  cwd: '/path/to/project',
-  mcpServers: [],
-});
-
-const response = await session.prompt({
-  message: textBlock('Hello!'),
-});
-```
-
-### 4.5 Go实现（Coder）
-
-```go
-type MyAgent struct{}
-
-func (a MyAgent) Initialize(ctx context.Context, req acp.InitializeRequest) (acp.InitializeResponse, error) {
-    return acp.InitializeResponse{
-        ProtocolVersion: 1,
-        AgentCapabilities: &acp.AgentCapabilities{
-            LoadSession: acp.Ptr(true),
-        },
-    }, nil
-}
-
-func main() {
-    agent := &MyAgent{}
-    conn := acp.NewAgentSideConnection(agent, os.Stdout, os.Stdin)
-}
-```
-
-### 4.6 Java实现
-
-```java
-@AcpAgent
-class EchoAgent {
-    @Initialize
-    InitializeResponse init() {
-        return InitializeResponse.ok();
-    }
-
-    @Prompt
-    PromptResponse prompt(PromptRequest req, SyncPromptContext ctx) {
-        ctx.sendMessage("Echo: " + req.text());
-        return PromptResponse.endTurn();
-    }
-}
-
-AcpAgentSupport.create(new EchoAgent())
-    .transport(new StdioAcpAgentTransport())
-    .run();
-```
-
----
-
-## 5. 支持的功能与能力
-
-### 5.1 客户端能力
-
-| 能力 | 描述 |
-|------|------|
-| fs.readTextFile | 读取文本文件 |
-| fs.writeTextFile | 写入文本文件 |
-| terminal | 终端操作 |
-
-### 5.2 代理能力
-
-| 能力 | 描述 |
-|------|------|
-| loadSession | 加载已有会话 |
-| promptCapabilities.image | 图像内容支持 |
-| promptCapabilities.audio | 音频内容支持 |
-| promptCapabilities.embeddedContext | 嵌入上下文支持 |
-| mcpCapabilities.http | HTTP传输支持 |
-| mcpCapabilities.sse | SSE传输支持 |
-
-### 5.3 基础方法
-
-#### 代理端方法
-
-| 方法 | 方向 | 描述 |
-|------|------|------|
-| initialize | Client->Agent | 协商协议版本和能力 |
-| authenticate | Client->Agent | 身份验证 |
-| session/new | Client->Agent | 创建新会话 |
-| session/load | Client->Agent | 加载已有会话 |
-| session/prompt | Client->Agent | 发送用户提示词 |
-
-#### 客户端方法
-
-| 方法 | 方向 | 描述 |
-|------|------|------|
-| session/request_permission | Agent->Client | 请求执行操作的权限 |
-| fs/read_text_file | Agent->Client | 读取文件内容 |
-| fs/write_text_file | Agent->Client | 写入文件内容 |
-| terminal/create | Agent->Client | 创建终端 |
-| terminal/output | Agent->Client | 获取终端输出 |
-| terminal/kill | Agent->Client | 终止命令 |
-
-### 5.4 会话更新类型
-
-| 更新类型 | 描述 |
-|----------|------|
-| plan | 代理的执行计划 |
-| agent_message_chunk | 流式文本响应 |
-| user_message_chunk | 用户输入回显 |
-| thought_message_chunk | 代理推理过程 |
-| tool_call | 新工具调用 |
-| tool_call_update | 工具调用进度/结果 |
-| available_commands | 可用命令列表 |
-| mode_change | 模式切换 |
-
-### 5.5 工具调用流程
-
-```mermaid
-stateDiagram-v2
-    [*] --> Pending: tool_call通知
-    Pending --> InProgress: 开始执行
-    InProgress --> InProgress: tool_call_update进度
-    InProgress --> Completed: 执行成功
-    InProgress --> Failed: 执行失败
-    Completed --> [*]
-    Failed --> [*]
-```
-
----
-
-## 6. 与其他协议的对比
-
-### 6.1 协议生态系统
-
-```mermaid
-flowchart TB
-    subgraph AgentProtocols["代理通信协议"]
-        ACP[ACP<br/>Agent Client Protocol]
-        MCP[MCP<br/>Model Context Protocol]
-        A2A[A2A<br/>Agent-to-Agent]
-    end
-    
-    subgraph UseCases["使用场景"]
-        EditorAgent[编辑器->代理]
-        AgentTool[代理->工具]
-        AgentAgent[代理->代理]
-    end
-
-    ACP --> EditorAgent
-    MCP --> AgentTool
-    A2A --> AgentAgent
-```
-
-### 6.2 ACP vs MCP
-
-| 特性 | ACP | MCP |
-|------|-----|-----|
-| 目标 | 编辑器与代理通信 | 代理与工具/数据源通信 |
-| 协议基础 | JSON-RPC 2.0 | JSON-RPC 2.0 |
-| 传输层 | Stdio/HTTP/WebSocket | Stdio/HTTP/SSE |
-| 复杂度 | 中等 | 较低 |
-
-核心区别：
-- **MCP** 像是给一个人更好的工具来提升性能
-- **ACP** 是让人形成团队，代理贡献各自专长
-
-### 6.3 协议选择
-
-```mermaid
-flowchart TD
-    Start{需要什么？}
-    Start --> EdTool{连接编辑器？}
-    EdTool -->|是| ACP[使用ACP]
-    EdTool -->|否| ToolData{访问工具/数据？}
-    ToolData -->|是| MCP[使用MCP]
-    ToolData -->|否| AgentComm{代理间通信？}
-    AgentComm -->|是| A2A[使用A2A]
-    AgentComm -->|否| Other[其他方案]
-```
-
----
-
-## 7. 集成方式与示例代码
-
-### 7.1 Zed编辑器集成
-
-在settings.json中添加：
-
-```json
 {
-    "agent_servers": {
-        "Echo Agent (Python)": {
-            "type": "custom",
-            "command": "/abs/path/to/python",
-            "args": ["/abs/path/to/echo_agent.py"]
-        }
-    }
+  fs: {
+    readTextFile: boolean,
+    writeTextFile: boolean
+  },
+  terminal: boolean
 }
 ```
 
-### 7.2 运行示例代理
-
-```bash
-# 安装依赖
-pip install agent-client-protocol
-
-# 运行示例
-python examples/echo_agent.py
+#### 代理能力 (AgentCapabilities)
+```typescript
+{
+  loadSession: boolean,
+  promptCapabilities: {
+    image: boolean,
+    audio: boolean,
+    embeddedContext: boolean
+  },
+  mcpCapabilities: {
+    http: boolean,
+    sse: boolean
+  }
+}
 ```
 
-### 7.3 MCP工具桥接
+### B. 停止原因 (StopReason)
 
-```python
-mcp_servers = [
-    {
-        "name": "filesystem",
-        "command": "/path/to/mcp-filesystem",
-        "args": ["--stdio"],
-        "env": []
-    }
-]
+- `end_turn`: 代理正常完成响应
+- `cancelled`: 客户端取消操作
+- `max_tokens`: 达到 token 限制
+- `error`: 发生错误
 
-session = await client.new_session(
-    cwd="/path/to/project",
-    mcp_servers=mcp_servers
-)
-```
+### C. 快速开始
 
----
-
-## 8. 生态系统与社区
-
-### 8.1 支持的编辑器
-
-- **Zed**：原生支持ACP，是协议的主要推动者
-- **JetBrains**：正在集成
-- **VS Code**：社区支持
-
-### 8.2 支持的代理
-
-- **Claude Code**：通过ACP接口
-- **Gemini CLI**：支持ACP模式（--experimental-acp）
-- **OpenCode/Clawdbot**：社区支持
+1. **阅读官方文档**: https://agentclientprotocol.com/
+2. **选择 SDK**: Python/TypeScript 最易上手
+3. **运行示例**: 
+   ```bash
+   # Python
+   pip install agent-client-protocol
+   python examples/echo_agent.py
+   ```
+4. **配置编辑器**: 在 Zed settings.json 中添加 agent_servers 配置
 
 ---
 
-## 9. 总结与展望
-
-### 9.1 协议优势
-
-1. **标准化**：统一编辑器和AI代理的通信
-2. **互操作性**：任何ACP代理可与任何ACP客户端配合
-3. **灵活性**：支持多种传输层和扩展机制
-4. **MCP集成**：与MCP无缝配合，形成完整工具链
-
-### 9.2 应用场景
-
-- AI编程助手与编辑器集成
-- IDE扩展开发
-- 自动化工作流
-- 远程开发
-
-### 9.3 快速入门建议
-
-1. 阅读官方文档：https://agentclientprotocol.com/
-2. 运行Python示例：python examples/echo_agent.py
-3. 配置Zed编辑器连接示例代理
-4. 用Python SDK编写自己的代理
-
----
-
-## 参考资源
-
-- 官方网站：https://agentclientprotocol.com/
-- GitHub仓库：https://github.com/agentclientprotocol
-- 协议规范：https://agentclientprotocol.com/protocol/
-- Python SDK：https://github.com/agentclientprotocol/python-sdk
-
----
-
-*报告生成时间：2026年2月*
-*协议版本：v1 (0.6.3)*
+*文档更新时间: 2026年2月*  
+*协议版本: v1 (v0.10.8)*
