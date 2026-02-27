@@ -27,6 +27,12 @@
 - 添加上下级智能体之间的沟通工具，上下级模型之间可以直接在会话中传递内容。上级可以要求下级执行汇报。
 - 灵感来自现代公司分工。
 
+- 多层智能体树形结构：
+  - 最上层智能体直接与用户对话，每个Session只有一个最上层智能体。
+  - 每个智能体都可以有多个下级。可以设置例外情况，例如执行智能体只能用于执行。
+  - 上层智能体发现任务可以拆分且并行执行时，生成多个下级智能体。
+  - 最终会形成一个动态的树形结构。
+
 ### 2. 记忆系统
 
 目前记忆系统已经有很多方案，例如Mem0、OpenViking。
@@ -154,8 +160,14 @@ env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
 - MCP懒加载。
 - OpenClaw扩展支持
-- 外部上下文管理系统支持
+
+## 要求
+
+- 只使用大语言模型。暂不添加对Embeddings、Rerank、Apply等额外模型的支持。
 
 ## 参考
 
 - [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
+- OpenAI API调用使用`async-openai`这个crate。
+- MCP部分使用`rmcp`。
+- Skills部分参考：https://agentskills.io/
