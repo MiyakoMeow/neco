@@ -1,6 +1,11 @@
 # MCP 交互流程图
 
-本文档描述 Model Context Protocol (MCP) 的核心交互流程，基于 MCP 2025-11-25 规范。
+本文档描述 Model Context Protocol (MCP) 的核心交互流程，基于 **MCP 2025-11-25** 规范。
+
+**版本说明**：
+- 当前协议版本：`2025-11-25`
+- 新增实验性功能：Tasks（任务系统），支持长时间运行的异步操作
+- 协议使用字符串版本标识符（`YYYY-MM-DD` 格式）
 
 ## 架构概述
 
@@ -57,29 +62,41 @@ flowchart TD
     Validate -->|参数有效| CheckMode{执行模式?}
 
     CheckMode -->|同步执行| DirectExec[直接执行工具]
-    CheckMode -->|异步任务| CreateTask[创建任务记录]
+    CheckMode -->|Tasks 实验性| CreateTask[创建任务增强请求]
 
-    CreateTask --> ReturnTaskId[返回任务ID]
-    ReturnTaskId --> Queue[加入任务队列]
+    CreateTask --> ReturnTaskResult[返回 CreateTaskResult<br/>taskId + status: working]
+    ReturnTaskResult --> Poll[客户端轮询 tasks/get]
 
-    Queue --> Process[任务处理器]
-    Process --> Execute[执行工具逻辑]
-    DirectExec --> Execute
+    Poll --> CheckStatus{任务状态?}
+    CheckStatus -->|working| Poll
+    CheckStatus -->|input_required| WaitForInput[等待客户端输入]
+    CheckStatus -->|completed/failed| GetResult[获取最终结果]
 
+    WaitForInput --> Poll
+
+    DirectExec --> Execute[执行工具逻辑]
     Execute --> CheckResult{执行结果?}
 
     CheckResult -->|成功| Success[返回成功结果]
     CheckResult -->|失败| Failure[返回错误结果]
-    CheckResult -->|长时间运行| LongRunning[异步任务处理]
-
-    LongRunning --> UpdateStatus[更新任务状态]
-    UpdateStatus --> NotifyProgress[发送进度通知]
 
     Success --> End[客户端接收结果]
     Failure --> End
-    NotifyProgress --> End
+    GetResult --> End
     Error1 --> End
+
+    note1[注意：Tasks 为实验性功能<br/>需双方协商 capabilities.tasks]
 ```
+
+**工具级别任务支持协商**：
+
+工具在 `tools/list` 响应中可通过 `execution.taskSupport` 声明任务支持级别：
+
+| 值 | 说明 |
+|---|---|
+| `"required"` | 必须作为任务调用 |
+| `"optional"` | 可选作为任务调用 |
+| `"forbidden"` | 不支持任务调用 |
 
 ---
 
@@ -135,6 +152,7 @@ sequenceDiagram
 | `tools` | 服务器提供可执行的工具 |
 | `resources` | 服务器提供数据资源 |
 | `prompts` | 服务器提供模板化提示 |
+| `tasks` | 实验性：支持任务增强的异步操作 |
 
 ### 客户端能力
 
@@ -143,6 +161,7 @@ sequenceDiagram
 | `sampling` | 支持服务器发起的 LLM 采样 |
 | `roots` | 支持服务器查询 URI/文件系统边界 |
 | `elicitation` | 支持服务器请求额外用户信息 |
+| `tasks` | 实验性：支持任务增强的异步操作 |
 
 ---
 
@@ -270,10 +289,13 @@ flowchart TD
 |--------|------|
 | `-32000` to `-32099` | 服务器/实现特定错误 |
 | `-32002` | Resource not found（资源未找到） |
+| `-32601` | Method not found（方法不支持，如尝试对不支持 tasks 的工具使用任务增强） |
 
 ---
 
 ## 8. 进度和取消
+
+### 8.1 传统进度机制
 
 ```mermaid
 stateDiagram-v2
@@ -296,6 +318,134 @@ stateDiagram-v2
         或 shutdown
     end note
 ```
+
+### 8.2 Tasks 系统（实验性功能）
+
+> **注意**：Tasks 在 2025-11-25 版本中引入，目前为**实验性功能**。其设计和行为可能在未来的协议版本中发生变化。
+
+Tasks 提供了一种持久化状态机，用于跟踪请求的执行状态，支持长时间运行的操作和延迟结果检索。
+
+#### 任务状态流转
+
+```mermaid
+stateDiagram-v2
+    [*] --> working: 创建任务
+    
+    working --> input_required: 需要客户端输入
+    working --> completed: 成功完成
+    working --> failed: 执行失败
+    working --> cancelled: 被取消
+    
+    input_required --> working: 获得所需输入
+    input_required --> completed: 完成
+    input_required --> failed: 失败
+    input_required --> cancelled: 被取消
+    
+    completed --> [*]
+    failed --> [*]
+    cancelled --> [*]
+    
+    note right of working
+        正在处理请求
+        通过 tasks/get 轮询状态
+    end note
+    
+    note right of input_required
+        服务器需要客户端提供
+        额外信息才能继续
+        应调用 tasks/result
+    end note
+    
+    note right of completed
+        任务成功完成
+        可通过 tasks/result 获取结果
+    end note
+```
+
+#### 任务交互流程
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端 (请求方)
+    participant S as 服务器 (接收方)
+
+    Note over C,S: 1. 创建任务
+    C->>S: tools/call (task: {ttl: 60000})
+    activate S
+    S-->>C: CreateTaskResult (taskId, status: working, pollInterval)
+    deactivate S
+
+    Note over C,S: 2. 轮询状态 (遵循 pollInterval)
+    loop 轮询
+        C->>S: tasks/get (taskId)
+        activate S
+        S-->>C: Task 状态 (working/input_required/completed/failed/cancelled)
+        deactivate S
+    end
+
+    Note over C,S: 3. 获取结果
+    C->>S: tasks/result (taskId)
+    activate S
+    Note over S: 如果未完成，阻塞直到任务完成
+    S-->>C: 实际操作结果 (或 JSON-RPC 错误)
+    deactivate S
+
+    Note over C,S: 4. 清理
+    Note over S: ttl 期限后可删除任务
+```
+
+#### 任务能力协商
+
+**服务器能力声明**：
+```json
+{
+  "capabilities": {
+    "tasks": {
+      "list": {},
+      "cancel": {},
+      "requests": {
+        "tools": {
+          "call": {}
+        }
+      }
+    }
+  }
+}
+```
+
+**客户端能力声明**：
+```json
+{
+  "capabilities": {
+    "tasks": {
+      "list": {},
+      "cancel": {},
+      "requests": {
+        "sampling": {
+          "createMessage": {}
+        }
+      }
+    }
+  }
+}
+```
+
+#### 关键操作
+
+| 操作 | 说明 |
+|------|------|
+| `tasks/get` | 轮询任务状态 |
+| `tasks/result` | 获取任务结果（会阻塞直到完成） |
+| `tasks/list` | 列出所有任务（支持分页） |
+| `tasks/cancel` | 取消任务 |
+| `notifications/tasks/status` | 任务状态变化通知（可选） |
+
+#### input_required 状态
+
+当任务进入 `input_required` 状态时：
+- 服务器需要客户端提供额外信息
+- 客户端应调用 `tasks/result` 来接收输入请求
+- 所有相关请求必须包含 `io.modelcontextprotocol/related-task` 元数据
 
 ---
 
@@ -363,5 +513,8 @@ graph TB
 ## 相关资源
 
 - [MCP 官方规范](https://modelcontextprotocol.io/specification/2025-11-25/)
+  - [Tasks 规范（实验性）](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
+  - [生命周期管理](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
+  - [传输层](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 - [MCP GitHub 仓库](https://github.com/modelcontextprotocol/modelcontextprotocol)
 - [Anthropic MCP 文档](https://docs.anthropic.com/en/docs/mcp)

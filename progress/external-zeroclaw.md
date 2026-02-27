@@ -3,7 +3,7 @@
 **探索日期**: 2026-02-27
 **项目地址**: https://github.com/zeroclaw-labs/zeroclaw
 **版本**: v0.1.7 (2026-02-24)
-**GitHub Stars**: 20,303+
+**GitHub Stars**: 20.3k+ | Forks: 2.5k+ | Contributors: 129+
 **探索目标**: 全面分析ZeroClaw的架构、设计模式和实现方式
 
 ---
@@ -63,33 +63,50 @@ clap_complete = "4.5"  # Shell自动补全
 tokio = "1.42"         # 最小化feature集以减小二进制大小
 
 # HTTP客户端
-reqwest = "0.12"       # 仅启用必要的feature
+reqwest = "0.12"       # 仅启用必要的feature，rustls TLS
 
 # 序列化
 serde = "1.0"
 serde_json = "1.0"
+toml = "0.8"           # 配置文件解析
 
 # 内存/持久化
-rusqlite = "0.37"      # SQLite内存后端
+rusqlite = "0.37"      # SQLite内存后端（FTS5 + BLOB向量）
 postgres = "0.19"      # PostgreSQL内存后端（可选）
 
 # WebSocket客户端
 tokio-tungstenite = "0.28"
 
 # HTTP服务器
-axum = "0.8"
+axum = "0.8"           # Webhook服务器
+tower = "0.5"          # 中间件
+tower-http = "0.6"     # HTTP中间件（CORS, trace等）
 
 # 错误处理
-anyhow = "1.0"
-thiserror = "2.0"
+anyhow = "1.0"         # 应用层错误
+thiserror = "2.0"      # 库错误定义
 
 # 安全性
-chacha20poly1305 = "0.10"  # 认证加密
+chacha20poly1305 = "0.10"  # 认证加密（API密钥）
 rand = "0.10"               # CSPRNG
+zeroize = "1.8"             # 安全内存清零
 
 # Observability
 prometheus = "0.14"
 opentelemetry = "0.31"      # 可选
+tracing = "0.1"             # 结构化日志
+tracing-subscriber = "0.3"
+
+# WASM插件（可选，默认启用）
+wasmi = "0.39"         # WASM运行时
+wasm-tools = "1.217"   # WASM工具链
+
+# 浏览器自动化（可选）
+headless-chrome = "1.0"    # Rust-native backend
+thirtyfour = "0.33"        # WebDriver支持
+
+# WhatsApp（可选，需要feature flag）
+whatsapp = "0.1"            # WhatsApp Web模式支持
 ```
 
 ---
@@ -100,24 +117,26 @@ opentelemetry = "0.31"      # 可选
 
 | 功能类别 | 支持情况 | 备注 |
 |----------|----------|------|
-| **AI Providers** | 22+ | OpenRouter, Anthropic, OpenAI, Ollama, Groq, Mistral, xAI, DeepSeek, Together AI, Fireworks, Perplexity, Cohere, Cloudflare AI, Bedrock, Venice, llama.cpp, vLLM, Osaurus, custom endpoints |
-| **Channels** | 15+ | Telegram, Discord, Slack, iMessage, Matrix, Signal, WhatsApp, Webhook, Email, IRC, Lark, DingTalk, QQ, Nostr, Mattermost |
+| **AI Providers** | 25+ | OpenRouter, Anthropic, OpenAI, Ollama, Groq, Mistral, xAI, DeepSeek, Together AI, Fireworks, Perplexity, Cohere, Cloudflare AI, Bedrock, Venice, llama.cpp, vLLM, Osaurus, GLM-5, custom endpoints |
+| **Channels** | 16+ | Telegram, Discord, Slack, iMessage, Matrix, Signal, WhatsApp (Web + Cloud API), Webhook, Email, IRC, Lark, DingTalk, QQ, Nostr, Mattermost |
 | **Memory Backends** | 5 | SQLite, PostgreSQL, Lucid, Markdown, None |
-| **Tools** | 20+ | shell, file, memory, git, cron, schedule, browser, http_request, screenshot, pushover, WASM skills, Composio (1000+ OAuth apps) |
+| **Tools** | 25+ | shell, file, memory, git, cron, schedule, browser, http_request, screenshot, pushover, WASM skills (opt-in), Composio (1000+ OAuth apps), hardware tools, delegate |
 | **Tunnels** | 4 | Cloudflare, Tailscale, ngrok, Custom |
-| **Runtimes** | 2 | Native, Docker (WASM计划中) |
+| **Runtimes** | 2 | Native, Docker (WASM/edge计划中) |
 | **Languages** | 7 | English, 简体中文, 日本語, Русский, Français, Tiếng Việt, Ελληνικά |
 
 ### 2.2 独特特性
 
-1. **Provider Trait系统**: 22+ AI提供商统一接口，支持热切换
-2. **Channel Trait系统**: 15+消息通道统一抽象
+1. **Provider Trait系统**: 25+ AI提供商统一接口，支持热切换
+2. **Channel Trait系统**: 16+消息通道统一抽象
 3. **Memory Search Engine**: 全栈自研（向量DB + 关键词搜索 + 混合合并），零外部依赖
 4. **Security-by-Default**: Gateway配对、沙箱、白名单、工作区作用域、加密密钥
 5. **Identity-Agnostic**: 支持OpenClaw markdown和AIEOS v1.1 JSON格式
-6. **WASM Skills**: 可选的WASM插件运行时，支持WASI stdio协议
-7. **Composio集成**: 1000+ OAuth应用集成
-8. **Python Companion**: `zeroclaw-tools`包提供LangGraph工具调用包装
+6. **WASM Skills**: 可选的WASM插件运行时，支持WASI stdio协议，从ZeroMarket和ClawhHub安装
+7. **Research Phase**: 在生成响应前主动使用工具收集信息，减少幻觉
+8. **Composio集成**: 1000+ OAuth应用集成
+9. **Python Companion**: `zeroclaw-tools`包提供LangGraph工具调用包装
+10. **订阅认证**: 支持OpenAI Codex和Claude Code OAuth订阅原生认证
 
 ### 2.3 安全特性
 
@@ -145,9 +164,9 @@ ZeroClaw采用**Trait驱动的可插拔系统**，所有子系统（Provider、C
 1. **Security Layer**: Gateway配对、认证网关、速率限制、文件系统沙箱、加密密钥
 2. **Agent Loop**: 消息输入 → 内存召回 → LLM调用 → 工具执行 → 内存存储 → 响应输出
 3. **Memory Search Engine**: 向量DB + 关键词搜索 + 混合合并
-4. **Provider Layer**: 22+ AI提供商统一接口
-5. **Channel Layer**: 15+消息通道统一抽象
-6. **Tool Layer**: 20+工具执行能力
+4. **Provider Layer**: 25+ AI提供商统一接口
+5. **Channel Layer**: 16+消息通道统一抽象
+6. **Tool Layer**: 25+工具执行能力
 7. **Runtime Layer**: Native和Docker运行时适配器
 8. **Tunnel Layer**: Cloudflare、Tailscale、ngrok等隧道支持
 
@@ -342,6 +361,64 @@ pub trait Tunnel: Send + Sync {
 }
 ```
 
+#### EmbeddingProvider Trait
+
+```rust
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    /// 嵌入提供商名称
+    fn name(&self) -> &str;
+
+    /// 生成文本嵌入向量
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
+
+    /// 批量嵌入（带大小限制）
+    async fn embed_batch(&self, texts: &[String], batch_size: usize) -> Result<Vec<Vec<f32>>>;
+
+    /// 获取向量维度
+    fn dimension(&self) -> usize;
+
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+```
+
+#### SecurityPolicy Trait
+
+```rust
+pub trait SecurityPolicy: Send + Sync {
+    /// 检查命令是否允许执行
+    fn check_command(&self, command: &str) -> Result<bool>;
+
+    /// 检查路径是否在允许范围内
+    fn check_path(&self, path: &str) -> Result<bool>;
+
+    /// 检查文件操作是否允许
+    fn check_file_operation(&self, operation: FileOperation, path: &str) -> Result<bool>;
+
+    /// 策略名称
+    fn name(&self) -> &str;
+
+    /// 策略级别
+    fn level(&self) -> AutonomyLevel;
+}
+
+/// 文件操作类型
+pub enum FileOperation {
+    Read,
+    Write,
+    Delete,
+    Execute,
+}
+
+/// 自主级别
+pub enum AutonomyLevel {
+    ReadOnly,      // 只读模式
+    Supervised,    // 监督模式（默认）
+    Full,          // 完全自主
+}
+```
+
 ### 3.3 代码结构
 
 ```
@@ -360,14 +437,14 @@ src/
 │   ├── openai.rs
 │   ├── anthropic.rs
 │   ├── ollama.rs
-│   └── ...            # 22+ providers
+│   └── ...            # 25+ providers
 │
 ├── channels/           # 消息通道实现
 │   ├── traits.rs      # Channel trait定义
 │   ├── telegram.rs
 │   ├── discord.rs
 │   ├── slack.rs
-│   └── ...            # 15+ channels
+│   └── ...            # 16+ channels
 │
 ├── memory/             # 内存系统
 │   ├── traits.rs      # Memory trait定义
@@ -382,7 +459,7 @@ src/
 │   ├── file.rs        # 文件操作
 │   ├── memory.rs      # 内存操作
 │   ├── git.rs         # Git集成
-│   └── ...            # 20+ tools
+│   └── ...            # 25+ tools
 │
 ├── security/           # 安全策略
 │   ├── sandbox.rs     # 沙箱实现
@@ -426,6 +503,15 @@ src/
 │
 ├── config/             # 配置管理
 │   └── schema.rs      # TOML配置结构
+│
+├── auth/               # 订阅认证
+│   └── mod.rs         # OAuth认证管理
+│
+├── browser/            # 浏览器工具
+│   └── mod.rs         # 多backend支持
+│
+├── hardware/           # 硬件外设
+│   └── mod.rs         # USB/外设支持
 │
 ├── identity.rs         # 身份系统（OpenClaw/AIEOS）
 ├── main.rs             # CLI入口
@@ -599,6 +685,7 @@ ZeroClaw支持**WASM插件**：
 - 使用WASM runtime (wasmi)
 - 支持WASI stdio协议
 - 从stdin读取JSON，向stdout写入JSON
+- 支持从ZeroMarket和ClawhHub安装
 
 ### 6.3 Composio集成
 
@@ -626,22 +713,25 @@ ZeroClaw集成了**Composio**（1000+ OAuth应用）：
 
 | 模块 | 职责 | 行数估算 |
 |------|------|----------|
-| `agent/` | Agent循环、编排、提示工程 | ~2000 |
-| `providers/` | 22+ AI提供商实现 | ~5000 |
-| `channels/` | 15+ 消息通道实现 | ~4000 |
-| `memory/` | 内存系统（向量+搜索） | ~1500 |
-| `tools/` | 20+ 工具实现 | ~2000 |
-| `security/` | 安全策略、沙箱 | ~1000 |
-| `daemon/` | 守护进程、监督树 | ~800 |
-| `gateway/` | Webhook服务器 | ~600 |
-| `cron/` | 调度器 | ~400 |
-| `heartbeat/` | 心跳引擎 | ~300 |
-| `skills/` | Skills系统 | ~500 |
-| `plugins/` | WASM插件 | ~300 |
-| `config/` | 配置管理 | ~1000 |
-| `observability/` | 可观测性 | ~400 |
-| `tunnel/` | 隧道集成 | ~600 |
-| **总计** | | **~20,000行** |
+| `agent/` | Agent循环、编排、提示工程、研究阶段 | ~2200 |
+| `providers/` | 25+ AI提供商实现 | ~5500 |
+| `channels/` | 16+ 消息通道实现（含WhatsApp双模式） | ~4500 |
+| `memory/` | 内存系统（向量+FTS5+混合搜索） | ~1600 |
+| `tools/` | 25+ 工具实现（含WASM skills） | ~2400 |
+| `security/` | 安全策略、沙箱、配对机制 | ~1200 |
+| `daemon/` | 守护进程、监督树 | ~900 |
+| `gateway/` | Webhook服务器（含WhatsApp webhook） | ~700 |
+| `cron/` | 调度器 | ~450 |
+| `heartbeat/` | 心跳引擎 | ~350 |
+| `skills/` | Skills系统（TOML manifest + WASM） | ~700 |
+| `plugins/` | WASM插件运行时（wasmi） | ~400 |
+| `config/` | 配置管理 | ~1100 |
+| `observability/` | 可观测性（Prometheus/OTel） | ~500 |
+| `tunnel/` | 隧道集成 | ~700 |
+| `auth/` | 订阅认证系统 | ~400 |
+| `browser/` | 浏览器工具（多backend） | ~600 |
+| `hardware/` | 硬件外设支持 | ~300 |
+| **总计** | | **~25,000行** |
 
 ### 7.2 代码组织原则
 
@@ -688,6 +778,8 @@ ZeroClaw集成了**Composio**（1000+ OAuth应用）：
 - Tool: 工具统一接口
 - RuntimeAdapter: 运行时统一接口
 - Tunnel: 隧道统一接口
+- EmbeddingProvider: 嵌入提供商统一接口
+- SecurityPolicy: 安全策略统一接口
 
 ### 8.2 监督树架构
 
@@ -745,18 +837,26 @@ Daemon Supervisor管理多个子组件：
    - Gateway配对机制
    - 多层安全防护（沙箱、白名单、加密）
    - 路径监狱和符号链接逃逸检测
+   - Channel白名单（deny-by-default）
 
 5. **丰富的集成**
-   - 22+ AI提供商
-   - 15+ 消息通道
-   - 20+ 内置工具
+   - 25+ AI提供商（含本地推理服务器）
+   - 16+ 消息通道（含WhatsApp双模式）
+   - 25+ 内置工具（含WASM skills）
    - 70+ 第三方集成
+   - 1000+ OAuth应用（Composio）
 
 6. **生产就绪**
    - 监督树架构
    - 健康检查
    - 可观测性（Prometheus/OTel）
    - 完善的文档（多语言）
+   - 跨平台支持（Linux/macOS/Windows, ARM/x86/RISC-V）
+
+7. **研究阶段**
+   - 主动工具调用减少幻觉
+   - 并行工具执行提高效率
+   - 上下文增强机制
 
 ### 9.2 ZeroClaw劣势
 
@@ -824,6 +924,7 @@ Daemon Supervisor管理多个子组件：
 - **安全-by-default**: 多层安全防护
 - **监督树架构**: 组件级故障恢复
 - **WASM Skills**: 可选的WASM插件系统
+- **研究阶段**: 主动工具调用减少幻觉
 
 ### 10.3 与OpenClaw的关系
 
@@ -835,11 +936,16 @@ ZeroClaw是OpenClaw的**Rust重写版本**，但不是简单的移植：
 
 ### 10.4 社区生态
 
-- **GitHub Stars**: 20,303+
-- **Contributors**: 120+
-- **Releases**: 5个版本（最新v0.1.7）
-- **文档**: 7种语言支持
-- **社区**: Telegram、Discord、Reddit等多渠道支持
+- **GitHub Stars**: 20.3k+
+- **Forks**: 2.5k+
+- **Contributors**: 129+
+- **Releases**: 5个版本（最新v0.1.7，2026-02-24）
+- **文档**: 7种语言支持（English, 简体中文, 日本語, Русский, Français, Tiếng Việt, Ελληνικά）
+- **社区**: Telegram (@zeroclawlabs)、Discord、Reddit (r/zeroclawlabs)、Facebook Group、X (@zeroclawlabs)、小红书、微信群
+- **官方渠道**:
+  - 官网: https://zeroclawlabs.ai
+  - 唯一官方仓库: https://github.com/zeroclaw-labs/zeroclaw
+  - ⚠️ 警告: `zeroclaw.org` 和 `zeroclaw.net` 非官方网站，系 `openagen/zeroclaw` 仿冒仓库
 
 ---
 

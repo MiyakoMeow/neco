@@ -54,6 +54,11 @@ serde = { version = "1", features = ["derive"] }
 schemars = "0.8"
 ```
 
+> **注意**: crates.io 已发布版本为 v0.8.0。开发版本 v0.16.0 可通过 Git 安装：
+> ```toml
+> rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "client"] }
+> ```
+
 ---
 
 ## MCP协议规范
@@ -149,7 +154,7 @@ rmcp
 | `transport-child-process` | 子进程支持 |
 | `transport-streamable-http-client` | HTTP流客户端 |
 | `transport-streamable-http-server` | HTTP流服务器 |
-| `auth` | OAuth2认证支持 |
+| `auth` | OAuth2认证支持（RFC 8707, SEP-835） |
 | `schemars` | JSON Schema生成 |
 
 ---
@@ -735,6 +740,20 @@ use rmcp::transport::streamable_http_client::StreamableHttpClientTransport;
 let transport = StreamableHttpClientTransport::new(url)?;
 ```
 
+### HTTP 服务器配置
+
+HTTP 传输支持 `json_response` 选项用于无状态服务器模式：
+
+```rust
+use rmcp::transport::streamable_http_server::StreamableHttpServerConfig;
+
+let config = StreamableHttpServerConfig {
+    json_response: true,     // 直接返回 JSON 而非 SSE
+    stateful_mode: false,    // 无状态模式
+    ..Default::default()
+};
+```
+
 ### 自定义传输
 
 ```rust
@@ -803,6 +822,25 @@ async fn list_roots(&self, params: ListRootsRequestParams) -> Result<ListRootsRe
 
 ```rust
 async fn set_logging_level(&self, params: SetLoggingLevelRequestParams) -> Result<SetLoggingLevelResult, Error>;
+```
+
+#### OAuth 认证操作
+
+```rust
+// 认证客户端管理
+pub struct AuthClient;
+
+// 作用域升级配置
+pub struct ScopeUpgradeConfig {
+    pub scope_union: bool,
+    pub resource_metadata: bool,
+}
+
+// WWW-Authenticate 头解析
+pub struct WWWAuthenticateParams {
+    pub scope: String,
+    pub resource_metadata: Option<Value>,
+}
 ```
 
 #### 补全操作
@@ -982,3 +1020,4 @@ async fn test_server() {
 - [RMCP 文档](https://docs.rs/rmcp)
 - [GitHub 仓库](https://github.com/modelcontextprotocol/rust-sdk)
 - [示例代码](https://github.com/modelcontextprotocol/rust-sdk/tree/main/examples)
+- [OAuth 支持文档](https://github.com/modelcontextprotocol/rust-sdk/blob/main/docs/OAUTH_SUPPORT.md)

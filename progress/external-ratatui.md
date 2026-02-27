@@ -2,6 +2,7 @@
 
 > 探索日期: 2026-02-27
 > Ratatui版本: 0.30.0
+> rust-version: 1.86.0
 > 探索目标: 深度探索Ratatui TUI库的核心特性和应用场景
 
 ---
@@ -31,17 +32,21 @@
 - 模块化架构 (0.30.0+)
 - 高性能 (双缓冲区 + 差异算法)
 - 多后端支持 (Crossterm/Termion/Termwiz)
+- `no_std` 支持 (嵌入式目标)
+- 滚动区域 (scrolling-regions)
+- 调色板 (palette)
+- Serde 支持 (主题配置)
 
 ### 1.2 模块化架构
 
 ```
-ratatui (主 crate)
-├── ratatui-core     (核心类型)
-├── ratatui-widgets  (内置组件)
-├── ratatui-crossterm (Crossterm 后端)
-├── ratatui-termion   (Termion 后端)
-├── ratatui-termwiz   (Termwiz 后端)
-└── ratatui-macros    (宏支持)
+ratatui 0.30.0 (主 crate)
+├── ratatui-core 0.1.0     (核心类型)
+├── ratatui-widgets 0.3.0  (内置组件)
+├── ratatui-crossterm     (Crossterm 后端)
+├── ratatui-termion       (Termion 后端)
+├── ratatui-termwiz       (Termwiz 后端)
+└── ratatui-macros        (宏支持)
 ```
 
 ---
@@ -115,11 +120,12 @@ pub trait StatefulWidget: Widget {
 | `Block` | 边框容器 | 否 |
 | `Chart` | 图表 | 否 |
 | `Gauge` | 进度条 | 否 |
+| `LineGauge` | 线性进度条 | 否 |
 | `Sparkline` | 迷你图 | 否 |
-| `BarChart` | 条形图 | 否 |
+| `BarChart` | 条形图(支持分组) | 否 |
 | `Calendar` | 日历 | 否 |
-| `Canvas` | 画布 | 否 |
-| `Scrollbar` | 滚动条 | 否 |
+| `Canvas` | 画布(新标记) | 否 |
+| `Scrollbar` | 滚动条 | 是 |
 | `Clear` | 清除区域 | 否 |
 
 ### 3.4 自定义 Widget 示例
@@ -203,6 +209,15 @@ let rects = Flex::default()
     .children(&[0, 1, 2])
     .split(area);
 ```
+
+**Flex 模式** (0.30.0+):
+- `Start`: 对齐到起始位置
+- `End`: 对齐到结束位置
+- `Center`: 居中对齐
+- `SpaceBetween`: 元素之间均匀分布，边缘无空隙
+- `SpaceAround`: 元素周围均匀分布，中间空隙是边缘的两倍
+- `SpaceEvenly`: 元素和边缘之间均匀分布 (0.30.0 前的 `SpaceAround`)
+- `Legacy`: 保留旧行为
 
 ---
 
@@ -698,6 +713,7 @@ impl Rect {
     pub fn bottom(self) -> u16;
     pub fn union(self, other: Rect) -> Rect;
     pub fn intersection(self, other: Rect) -> Rect;
+    pub fn center(self) -> Coord;  // 0.30.0+
 }
 ```
 
@@ -717,6 +733,7 @@ impl Style {
     pub fn fg(self, color: Color) -> Self;
     pub fn bg(self, color: Color) -> Self;
     pub fn add_modifier(self, modifier: Modifier) -> Self;
+    pub fn has_modifier(self, modifier: Modifier) -> bool;  // 0.30.0+
 }
 ```
 
@@ -829,6 +846,50 @@ impl<'a> Table<'a> {
 }
 ```
 
+#### LineGauge
+
+```rust
+pub struct LineGauge<'a> {
+    pub block: Option<Block<'a>>,
+    pub ratio: f32,
+    pub label: Option<Span<'a>>,
+    pub filled_style: Style,
+    pub unfilled_style: Style,
+    pub filled_symbol: String,  // 0.30.0+
+    pub unfilled_symbol: String,  // 0.30.0+
+}
+
+impl<'a> LineGauge<'a> {
+    pub fn new(ratio: f32) -> Self;
+    pub fn filled_symbol<S: Into<String>>(self, symbol: S) -> Self;  // 0.30.0+
+    pub fn unfilled_symbol<S: Into<String>>(self, symbol: S) -> Self;  // 0.30.0+
+}
+```
+
+#### ScrollbarState
+
+```rust
+pub struct ScrollbarState {
+    pub position: usize,
+}
+
+impl ScrollbarState {
+    pub fn new(position: usize) -> Self;
+    pub fn position(self, position: usize) -> Self;
+    pub fn next(&mut self) -> usize;  // 0.30.0+
+    pub fn prev(&mut self) -> usize;  // 0.30.0+
+    pub fn get_position(&self) -> usize;  // 0.30.0+
+}
+```
+
+#### BarChart (0.30.0+)
+
+```rust
+impl<'a> BarChart<'a> {
+    pub fn grouped(groups: Vec<BarGroup<'a>>) -> Self;
+}
+```
+
 #### Block
 
 ```rust
@@ -848,23 +909,64 @@ impl<'a> Block<'a> {
 }
 ```
 
-### 9.9 初始化与清理
+#### Canvas Marker (0.30.0+)
 
 ```rust
-// 初始化终端
-pub fn init() -> DefaultTerminal {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    Terminal::new(backend).expect("failed to init terminal")
-}
-
-// 恢复终端
-pub fn restore() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("failed to init terminal");
-    terminal.show_cursor().ok();
-    execute!(std::io::stdout(), LeaveAlternateScreen).ok();
+pub enum Marker {
+    Dot,
+    Block,
+    Bar,
+    Braille,
+    HalfBlock,
+    Quadrant,  // 0.30.0+ - 2x2 像素
+    Sextant,   // 0.30.0+ - 2x3 像素
+    Octant,    // 0.30.0+ - 与 Braille 相同分辨率，但更规则
 }
 ```
+
+### 9.9 初始化与清理 (0.30.0+)
+
+```rust
+use ratatui::{DefaultTerminal, init, restore};
+
+// 简化的初始化
+let terminal = init();
+
+// 应用运行
+let result = run(terminal);
+
+// 简化的恢复
+restore();
+result
+```
+
+---
+
+## 10. 0.30.0 版本更新要点
+
+### 10.1 模块化架构
+- `ratatui-core` (v0.1.0): 核心类型和 traits
+- `ratatui-widgets` (v0.3.0): 内置组件集合
+- 独立后端 crate: `ratatui-crossterm`, `ratatui-termion`, `ratatui-termwiz`
+
+### 10.2 新增特性
+- **no_std 支持**: 可用于嵌入式目标
+- **scrolling-regions**: 滚动区域支持
+- **palette**: 调色板特性
+- **serde 增强**: 更好的主题配置支持
+
+### 10.3 API 改进
+- **Flex 布局**: 新增 `SpaceEvenly`，重构 `SpaceAround`
+- **Rect**: 新增 `center()` 方法
+- **Style**: 新增 `has_modifier()` 方法
+- **ScrollbarState**: 新增 `get_position()` 方法
+- **LineGauge**: 支持自定义填充/未填充符号
+- **BarChart**: 新增 `grouped()` 构造器
+- **Canvas**: 新增 `Quadrant`, `Sextant`, `Octant` 标记
+
+### 10.4 依赖要求
+- **最低 Rust 版本**: 1.86.0
+- **可选依赖**: `portable-atomic` (无原子类型目标)
 
 ---
 

@@ -242,17 +242,27 @@ mkdir -p ~/.claude/skills/my-skill
 cp -r /path/to/skill/* ~/.claude/skills/my-skill/
 ```
 
-**方式二：从 GitHub 安装**
+**方式二：使用 Skills CLI**
 ```bash
-/plugin marketplace add anthropics/skills
-/plugin install pdf@anthropic-agent-skills
+# 从 GitHub 仓库安装
+npx skills add anthropics/skills@pdf
+
+# 从 skills.sh 市场搜索并安装
+npx skills find pdf
+npx skills add <package>
+
+# 全局安装（推荐）
+npx skills add <package> -g
 ```
 
-**方式三：使用 skill-creator**
-- Agent 调用 skill-creator
-- 生成 SKILL.md 和 scripts
-- 创建 .skill 文件
-- 用户安装 .skill 文件
+**方式三：创建新 Skill**
+```bash
+# 初始化新 Skill
+npx skills init my-skill
+
+# 或使用 skill-creator（Agent 专用）
+# Agent 调用 skill-creator 生成 SKILL.md
+```
 
 ### 5.3 技能激活流程
 
@@ -403,7 +413,7 @@ Agent: [检测到 "PDF" + "extract text"，匹配 pdf skill]
 
 ### 9.1 Skills 系统实现
 
-Neco 兼容 Agent Skills 格式的技能系统。完整的 Skills 管理器接口契约参见 [TECH.md §10.2 Skills 系统](TECH.md#skills接口契约)。
+Neco 兼容 Agent Skills 格式的技能系统。完整的 Skills 管理器接口契约参见 [progress/TECH.md § Skills 系统](../progress/TECH.md#skills系统懒加载架构借鉴zeroclaw)。
 
 **关键集成点：**
 - SkillMetadata 结构定义
@@ -420,11 +430,11 @@ Neco 支持 Full 和 Compact 两种提示注入模式：
 
 ### 9.3 安全审计
 
-Neco 实现 Skill 安全审计器，检查路径遍历、文件大小、脚本权限等。接口契约参见 [TECH.md §10.2](TECH.md#skills接口契约)。
+Neco 实现 Skill 安全审计器，检查路径遍历、文件大小、脚本权限等。接口契约参见 [progress/TECH.md § Skills 系统](../progress/TECH.md#skills系统懒加载架构借鉴zeroclaw)。
 
-### 9.4 返回 TECH.md
+### 9.4 返回技术文档
 
-← [返回 Neco 技术设计文档](TECH.md)
+← [返回 Neco 技术设计文档](../TECH.md)
 
 ---
 
@@ -441,17 +451,16 @@ Neco 实现 Skill 安全审计器，检查路径遍历、文件大小、脚本�
 ### B. 工具推荐
 
 ```bash
-# 安装 skills-ref
-pip install skills-ref
+# 使用 Skills CLI（推荐）
+npx skills init my-skill           # 创建新 Skill
+npx skills find <query>            # 搜索 Skills
+npx skills add <package> -g        # 安装 Skill
+npx skills list -g                 # 列出已安装 Skills
 
-# 验证 Skills
-skills-ref validate ./my-skill
-
-# 生成系统提示
-skills-ref to-prompt ~/.claude/skills/*
-
-# 创建新 Skill
-skills create my-skill
+# 使用 skills-ref（开发工具）
+npm install -g skills-ref
+skills-ref validate ./my-skill     # 验证 Skill 格式
+skills-ref to-prompt ~/.claude/skills/*  # 生成系统提示
 ```
 
 ### C. 核心 API 接口
@@ -481,6 +490,6 @@ skills create my-skill
 
 ---
 
-**文档版本：** 2.0
+**文档版本：** 2.1
 **最后更新：** 2026-02-27
 **许可：** CC-BY-4.0

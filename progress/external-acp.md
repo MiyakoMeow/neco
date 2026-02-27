@@ -2,7 +2,8 @@
 
 > **协议版本**: v1 (最新版本 v0.10.8，2026年2月)  
 > **官方仓库**: https://github.com/agentclientprotocol/agent-client-protocol  
-> **官方网站**: https://agentclientprotocol.com/
+> **官方网站**: https://agentclientprotocol.com/  
+> **重要更新**: Session Config Options 已成为推荐方式，Session Modes 将在未来版本中移除
 
 ---
 
@@ -98,6 +99,19 @@ ACP 使用与 MCP 相同的内容块结构：
 | `resource` | 嵌入资源 | `embeddedContext` |
 | `resource_link` | 资源链接 | 必需 |
 
+### 2.4 配置管理：Session Config Options vs Session Modes
+
+**重要变更**: Session Config Options 现在是推荐的方式，Session Modes 将在未来版本中被移除。
+
+| 特性 | Session Config Options | Session Modes |
+|------|----------------------|---------------|
+| **状态** | ✅ 推荐 | ⚠️ 即将弃用 |
+| **灵活性** | 高（支持多种配置类型） | 低（仅模式切换） |
+| **扩展性** | 可自定义配置类别 | 固定模式集 |
+| **向后兼容** | - | 过渡期内可用 |
+
+在过渡期间，代理应同时提供两者以保持向后兼容性。
+
 ---
 
 ## 3. 协议方法详解
@@ -179,9 +193,10 @@ ACP 使用与 MCP 相同的内容块结构：
 3. 可能通过 `session/request_permission` 请求权限
 4. 最终返回 `stopReason`
 
-#### 3.1.6 `session/set_mode`
+#### 3.1.6 `session/set_mode` ⚠️ 即将弃用
 
 **用途**: 切换会话模式（如 "ask"、"architect"、"code"）
+> **注意**: 此方法将在未来版本中被移除，推荐使用 `session/set_config_option` 代替
 
 **请求参数**:
 - `sessionId` (string, 必需)
@@ -189,9 +204,10 @@ ACP 使用与 MCP 相同的内容块结构：
 
 **响应结果**: 空对象
 
-#### 3.1.7 `session/set_config_option`
+#### 3.1.7 `session/set_config_option` ⭐ 推荐
 
 **用途**: 设置会话配置选项
+> **推荐**: 这是配置会话的首选方式，替代了即将弃用的 Session Modes API
 
 **请求参数**:
 - `sessionId` (string, 必需)
@@ -200,6 +216,11 @@ ACP 使用与 MCP 相同的内容块结构：
 
 **响应结果**:
 - `configOptions` (SessionConfigOptions, 必需): 更新后的完整配置
+
+**说明**:
+- Config Options 支持模型选择、推理级别等多种配置
+- 代理应始终提供默认值以确保兼容性
+- 响应包含完整配置状态，可反映依赖性变化
 
 #### 3.1.8 `session/cancel` (通知)
 
@@ -337,7 +358,8 @@ ACP 使用与 MCP 相同的内容块结构：
 | `plan` | 代理执行计划 |
 | `available_commands` | 可用命令列表 |
 | `current_mode_update` | 当前模式更新 |
-| `config_option_update` | 配置选项更新 |
+| `config_option_update` | 配置选项更新（推荐方式） |
+| `config_options_update` | 完整配置选项状态更新 |
 
 ---
 
@@ -345,21 +367,22 @@ ACP 使用与 MCP 相同的内容块结构：
 
 ### 4.1 官方 SDK
 
-| 语言 | SDK 包名 | 仓库 |
-|------|---------|------|
-| **Rust** | `agent-client-protocol` | 官方参考实现 |
-| **Python** | `agent-client-protocol` | python-sdk |
-| **TypeScript** | `@agentclientprotocol/sdk` | typescript-sdk |
-| **Kotlin** | `acp-kotlin` | kotlin-sdk |
+| 语言 | SDK 包名 | 仓库 | 版本 |
+|------|---------|------|------|
+| **Rust** | `agent-client-protocol` | 官方参考实现 | - |
+| **Python** | `agent-client-protocol` | python-sdk | - |
+| **TypeScript** | `@agentclientprotocol/sdk` | typescript-sdk | - |
+| **Kotlin** | `acp-kotlin` | kotlin-sdk | 0.1.0-SNAPSHOT |
 
 ### 4.2 社区 SDK
 
 | 语言 | SDK 包名 | 说明 |
 |------|---------|------|
-| Go | acp-go-sdk | Coder 实现 |
-| Java | java-sdk | 官方支持 |
-| Crystal | acp.cr | 社区实现 |
-| Elixir | ACPex | 社区实现 |
+| Dart | acp_dart | 社区实现 |
+| Emacs Lisp | acp.el | Emacs 集成 |
+| Go | acp-go-sdk | 社区实现 |
+| React | use-acp | React Hook |
+| Swift | swift-acp / swift-sdk | 社区实现（多个） |
 
 ### 4.3 编辑器支持
 
@@ -463,5 +486,6 @@ ACP 代理可以同时作为 MCP 客户端：
 
 ---
 
-*文档更新时间: 2026年2月*  
-*协议版本: v1 (v0.10.8)*
+*文档更新时间: 2026年2月27日*  
+*协议版本: v1 (v0.10.8，2026年2月4日)*  
+*重要: Session Config Options 已成为推荐配置方式，Session Modes 将在未来版本中移除*

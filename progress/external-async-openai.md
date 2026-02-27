@@ -35,6 +35,7 @@
 | **版本数** | 104个版本 |
 | **Rust Edition** | 2021 |
 | **关键字** | ai, async, openai, openapi |
+| **分类** | API bindings, Asynchronous, Web programming |
 
 ### 1.2 项目定位
 
@@ -75,16 +76,21 @@
 | Fine-tuning | `finetuning` | 模型微调 |
 | Batch | `batch` | 批量 API 请求（50%折扣） |
 | Files | `file` | 文件上传和管理 |
+| Upload | `upload` | 文件上传（与 file 配合使用） |
 | Models | `model` | 模型列表和详情 |
 | Moderations | `moderation` | 内容审核 |
+| Vector Store | `vectorstore` | 向量存储（用于文件检索） |
 
 #### 其他 API
 
 | API | Feature | 说明 |
 |-----|---------|------|
 | Chat Completions | `chat-completion` | Chat Completions、Streaming |
+| ChatKit | `chatkit` | ChatKit API（新的聊天框架） |
 | Assistants | `assistant` | Assistants、Threads、Messages、Runs（Beta） |
 | Realtime | `realtime` | Realtime API、WebRTC 连接 |
+| Container | `container` | 容器 API |
+| Skill | `skill` | 技能 API |
 | Administration | `administration` | Admin API Keys、Users、Projects |
 | Completions | `completions` | 旧的 Completions API（不推荐） |
 
@@ -95,6 +101,7 @@ let client = Client::new();
 
 client.responses()      // Responses API
 client.chat()           // Chat Completions
+client.chatkit()        // ChatKit API
 client.audio()          // Audio API
 client.images()         // Images API
 client.embeddings()     // Embeddings API
@@ -103,7 +110,12 @@ client.models()         // Models API
 client.batches()        // Batch API
 client.assistants()     // Assistants API
 client.realtime()       // Realtime API
+client.container()      // Container API
+client.skill()          // Skill API
 client.admin()          // Administration API
+client.evals()          // Evals API
+client.uploads()        // Upload API
+client.vector_stores()  // Vector Store API
 ```
 
 ### 2.3 核心数据结构
@@ -124,6 +136,35 @@ client.admin()          // Administration API
 | `CreateResponseArgs` | 请求参数构建器 |
 | `Input` | 输入类型（String/Vec<Message>） |
 | `CreateResponseResponse` | 响应类型 |
+
+#### ChatKit API
+
+| 类型 | 用途 |
+|------|------|
+| `CreateChatKitArgs` | ChatKit 请求参数 |
+| `ChatKitResponse` | ChatKit 响应类型 |
+
+#### Container API
+
+| 类型 | 用途 |
+|------|------|
+| `ContainerArgs` | 容器请求参数 |
+| `ContainerResponse` | 容器响应类型 |
+
+#### Skill API
+
+| 类型 | 用途 |
+|------|------|
+| `SkillArgs` | 技能请求参数 |
+| `SkillResponse` | 技能响应类型 |
+
+#### Evals API
+
+| 类型 | 用途 |
+|------|------|
+| `CreateEvalArgs` | 评估创建参数 |
+| `EvalResponse` | 评估响应类型 |
+| `Grader` | 评估器配置 |
 
 ---
 
@@ -554,23 +595,40 @@ while let Some(result) = stream.next().await {
 # TLS 后端
 default = ["rustls"]
 rustls = ["dep:reqwest", "reqwest/rustls-tls-native-roots"]
+rustls-webpki-roots = ["dep:reqwest", "reqwest/rustls-tls-webpki-roots"]
 native-tls = ["dep:reqwest", "reqwest/native-tls"]
+native-tls-vendored = ["dep:reqwest", "reqwest/native-tls-vendored"]
 
 # 特殊功能
 byot = ["dep:async-openai-macros"]
 
 # API 功能
 responses = ["response-types", "_api"]
-webhook = ["webhook-types", ...]
+webhook = ["webhook-types", "dep:base64", "dep:thiserror", "dep:hmac", "dep:sha2", "dep:hex"]
 audio = ["audio-types", "_api"]
 video = ["video-types", "_api"]
 image = ["image-types", "_api"]
 embedding = ["embedding-types", "_api"]
 chat-completion = ["chat-completion-types", "_api"]
+chatkit = ["chatkit-types", "_api"]
 assistant = ["assistant-types", "_api"]
+realtime = ["realtime-types", "_api", "dep:tokio-tungstenite"]
+container = ["container-types", "_api"]
+skill = ["skill-types", "_api"]
+administration = ["administration-types", "_api"]
+completions = ["completion-types", "_api"]
+evals = ["eval-types", "_api"]
+finetuning = ["finetuning-types", "_api"]
+file = ["file-types", "_api"]
+upload = ["upload-types", "_api"]
+model = ["model-types", "_api"]
+moderation = ["moderation-types", "_api"]
+vectorstore = ["vectorstore-types", "_api"]
+batch = ["batch-types", "_api"]
+grader = ["grader-types"]
 
 # 组合功能
-types = [...]  # 所有类型
+types = [...]  # 所有类型（共20种类型）
 full = [...]   # 所有功能
 ```
 
@@ -587,16 +645,26 @@ async-openai 0.33.0
 │   ├── reqwest 0.12
 │   ├── tokio 1
 │   ├── tokio-stream 0.1
+│   ├── tokio-util (optional)
 │   ├── futures 0.3
 │   ├── backoff 0.4.0
 │   ├── reqwest-eventsource 0.6.0
 │   ├── eventsource-stream 0.2
-│   └── tracing 0.1
+│   ├── tracing 0.1
+│   ├── secrecy (optional)
+│   ├── serde_urlencoded (optional)
+│   ├── url (optional)
+│   ├── rand (optional)
+│   └── async-openai-macros (optional, for BYOT)
+│
+├── [Realtime dependencies]
+│   └── tokio-tungstenite
 │
 └── [Webhook dependencies]
     ├── base64 0.22
     ├── hmac 0.12
-    └── sha2 0.10
+    ├── sha2 0.10
+    └── hex
 ```
 
 ### 参考资源
