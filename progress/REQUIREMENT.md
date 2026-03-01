@@ -140,13 +140,19 @@ content = "xxx"
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
   - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应工具为`workflow:message`。
   - 如果有文字，则表示条件：
-    - select表示多选一，如果被选择了，将对应计数加一。
-    - require表示需要该选项被选择过，执行后计数减一。
-    - 对应工具为`workflow:xxx`，其中xxx为这个选项。
+    - select表示单选项选择，如果被选择了，将对应计数器+1
+    - require表示需要该选项计数器>0，执行后计数器-1
+    - 对应工具为`workflow:xxx`，其中xxx为这个选项
   - 都要求带上`message`参数，表示传递的信息内容。
 
 - 节点选项：
   - new-session表示一直启用新session而不是复用session
+
+#### 工作流Session层次结构
+
+- 工作流Session：存储工作流状态（计数器、全局变量）
+- 节点Session：工作流Session的子Session，存储节点执行上下文
+- `new-session`创建的节点Session自动关联到工作流Session
 
 - 使用示例：
   - 定义PRD流程
@@ -203,8 +209,8 @@ AIMB| }
 ### 基本配置文件
 
 - 配置路径（按照以下优先级）：
-  - 默认配置（优先级最高）：`neco.toml`
-  - 环境配置（可覆盖默认值）：`neco.xxx.toml`，其中的`xxx`可以是任何合法文件名字符串，按照文件名顺序应用。
+  - 全局配置（优先级最高）：`neco.toml`
+  - 带标签的全局配置（优先级低于全局配置）：`neco.xxx.toml`，其中的`xxx`可以是任何合法文件名字符串，按照文件名顺序应用。
 
 **配置合并策略**：
 
@@ -250,7 +256,7 @@ api_key_env = "ZHIPU_API_KEY"
 type = "openai" # 使用OpenAI Chat接口
 name = "MiniMax (CN)"
 base = "https://api.minimaxi.com/v1"
-env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
+api_key_envs = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
 # MCP参考：本地stdio形式
 # 当command存在时，优先采用本地stdio形式
@@ -328,7 +334,12 @@ flowchart TD
     REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
-- 此时，工作流根路径的`agents`目录，或者配置路径的`agents`目录，应该有：
+- **Agent查找优先级**：
+  1. `workflows/xxx/agents/`（工作流特定，优先）
+  2. `~/.config/neco/agents/`（全局配置，后备）
+  同名Agent：工作流特定覆盖全局配置
+
+- 此时，工作流目录或配置目录的`agents`目录，应该有：
   1. `write-prd.md`
   2. `write-tech-doc.md`
   3. `write-impl.md`
