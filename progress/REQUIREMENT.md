@@ -71,7 +71,11 @@
 
 ### Session管理
 
-- 存储在`~/.local/neco/(session_id)`目录下。目录下存储所有的上下文内容。
+- 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`目录下。目录下存储所有的上下文内容。
+- **Session ID与Agent ULID的关系**：
+  - Session ID是顶级容器的ULID，在创建Session时生成
+  - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成
+  - 第一个Agent（最上层）的Agent ULID与Session ID相同
 - Session ID使用ULID（Universally Unique Lexicographically Sortable Identifier）。使用`ulid`这个crate。
 
 #### 消息内容存储
@@ -85,7 +89,7 @@
 prompts = ["base"]
 
 # Agent层级关系（用于SubAgent模式）
-parent_ulid = "01HF..."  # 父Agent的ULID，最上层Agent为null
+parent_ulid = "01HF..."  # 父Agent的ULID，最上层Agent此字段省略不填
 
 # Agent消息列表
 [[messages]]
@@ -98,6 +102,8 @@ content = "xxx"
 ```
 
 - 上述`agent_ulid`在Agent开始对话时生成。
+- 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
+  - 对于最上层Agent，`(agent_ulid)` 与 `(session_id)` 相同
 - 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
 - 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
@@ -157,6 +163,35 @@ content = "xxx"
 - 使用示例：
   - 定义PRD流程
   - 执行/审阅循环流程
+
+#### 重要概念：双层结构区分
+
+Neco系统中存在**两个独立的层次结构**，它们在不同层面运作：
+
+##### **1. 工作流节点之间的图结构（Workflow-Level Graph）**
+
+- **定义方式**：通过Mermaid图（`workflow.mermaid`）静态定义
+- **结构类型**：有向图（DAG），节点之间通过边（edges）连接
+- **转换控制**：由边条件（`select`/`require`计数器）控制节点之间的转换
+- **存储位置**：工作流Session存储计数器、全局变量
+- **生命周期**：工作流启动时创建，工作流完成时销毁
+- **示例**：`WRITE_PRD --> REVIEW_PRD`（节点之间的转换）
+
+##### **2. 单个节点下的Agent树结构（Node-Level Agent Tree）**
+
+- **定义方式**：运行时动态创建（Agent实例化）
+- **结构类型**：树形结构，Agent之间通过`parent_ulid`建立父子关系
+- **协作方式**：父子Agent通过通信工具直接传递内容
+- **存储位置**：节点Session下的Agent TOML文件
+- **生命周期**：节点启动时创建Agent树，节点完成时销毁
+- **示例**：根Agent创建多个子Agent并行研究不同主题
+
+##### **关键区别**
+
+- 工作流图定义"**做什么任务**"（任务编排）
+- Agent树定义"**怎么做任务**"（任务执行）
+- 工作流边控制**节点之间**的转换，不控制**Agent之间**的关系
+- `parent_ulid`用于Agent树的父子关系，不用于工作流节点之间的关系
 
 ### 模块化提示词与工具，以及按需加载
 
@@ -275,6 +310,29 @@ url = "https://mcp.figma.com/mcp"
 bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
 http_headers = { "X-Figma-Region" = "us-east-1" }
 ```
+
+#### API密钥配置（三种方式，只能使用一种）
+
+- 方式1: 单个环境变量名
+
+```toml
+api_key_env = "API_KEY"
+```
+
+- 方式2: 多个环境变量名（轮询使用）
+
+```toml
+api_key_envs = ["API_KEY_1", "API_KEY_2"]
+```
+
+- 方式3: 直接写入密钥（不推荐，仅用于测试）
+
+```toml
+api_key = "sk-..."
+```
+
+- 优先级: api_key > api_key_env > api_key_envs
+- api_key_envs 轮询策略: 按数组顺序轮询，遇到失败则尝试下一个
 
 ### 提示词组件定义
 
