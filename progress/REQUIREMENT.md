@@ -101,9 +101,6 @@ role = "assistant"
 content = "xxx"
 ```
 
-- 上述`agent_ulid`在Agent开始对话时生成（第一个Agent的ULID为Session ID）。
-- 文件路径：`~/.local/neco/(session_id)/(agent_ulid).toml`
-  - 对于最上层Agent，`(agent_ulid)` 与 `(session_id)` 相同
 - 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
 ### MCP
@@ -195,6 +192,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ##### **重要补充：工作流节点Agent定位**
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
+  - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`。
 
 ### 模块化提示词与工具，以及按需加载
 
