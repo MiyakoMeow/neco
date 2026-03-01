@@ -253,11 +253,14 @@ prompts:
 
 - 输出结束后也输出`--session xxxxxxxx`参考参数，用于接续对话上下文。（Session管理部分见下文）
 - 使用`ratatui`渲染。
-- 使用按行渲染，不使用tui。
+- 使用ratatui的`Viewport::Inline`模式，非全屏TUI。
+  - 按行渲染输出，不切换到alternate screen（全屏）。
+  - 保留终端历史记录，TUI在当前光标下方显示。
 
 ### B. 终端REPL
 
-- 使用`ratatui`渲染。
+- 使用ratatui的`Viewport::Inline`模式，非全屏TUI。
+  - REPL界面不占用全屏，保留终端历史记录。
 
 ### C. 后台运行模式
 
@@ -266,7 +269,7 @@ prompts:
 
 ### 要求
 
-- 模式A和B使用`ratatui`这个tui库。
+- 模式A和B都使用`ratatui`的`Viewport::Inline`模式（非全屏TUI），不使用alternate screen（全屏模式）。
 - 模式A和B共享渲染逻辑。
 - 以下逻辑要求分离至不同crate：
   - 核心执行逻辑
