@@ -100,9 +100,23 @@
   - 上层智能体发现任务可以拆分且并行执行时，生成多个下级智能体。
   - 最终会形成一个动态的树形结构。
 
-### 自定义工作流程图
+### 自定义工作流
+
+- 在没有定义工作流时，默认工作流只有一个节点。
 
 - 使用Mermaid图 + 每个节点一个.md文件表示node
+
+- 多个节点可以同时运行。
+- 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
+  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应工具为`workflow:message`。
+  - 如果有文字，则表示条件：
+    - select表示多选一，如果被选择了，将对应计数加一。
+    - require表示需要该选项被选择过，执行后计数减一。
+    - 对应工具为`workflow:xxx`，其中xxx为这个选项。
+  - 都要求带上`message`参数，表示传递的信息内容。
+
+- 节点选项：
+  - new-session表示一直启用新session而不是复用session
 
 - 使用示例：
   - 定义PRD流程
@@ -125,15 +139,15 @@
 
 ### 1、Read（读取文件）
 
-- 实现 Hashline 技术。Agent 读到的每一行代码，末尾都会打上一个强绑定的内容哈希值，格式类似下文的`1#VK`，称为“行哈希”。
+- 实现 Hashline 技术。Agent 读到的每一行代码，末尾都会打上一个强绑定的内容哈希值，格式类似下文的`AKVK`，称为“行哈希”。
 
 ```text
-1#VK| function hello() {
-2#XJ|   return "world";
-3#MB| }
+AKVK| function hello() {
+VNXJ|   return "world";
+AIMB| }
 ```
 
-- 每一行的哈希值，来源于当前行内容与上一行的哈希值。
+- 假设当前行号为N，则每一行的哈希值，来源于第N到N-4行的内容之和。使用CRC32计算然后对26的4次方取模，也可以采用其它更快速的方案。
 - 以上示例仅供格式参考，实际生成的哈希值不一定要与此相同。
 
 ### 2、Edit（编辑文件）
@@ -235,10 +249,35 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 
 ```yaml
 # （可选）激活的提示词组件。按顺序激活。
-# 默认：只有base
+# 在未定义prompts的情况下，默认只有base启用。
 prompts:
   - base
   - multi-agent 
+```
+
+### 工作流定义
+
+- 工作流根路径：`workflows/xxx/`
+
+#### 参考：PRD工作流
+
+- 相对工作流根路径的路径：`workflow.mermaid`
+
+```mermaid
+flowchart TD
+    START([开始]) --> WRITE_PRD[write-prd]
+
+    WRITE_PRD --> REVIEW_PRD[review;new-session]
+    REVIEW_PRD -->|select:approve_prd,reject| WRITE_PRD
+    WRITE_PRD -->|require:approve_prd| WRITE_TECH_DOC[write-tech-doc]
+
+    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review;new-session]
+    REVIEW_TECH_DOC -->|select:approve_tech,reject| WRITE_TECH_DOC
+    WRITE_TECH_DOC -->|require:approve_tech| WRITE_IMPL[write-impl]
+    
+    WRITE_IMPL --> REVIEW_IMPL[review;new-session]
+    REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
+    REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
 ---
