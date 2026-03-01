@@ -89,7 +89,7 @@
 prompts = ["base"]
 
 # Agent层级关系（用于SubAgent模式）
-parent_ulid = "01HF..."  # 父Agent的ULID，最上层Agent此字段省略不填
+parent_ulid = "01HF..."  # 上级Agent的ULID，最上层Agent此字段省略不填
 
 # Agent消息列表
 [[messages]]
@@ -179,18 +179,18 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ##### **2. 单个节点下的Agent树结构（Node-Level Agent Tree）**
 
 - **定义方式**：运行时动态创建（Agent实例化）
-- **结构类型**：树形结构，Agent之间通过`parent_ulid`建立父子关系
-- **协作方式**：父子Agent通过通信工具直接传递内容
+- **结构类型**：树形结构，Agent之间通过`parent_ulid`建立上下级关系
+- **协作方式**：上下级Agent通过通信工具直接传递内容
 - **存储位置**：节点Session下的Agent TOML文件
 - **生命周期**：节点启动时创建Agent树，节点完成时销毁
-- **示例**：根Agent创建多个子Agent并行研究不同主题
+- **示例**：上级Agent创建多个下级Agent并行研究不同主题
 
 ##### **关键区别**
 
 - 工作流图定义"**做什么任务**"（任务编排）
 - Agent树定义"**怎么做任务**"（任务执行）
 - 工作流边控制**节点之间**的转换，不控制**Agent之间**的关系
-- `parent_ulid`用于Agent树的父子关系，不用于工作流节点之间的关系
+- `parent_ulid`用于Agent树的上下级关系，不用于工作流节点之间的关系
 
 ### 模块化提示词与工具，以及按需加载
 
