@@ -141,9 +141,9 @@ content = "xxx"
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
   - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（格式：`workflow:pass`，表示无条件传递）。注：`workflow:*`为工作流专用语法，非常规工具名。
-  - 如果有文字，则表示条件：
-    - select表示单选项选择，如果被选择了，将对应计数器+1
-    - require表示需要该选项计数器>0，执行后计数器-1
+  - 如果有文字，则表示条件，工作流引擎根据边的条件判断节点是否可以执行：
+    - `select`：Agent调用`workflow:<option>`时，对应计数器+1
+    - `require`：计数器>0时节点可执行，执行后计数器-1
     - 对应使用工作流转场工具（格式：`workflow:<option>`，其中`<option>`为选项名，如`workflow:approve`）。注：`workflow:*`为工作流专用语法，非常规工具名。
   - 都要求带上`message`参数，表示传递的信息内容。
 
@@ -192,7 +192,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ##### **重要补充：工作流节点Agent定位**
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
-  - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`。
+  - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`（与工作流Session ID同名的节点Session）。
   - **注意区分**：普通Session的存储路径为`~/.local/neco/(session_id)/(agent_ulid).toml`，其中第一个Agent的`agent_ulid`等于`session_id`
 
 ### 模块化提示词与工具，以及按需加载
@@ -300,7 +300,7 @@ base = "https://api.minimaxi.com/v1"
 api_key_envs = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
 # MCP参考：本地stdio形式
-# 当command存在时，优先采用本地stdio形式
+# 当command存在时，优先采用本地stdio形式（即使配置了url）
 [mcp_servers.context7]
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
@@ -366,7 +366,7 @@ api_key = "sk-..."
 
 ```yaml
 # （可选）激活的提示词组件。按顺序激活。
-# 在未定义prompts的情况下，默认只有base启用。
+# 如果未定义此字段，默认只加载`base`组件
 prompts:
   - base
   - multi-agent 
