@@ -42,7 +42,7 @@
 
 ## 功能特性
 
-### 多模型配置
+### 模型组/多模型提供商配置
 
 个人认为，未来模型会往专用化、细分化的方向发展。
 
@@ -72,9 +72,29 @@
 ### Session管理
 
 - 存储在`~/.local/neco/(session_id)`目录下。目录下存储所有的上下文内容。
-- Session ID使用有自增特性的uuid版本。
-- 可以使用Jujutsu管理Session目录，每一步提交一次，便于检验，也便于后续添加在特定步骤恢复/回溯等功能。
-- 善用Git Workspace或类似功能。
+- Session ID使用ULID（Universally Unique Lexicographically Sortable Identifier）。使用`ulid`这个crate。
+
+#### 消息内容存储
+
+- 使用TOML存储消息内容：
+
+- 参考：`(agent_ulid).toml`。不同Agent使用不同文件。
+
+```toml
+# Agent配置
+prompts = ["base"]
+
+# Agent消息列表
+[[messages]]
+role = "user"
+content = "xxx"
+
+[[messages]]
+role = "ass"
+content = "xxx"
+```
+
+- 上述`agent_ulid`在Agent开始对话时生成。
 
 ### MCP
 
@@ -99,6 +119,11 @@
   - 每个智能体都可以有多个下级。可以设置例外情况，例如执行智能体只能用于执行。
   - 上层智能体发现任务可以拆分且并行执行时，生成多个下级智能体。
   - 最终会形成一个动态的树形结构。
+
+#### SubAgent创建行为
+
+- 可以指定使用的Agent（来自配置目录的`agents`下的Agent定义）。
+- 默认可以覆盖`model`、`model_group`、`prompts`等字段。
 
 ### 自定义工作流
 
@@ -137,8 +162,11 @@
 
 ## 工具注意事项
 
-### 1、Read（读取文件）
+- 工具名应小写。以下工具名默认转换成小写格式。
 
+### 1、Read
+
+- 读取文件
 - 实现 Hashline 技术。Agent 读到的每一行代码，末尾都会打上一个强绑定的内容哈希值，格式类似下文的`AKVK`，称为“行哈希”。
 
 ```text
@@ -147,12 +175,14 @@ VNXJ|   return "world";
 AIMB| }
 ```
 
-- 假设当前行号为N，则每一行的哈希值，来源于第N到N-4行的内容之和。使用CRC32计算然后对26的4次方取模，也可以采用其它更快速的方案。
+- 假设当前行号为`N`，则每一行的哈希值，来源于第`N`行到第`MAX(N-4,1)`行的内容之和。使用`xxhash-rust`这个crate。
 - 以上示例仅供格式参考，实际生成的哈希值不一定要与此相同。
 
-### 2、Edit（编辑文件）
+### 2、Edit
 
-传入开始行哈希和结束行哈希（都是闭区间），以及修改后的内容。
+- 编辑文件
+- 传入开始行哈希和结束行哈希（都是闭区间），以及修改后的内容。
+  - 选择匹配的第一行。
 
 ---
 
@@ -161,13 +191,17 @@ AIMB| }
 - 配置目录：`~/.config/neco`
 - 本节的所有“配置路径”，都是相对于配置目录的路径。
 
+- 配置目录（\`~/.config/neco\`）和Session目录（\`~/.local/neco\`）分离的原因:
+  1. **配置目录**: 存放用户配置、Agent定义、工作流定义等**相对静态**的内容
+  2. **Session目录**: 存放运行时数据、消息历史、状态等**动态生成**的内容
+
 ### 基本配置文件
 
 - 配置路径（按照以下优先级）：
   - 基本（优先级最高）：`neco.toml`
   - 追加：`neco.xxx.toml`，其中的`xxx`可以是任何合法文件名字符串，按照文件名顺序应用。
 
-- 除了TOML格式外，也支持YAML格式，数据定义、配置形式等都一致。所有TOML格式配置文件比所有YAML格式的优先级更高。
+- 除了TOML格式外，也支持YAML格式，数据定义、配置形式等都一致。所有TOML格式配置文件比所有YAML格式的优先级更高。例如：`neco.dev.toml`的优先级比`neco.yaml`更高。
 
 - 格式如下：
 
@@ -176,6 +210,7 @@ AIMB| }
 # 模型组定义
 [model_groups.think]
 models = ["zhipuai/glm-4.7"]
+# 对应 model_providers.zhipuai （完全匹配）
 
 [model_groups.balanced]
 models = ["zhipuai/glm-4.7", "minimax-cn/MiniMax-M2.5"]
@@ -191,14 +226,14 @@ models = ["zhipuai/glm-4.6v"]
 type = "openai" # 使用OpenAI Chat接口
 name = "ZhipuAI"
 base = "https://open.bigmodel.cn/api/paas/v4"
-env_key = "ZHIPU_API_KEY"
+api_key_env = "ZHIPU_API_KEY"
 
 # 以下设置应内置于代码中
 [model_providers.zhipuai-coding-plan]
 type = "openai" # 使用OpenAI Chat接口
 name = "ZhipuAI Coding Plan"
 base = "https://open.bigmodel.cn/api/coding/paas/v4"
-env_key = "ZHIPU_API_KEY"
+api_key_env = "ZHIPU_API_KEY"
 
 # MiniMax参考配置
 [model_providers.minimax-cn]
@@ -207,7 +242,8 @@ name = "MiniMax (CN)"
 base = "https://api.minimaxi.com/v1"
 env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
-# MCP参考：本地形式
+# MCP参考：本地stdio形式
+# 当command存在时，优先采用本地stdio形式
 [mcp_servers.context7]
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
@@ -216,6 +252,8 @@ args = ["-y", "@upstash/context7-mcp"]
 MY_ENV_VAR = "MY_ENV_VALUE"
 
 # MCP参考：HTTP形式
+# 当url字段存在时，默认采用HTTP形式
+# 如果与之前的模式冲突，优先采用之前的模式（本地stdio）
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
 bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
@@ -232,8 +270,8 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 #### 内置提示词组件
 
 - `base`：任何时候都加载。包含如何加载未加载的内容的提示。
-- `multi-agent`：如果这个Agent可以生成子Agent，则加载。
-- `multi-agent-child`：如果这个模型有父Agent，则加载。
+- `multi-agent`：如果这个Agent可以生成下级Agent，则加载。
+- `multi-agent-child`：如果这个模型有上级Agent，则加载。
 
 #### 工具提示词组件
 
@@ -280,6 +318,12 @@ flowchart TD
     REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
+- 此时，工作流根路径的`agents`目录，或者配置路径的`agents`目录，应该有：
+  1. `write-prd.md`
+  2. `write-tech-doc.md`
+  3. `write-impl.md`
+  4. `review.md`
+
 ---
 
 ## 用户接口
@@ -303,8 +347,17 @@ flowchart TD
 
 ### C. 后台运行模式
 
-- 参考OpenClaw、ZeroClaw等应用的运行模式。
-- 要求类型设计参考该项目：[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
+参考ZeroClaw项目的架构设计:
+
+1. **守护进程**: neco作为系统服务运行，管理Session生命周期
+2. **IPC通信**: 使用gRPC或Unix Socket与前端交互
+3. **状态暴露**: 提供HTTP API查询Session状态和进度
+4. **多前端支持**: 支持CLI、Web UI、IDE插件等多种前端
+
+与ZeroClaw的主要区别:
+
+- ZeroClaw是通用自动化工具，Neco专注于AI Agent协作
+- Neco的Session管理更复杂（支持智能体树）
 
 ### 要求
 
@@ -314,3 +367,23 @@ flowchart TD
   - 核心执行逻辑
   - 终端输出逻辑
   - 后台Agent与外部接口
+
+### 错误处理机制
+
+1. **模型调用错误**:
+   - 网络错误: 自动重试3次，每次间隔指数退避（1s, 2s, 4s）
+   - API错误（4xx）: 不重试，直接返回错误给Agent
+   - API错误（5xx）: 重试3次
+   - 所有重试失败后，尝试model_group中的下一个模型
+
+2. **工具调用错误**:
+   - 工具执行失败: 将错误信息返回给Agent，由Agent决定如何处理
+   - 工具超时: 默认30秒超时，可配置
+
+3. **配置错误**:
+   - 启动时配置验证失败: 立即报错退出，不启动
+   - 运行时配置热加载失败: 回滚到上一版本，记录错误日志
+
+4. **工作流错误**:
+   - 节点执行失败: 根据workflow配置决定是否继续或中断
+   - 死锁检测: 超过5分钟无进度时，中断工作流并报错
