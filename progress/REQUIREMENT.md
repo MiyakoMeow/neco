@@ -56,7 +56,7 @@
 
 - 部分模型有图像/语言识别能力。
 - 有多个提供者可选，或有同一提供者的多个API Key，希望循环使用模型，实现负载均衡或避免中断。
-  - 当出现异常，尝试3次均失败时，自动尝试下一个可选模型，或当前模型的下一个API Key。
+  - 当出现异常，该模型自动重试3次（指数退避：1s, 2s, 4s）均失败时，自动尝试下一个可选模型，或当前模型的下一个API Key。
 
 ### 模型调用
 
@@ -71,7 +71,11 @@
 
 ### Session管理
 
-- 存储在`~/.local/neco/(session_id)`目录下。目录下存储所有的上下文内容。
+- 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`文件。该文件存储所有的上下文内容。
+- **Session ID与Agent ULID的关系**：
+  - Session ID是顶级容器的ULID，在创建Session时生成
+  - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成（第一个Agent除外，其使用Session ID）
+  - 第一个Agent（最上层）的Agent ULID与Session ID相同
 - Session ID使用ULID（Universally Unique Lexicographically Sortable Identifier）。使用`ulid`这个crate。
 
 #### 消息内容存储
@@ -84,17 +88,20 @@
 # Agent配置
 prompts = ["base"]
 
+# Agent层级关系（用于SubAgent模式）
+parent_ulid = "01HF..."  # 上级Agent的ULID，最上层Agent此字段省略不填
+
 # Agent消息列表
 [[messages]]
 role = "user"
 content = "xxx"
 
 [[messages]]
-role = "ass"
+role = "assistant"
 content = "xxx"
 ```
 
-- 上述`agent_ulid`在Agent开始对话时生成。
+- 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
 ### MCP
 
@@ -133,19 +140,60 @@ content = "xxx"
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
-  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应工具为`workflow:message`。
-  - 如果有文字，则表示条件：
-    - select表示多选一，如果被选择了，将对应计数加一。
-    - require表示需要该选项被选择过，执行后计数减一。
-    - 对应工具为`workflow:xxx`，其中xxx为这个选项。
+  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（格式：`workflow:pass`，表示无条件传递）。注：`workflow:*`为工作流专用语法，非常规工具名。
+  - 如果有文字，则表示条件，工作流引擎根据边的条件判断节点是否可以执行：
+    - `select`：Agent调用`workflow:<option>`时，对应计数器+1
+    - `require`：计数器>0时节点可执行，执行后计数器-1
+    - 对应使用工作流转场工具（格式：`workflow:<option>`，其中`<option>`为选项名，如`workflow:approve`）。
   - 都要求带上`message`参数，表示传递的信息内容。
 
 - 节点选项：
-  - new-session表示一直启用新session而不是复用session
+  - new-session表示为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session
+
+#### 工作流Session层次结构
+
+- 工作流Session：存储工作流状态（计数器、全局变量）
+- 节点Session：工作流Session的子Session，存储节点执行上下文
+- `new-session`创建的节点Session自动关联到工作流Session
 
 - 使用示例：
   - 定义PRD流程
   - 执行/审阅循环流程
+
+#### 重要概念：双层结构区分
+
+Neco系统中存在**两个独立的层次结构**，它们在不同层面运作：
+
+##### **1. 工作流节点之间的图结构（Workflow-Level Graph）**
+
+- **定义方式**：通过Mermaid图（`workflow.mermaid`）静态定义
+- **结构类型**：有向图（DAG），节点之间通过边（edges）连接
+- **转换控制**：由边条件（`select`/`require`计数器）控制节点之间的转换
+- **存储位置**：工作流Session存储计数器、全局变量
+- **生命周期**：工作流启动时创建，工作流完成时销毁
+- **示例**：`WRITE_PRD --> REVIEW_PRD`（节点之间的转换）
+
+##### **2. 单个节点下的Agent树结构（Node-Level Agent Tree）**
+
+- **定义方式**：运行时动态创建（Agent实例化）
+- **结构类型**：树形结构，Agent之间通过`parent_ulid`建立上下级关系
+- **协作方式**：上下级Agent通过通信工具直接传递内容
+- **存储位置**：节点Session下的Agent TOML文件
+- **生命周期**：节点启动时创建Agent树，节点完成时销毁
+- **示例**：上级Agent创建多个下级Agent并行研究不同主题
+
+##### **关键区别**
+
+- 工作流图定义"**做什么任务**"（任务编排）
+- Agent树定义"**怎么做任务**"（任务执行）
+- 工作流边控制**节点之间**的转换，不控制**Agent之间**的关系
+- `parent_ulid`用于Agent树的上下级关系，不用于工作流节点之间的关系
+
+##### **重要补充：工作流节点Agent定位**
+
+- **工作流的节点Agent同时也是节点内的最上级Agent**。
+  - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`（其中第一个节点Agent的`node_session_id`等于其Agent ULID，与普通Session规则一致）。
+  - **注意区分**：普通Session的存储路径为`~/.local/neco/(session_id)/(agent_ulid).toml`，其中第一个Agent的`agent_ulid`等于`session_id`。
 
 ### 模块化提示词与工具，以及按需加载
 
@@ -164,7 +212,7 @@ content = "xxx"
 
 - 工具名应小写。以下工具名默认转换成小写格式。
 
-### 1、Read
+### 1、read
 
 - 读取文件
 - 实现 Hashline 技术。Agent 读到的每一行代码，末尾都会打上一个强绑定的内容哈希值，格式类似下文的`AKVK`，称为“行哈希”。
@@ -175,10 +223,12 @@ VNXJ|   return "world";
 AIMB| }
 ```
 
-- 假设当前行号为`N`，则每一行的哈希值，来源于第`N`行到第`MAX(N-4,1)`行的内容之和。使用`xxhash-rust`这个crate。
+- 假设当前行号为`N`，则每一行的哈希值来源于：
+  - 将第`MAX(N-4,1)`行到第`N`行的内容合并为一个字符串，再计算哈希值。
+  - 使用xxHash方法和`xxhash-rust`这个crate。
 - 以上示例仅供格式参考，实际生成的哈希值不一定要与此相同。
 
-### 2、Edit
+### 2、edit
 
 - 编辑文件
 - 传入开始行哈希和结束行哈希（都是闭区间），以及修改后的内容。
@@ -197,11 +247,17 @@ AIMB| }
 
 ### 基本配置文件
 
-- 配置路径（按照以下优先级）：
-  - 基本（优先级最高）：`neco.toml`
-  - 追加：`neco.xxx.toml`，其中的`xxx`可以是任何合法文件名字符串，按照文件名顺序应用。
+- 配置路径（按照以下优先级，由高到低）：
+  1. 主配置：`neco.toml`
+  2. 带标签的配置：`neco.<tag>.toml`（`<tag>`为标签名，数字/字母顺序加载，后加载的覆盖先加载的）
+  3. YAML格式：`neco.yaml` 或 `neco.<tag>.yaml`
 
-- 除了TOML格式外，也支持YAML格式，数据定义、配置形式等都一致。所有TOML格式配置文件比所有YAML格式的优先级更高。例如：`neco.dev.toml`的优先级比`neco.yaml`更高。
+**配置合并策略**：
+
+- 标量类型（字符串、数字）：后加载的配置覆盖先加载的配置
+- 数组类型：后加载的配置替换先加载的配置。如需追加而非替换，使用特殊语法 `"+<item>"`（例如 `models = ["+new-model"]`），其中 `<item>` 为要追加的元素。这是配置系统的特殊约定，非标准TOML语法。
+- 对象类型：深层次合并（递归合并每个字段）
+- **注意**：TOML格式始终优先于YAML格式。例如 `neco.dev.toml` 优先级高于 `neco.yaml`。同格式下按上述1-3的顺序确定优先级。
 
 - 格式如下：
 
@@ -240,10 +296,10 @@ api_key_env = "ZHIPU_API_KEY"
 type = "openai" # 使用OpenAI Chat接口
 name = "MiniMax (CN)"
 base = "https://api.minimaxi.com/v1"
-env_keys = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
+api_key_envs = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
 # MCP参考：本地stdio形式
-# 当command存在时，优先采用本地stdio形式
+# 当command存在时，优先采用本地stdio形式（即使配置了url）
 [mcp_servers.context7]
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
@@ -252,13 +308,35 @@ args = ["-y", "@upstash/context7-mcp"]
 MY_ENV_VAR = "MY_ENV_VALUE"
 
 # MCP参考：HTTP形式
-# 当url字段存在时，默认采用HTTP形式
-# 如果与之前的模式冲突，优先采用之前的模式（本地stdio）
+# 当command和url同时存在时，优先采用本地stdio形式
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
-bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
+bearer_token_env = "FIGMA_OAUTH_TOKEN"
 http_headers = { "X-Figma-Region" = "us-east-1" }
 ```
+
+#### API密钥配置（三种方式，优先级从高到低）
+
+- 方式1: 单个环境变量名（最高优先级）
+
+```toml
+api_key_env = "API_KEY"
+```
+
+- 方式2: 多个环境变量名（轮询使用）
+
+```toml
+api_key_envs = ["API_KEY_1", "API_KEY_2"]
+```
+
+- 方式3: 直接写入密钥（不推荐，仅用于测试，最低优先级）
+
+```toml
+api_key = "sk-..."
+```
+
+- 优先级: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
+- api_key_envs 轮询策略: 按数组顺序轮询，遇到失败则尝试下一个
 
 ### 提示词组件定义
 
@@ -287,7 +365,7 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 
 ```yaml
 # （可选）激活的提示词组件。按顺序激活。
-# 在未定义prompts的情况下，默认只有base启用。
+# 如果未定义此字段，默认只加载`base`组件
 prompts:
   - base
   - multi-agent 
@@ -305,20 +383,25 @@ prompts:
 flowchart TD
     START([开始]) --> WRITE_PRD[write-prd]
 
-    WRITE_PRD --> REVIEW_PRD[review;new-session]
+    WRITE_PRD --> REVIEW_PRD[review / new-session]
     REVIEW_PRD -->|select:approve_prd,reject| WRITE_PRD
     WRITE_PRD -->|require:approve_prd| WRITE_TECH_DOC[write-tech-doc]
 
-    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review;new-session]
+    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review / new-session]
     REVIEW_TECH_DOC -->|select:approve_tech,reject| WRITE_TECH_DOC
     WRITE_TECH_DOC -->|require:approve_tech| WRITE_IMPL[write-impl]
     
-    WRITE_IMPL --> REVIEW_IMPL[review;new-session]
+    WRITE_IMPL --> REVIEW_IMPL[review / new-session]
     REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
     REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
-- 此时，工作流根路径的`agents`目录，或者配置路径的`agents`目录，应该有：
+- **Agent查找优先级**：
+  1. `workflows/xxx/agents/`（工作流特定，优先）
+  2. `~/.config/neco/agents/`（全局配置，后备）
+  同名Agent：工作流特定覆盖全局配置
+
+- 此时，工作流目录或配置目录的`agents`目录，应该有：
   1. `write-prd.md`
   2. `write-tech-doc.md`
   3. `write-impl.md`
@@ -368,7 +451,9 @@ flowchart TD
   - 终端输出逻辑
   - 后台Agent与外部接口
 
-### 错误处理机制
+---
+
+## 错误处理机制
 
 1. **模型调用错误**:
    - 网络错误: 自动重试3次，每次间隔指数退避（1s, 2s, 4s）
@@ -377,7 +462,8 @@ flowchart TD
    - 所有重试失败后，尝试model_group中的下一个模型
 
 2. **工具调用错误**:
-   - 工具执行失败: 将错误信息返回给Agent，由Agent决定如何处理
+   - 工具执行失败: 将错误信息返回给Agent，由Agent决定如何处理（重试、跳过或终止）
+   - Agent对工具错误的最终决定即为节点状态（无需额外workflow配置介入）
    - 工具超时: 默认30秒超时，可配置
 
 3. **配置错误**:
