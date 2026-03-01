@@ -143,11 +143,11 @@ content = "xxx"
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
-  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（workflow edge tools，格式：`workflow:message`）。注：`workflow:*`为工作流专用语法，非常规工具名。
+  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（格式：`workflow:pass`，表示无条件传递）。注：`workflow:*`为工作流专用语法，非常规工具名。
   - 如果有文字，则表示条件：
     - select表示单选项选择，如果被选择了，将对应计数器+1
     - require表示需要该选项计数器>0，执行后计数器-1
-    - 对应使用工作流转场工具（格式：`workflow:xxx`，其中xxx为选项名）。注：`workflow:*`为工作流专用语法，非常规工具名。
+    - 对应使用工作流转场工具（格式：`workflow:<option>`，其中`<option>`为选项名，如`workflow:approve`）。注：`workflow:*`为工作流专用语法，非常规工具名。
   - 都要求带上`message`参数，表示传递的信息内容。
 
 - 节点选项：
@@ -224,7 +224,9 @@ VNXJ|   return "world";
 AIMB| }
 ```
 
-- 假设当前行号为`N`，则每一行的哈希值，来源于第`N`行到第`MAX(N-4,1)`行的内容之和。使用`xxhash-rust`这个crate。
+- 假设当前行号为`N`，则每一行的哈希值来源于：
+  - 将第`MAX(N-4,1)`行到第`N`行的内容合并为一个字符串，再计算哈希值。
+  - 使用xxHash方法和`xxhash-rust`这个crate。
 - 以上示例仅供格式参考，实际生成的哈希值不一定要与此相同。
 
 ### 2、Edit
@@ -253,7 +255,7 @@ AIMB| }
 **配置合并策略**：
 
 - 标量类型（字符串、数字）：后加载的配置覆盖先加载的配置
-- 数组类型：后加载的配置替换先加载的配置（如需追加，使用特殊语法`models = ["+C"]`）
+- 数组类型：后加载的配置替换先加载的配置（如需追加，使用特殊语法`models = ["+<item>"]`，其中`<item>`为要追加的元素）
 - 对象类型：深层次合并（递归合并每个字段）
 - 除了TOML格式外，也支持YAML格式，数据定义、配置形式等都一致。所有TOML格式配置文件比所有YAML格式的优先级更高。例如：`neco.dev.toml`的优先级比`neco.yaml`更高。
 
@@ -306,11 +308,10 @@ args = ["-y", "@upstash/context7-mcp"]
 MY_ENV_VAR = "MY_ENV_VALUE"
 
 # MCP参考：HTTP形式
-# 当url字段存在时，默认采用HTTP形式
-# 如果与之前的模式冲突，优先采用之前的模式（本地stdio）
+# 当command和url同时存在时，优先采用本地stdio形式
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
-bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
+bearer_token_env = "FIGMA_OAUTH_TOKEN"
 http_headers = { "X-Figma-Region" = "us-east-1" }
 ```
 
