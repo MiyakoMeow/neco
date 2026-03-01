@@ -71,10 +71,10 @@
 
 ### Session管理
 
-- 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`目录下。目录下存储所有的上下文内容。
+- 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`文件。该文件存储所有的上下文内容。
 - **Session ID与Agent ULID的关系**：
   - Session ID是顶级容器的ULID，在创建Session时生成
-  - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成
+  - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成（第一个Agent除外，其使用Session ID）
   - 第一个Agent（最上层）的Agent ULID与Session ID相同
 - Session ID使用ULID（Universally Unique Lexicographically Sortable Identifier）。使用`ulid`这个crate。
 
@@ -101,8 +101,8 @@ role = "assistant"
 content = "xxx"
 ```
 
-- 上述`agent_ulid`在Agent开始对话时生成。
-- 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
+- 上述`agent_ulid`在Agent开始对话时生成（第一个Agent的ULID为Session ID）。
+- 文件路径：`~/.local/neco/(session_id)/(agent_ulid).toml`
   - 对于最上层Agent，`(agent_ulid)` 与 `(session_id)` 相同
 - 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
