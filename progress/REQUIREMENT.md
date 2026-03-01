@@ -84,6 +84,9 @@
 # Agent配置
 prompts = ["base"]
 
+# Agent层级关系（用于SubAgent模式）
+parent_ulid = "01HF..."  # 父Agent的ULID，最上层Agent为null
+
 # Agent消息列表
 [[messages]]
 role = "user"
@@ -95,6 +98,8 @@ content = "xxx"
 ```
 
 - 上述`agent_ulid`在Agent开始对话时生成。
+- 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
+- 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
 ### MCP
 
