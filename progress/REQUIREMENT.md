@@ -383,15 +383,15 @@ prompts:
 flowchart TD
     START([开始]) --> WRITE_PRD[write-prd]
 
-    WRITE_PRD --> REVIEW_PRD[review;new-session]
+    WRITE_PRD --> REVIEW_PRD[review / new-session]
     REVIEW_PRD -->|select:approve_prd,reject| WRITE_PRD
     WRITE_PRD -->|require:approve_prd| WRITE_TECH_DOC[write-tech-doc]
 
-    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review;new-session]
+    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review / new-session]
     REVIEW_TECH_DOC -->|select:approve_tech,reject| WRITE_TECH_DOC
     WRITE_TECH_DOC -->|require:approve_tech| WRITE_IMPL[write-impl]
     
-    WRITE_IMPL --> REVIEW_IMPL[review;new-session]
+    WRITE_IMPL --> REVIEW_IMPL[review / new-session]
     REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
     REVIEW_IMPL -->|require:approve| END([完成])
 ```
