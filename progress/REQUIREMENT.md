@@ -97,14 +97,13 @@ role = "user"
 content = "xxx"
 
 [[messages]]
-role = "ass"
+role = "assistant"
 content = "xxx"
 ```
 
 - 上述`agent_ulid`在Agent开始对话时生成。
 - 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
   - 对于最上层Agent，`(agent_ulid)` 与 `(session_id)` 相同
-- 目录结构：`~/.local/neco/(session_id)/(agent_ulid).toml`
 - 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
 
 ### MCP
@@ -144,15 +143,15 @@ content = "xxx"
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
-  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应工具为`workflow:message`。
+  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（workflow edge tools，格式：`workflow:message`）。注：`workflow:*`为工作流专用语法，非常规工具名。
   - 如果有文字，则表示条件：
     - select表示单选项选择，如果被选择了，将对应计数器+1
     - require表示需要该选项计数器>0，执行后计数器-1
-    - 对应工具为`workflow:xxx`，其中xxx为这个选项
+    - 对应使用工作流转场工具（格式：`workflow:xxx`，其中xxx为选项名）。注：`workflow:*`为工作流专用语法，非常规工具名。
   - 都要求带上`message`参数，表示传递的信息内容。
 
 - 节点选项：
-  - new-session表示一直启用新session而不是复用session
+  - new-session表示为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session
 
 #### 工作流Session层次结构
 
