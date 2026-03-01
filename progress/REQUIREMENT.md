@@ -193,6 +193,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
   - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`。
+  - **注意区分**：普通Session的存储路径为`~/.local/neco/(session_id)/(agent_ulid).toml`，其中第一个Agent的`agent_ulid`等于`session_id`
 
 ### 模块化提示词与工具，以及按需加载
 
@@ -257,6 +258,7 @@ AIMB| }
 - 数组类型：后加载的配置替换先加载的配置（如需追加，使用特殊语法`models = ["+<item>"]`，其中`<item>`为要追加的元素）
 - 对象类型：深层次合并（递归合并每个字段）
 - **注意**：TOML格式始终优先于YAML格式。例如 `neco.dev.toml` 优先级高于 `neco.yaml`。同格式下按上述1-3的顺序确定优先级。
+- 关于数组追加：如需追加而非替换，使用特殊语法 `"+值"`，如 `models = ["+new-model"]`（这是配置系统的特殊约定，非标准TOML语法）
 
 - 格式如下：
 
@@ -334,7 +336,7 @@ api_key_envs = ["API_KEY_1", "API_KEY_2"]
 api_key = "sk-..."
 ```
 
-- 优先级: `api_key` > `api_key_env` > `api_key_envs`。若同时配置多个方式，按优先级使用最高者。
+- 优先级: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
 - api_key_envs 轮询策略: 按数组顺序轮询，遇到失败则尝试下一个
 
 ### 提示词组件定义
