@@ -277,7 +277,7 @@ flowchart TD
     
     WRITE_IMPL --> REVIEW_IMPL[review;new-session]
     REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
-    REVIEW -->|require:approve| END([完成])
+    REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
 ---
