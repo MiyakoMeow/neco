@@ -221,7 +221,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
   - **节点Agent的ULID与节点Session ID相同**（遵循前述Session ID与Agent ULID关系规则）。
-  - 消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`。
+  - 消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`（通用路径格式见前述Session管理部分，此处workflow_session_id对应通用格式中的session_id，node_session_id对应agent_ulid）。
 
 ### 模块化提示词与工具，以及按需加载
 
