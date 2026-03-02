@@ -220,8 +220,8 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ##### **重要补充：工作流节点Agent定位**
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
-  - **节点Agent的ULID与节点Session ID相同**，遵循最上层Agent的ULID规则。其消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`（其中第一个节点Agent的`node_session_id`等于其Agent ULID，与普通Session规则一致）。
-  - **注意区分**：普通Session的存储路径为`~/.local/neco/(session_id)/(agent_ulid).toml`，其中第一个Agent的`agent_ulid`等于`session_id`。
+  - **节点Agent的ULID与节点Session ID相同**（遵循前述Session ID与Agent ULID关系规则）。
+  - 消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`。
 
 ### 模块化提示词与工具，以及按需加载
 
@@ -342,26 +342,11 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 
 #### API密钥配置（三种方式，优先级从高到低）
 
-- 方式1: 单个环境变量名（最高优先级）
+- **方式1（最高优先级）**: 单个环境变量 - `api_key_env = "API_KEY"`
+- **方式2**: 多个环境变量（轮询使用，失败则尝试下一个） - `api_key_envs = ["API_KEY_1", "API_KEY_2"]`
+- **方式3（最低优先级，不推荐）**: 直接写入密钥 - `api_key = "sk-..."`
 
-```toml
-api_key_env = "API_KEY"
-```
-
-- 方式2: 多个环境变量名（轮询使用）
-
-```toml
-api_key_envs = ["API_KEY_1", "API_KEY_2"]
-```
-
-- 方式3: 直接写入密钥（不推荐，仅用于测试，最低优先级）
-
-```toml
-api_key = "sk-..."
-```
-
-- 优先级: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
-- api_key_envs 轮询策略: 按数组顺序轮询，遇到失败则尝试下一个
+**优先级**: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
 
 ### 提示词组件定义
 
