@@ -277,7 +277,7 @@ AIMB| }
 
 - 配置路径（优先级规则如下）：
   1. **格式优先级**：TOML格式（`.toml`）始终优先于YAML格式（`.yaml`）
-  2. **同格式内优先级**：`neco.toml` > `neco.<tag>.toml` > `neco.yaml` > `neco.<tag>.yaml`
+  2. **整体优先级**：`neco.toml` > `neco.<tag>.toml` > `neco.yaml` > `neco.<tag>.yaml`
      - 带标签的配置按`<tag>`数字/字母顺序加载，后加载的覆盖先加载的
 
 **配置合并策略**：
