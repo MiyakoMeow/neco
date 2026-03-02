@@ -123,7 +123,7 @@ content = "xxx"
 
 #### 压缩触发时机
 
-- 在当前上下文大小达到设定大小的特定百分比时，自动触发。百分比默认为`90%`。可在配置文件中，配置是否自动触发以及触发百分比。
+- 在当前上下文大小达到模型上下文窗口的特定百分比时，自动触发。百分比默认为`90%`。可在配置文件中，配置是否自动触发以及触发百分比。
 - 可手动触发，参考下方REPL模式。
 
 #### 压缩提示词
@@ -171,12 +171,9 @@ content = "xxx"
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
-  - 箭头如果没有文字，则单纯表示将消息传递给下游Agent，对应使用工作流转场工具（格式：`workflow:pass`，表示无条件传递）。注：`workflow:*`为工作流专用语法，非常规工具名。
-  - 如果有文字，则表示条件，工作流引擎根据边的条件判断节点是否可以执行：
-    - `select`：Agent调用`workflow:<option>`时，对应计数器+1
-    - `require`：计数器>0时节点可执行，执行后计数器-1
-    - 对应使用工作流转场工具（格式：`workflow:<option>`，其中`<option>`为选项名，如`workflow:approve`）。
-  - 都要求带上`message`参数，表示传递的信息内容。
+  - 使用转场工具`workflow:<option>`触发下游节点（`workflow:pass`表示无条件传递）。
+  - 边条件：`select`触发时计数器+1，`require`要求计数器>0才能执行。
+  - 转场时需带上`message`参数传递信息内容。
 
 - 节点选项：
   - new-session表示为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session
@@ -278,18 +275,16 @@ AIMB| }
 
 ### 基本配置文件
 
-- 配置路径（按照以下优先级，由高到低）：
-  1. 主配置：`neco.toml`
-  2. 带标签的配置：`neco.<tag>.toml`（`<tag>`为标签名，数字/字母顺序加载，后加载的覆盖先加载的）
-  3. YAML格式：`neco.yaml` 或 `neco.<tag>.yaml`
+- 配置路径（优先级规则如下）：
+  1. **格式优先级**：TOML格式（`.toml`）始终优先于YAML格式（`.yaml`）
+  2. **同格式内优先级**：`neco.toml` > `neco.<tag>.toml` > `neco.yaml` > `neco.<tag>.yaml`
+     - 带标签的配置按`<tag>`数字/字母顺序加载，后加载的覆盖先加载的
 
 **配置合并策略**：
 
 - 标量类型（字符串、数字）：后加载的配置覆盖先加载的配置
 - 数组类型：后加载的配置替换先加载的配置。如需追加而非替换，使用特殊语法 `"+<item>"`（例如 `models = ["+new-model"]`），其中 `<item>` 为要追加的元素。这是配置系统的特殊约定，非标准TOML语法。
 - 对象类型：深层次合并（递归合并每个字段）
-- **注意**：TOML格式始终优先于YAML格式。例如 `neco.dev.toml` 优先级高于 `neco.yaml`。同格式下按上述1-3的顺序确定优先级。
-
 - 格式如下：
 
 ```toml
@@ -339,7 +334,6 @@ args = ["-y", "@upstash/context7-mcp"]
 MY_ENV_VAR = "MY_ENV_VALUE"
 
 # MCP参考：HTTP形式
-# 当command和url同时存在时，优先采用本地stdio形式
 [mcp_servers.figma]
 url = "https://mcp.figma.com/mcp"
 bearer_token_env = "FIGMA_OAUTH_TOKEN"
