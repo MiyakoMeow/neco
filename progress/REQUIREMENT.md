@@ -473,18 +473,23 @@ flowchart TD
 
 ---
 
-## 架构设计
+## 总体架构设计
 
 - 尽可能保持可扩展性。
 - 避免多个类型具有相同功能。
 
-- 可以参考[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)和[OpenFang](https://github.com/RightNow-AI/openfang)
+### 总体架构设计参考
+
+- [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
+- [OpenFang](https://github.com/RightNow-AI/openfang)
 
 ---
 
 ## 权限隔离设计
 
-- 可以参考[OpenFang](https://github.com/RightNow-AI/openfang)
+### 权限隔离设计参考
+
+- [OpenFang](https://github.com/RightNow-AI/openfang)
 
 ---
 
