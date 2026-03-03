@@ -254,7 +254,11 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
   4. `delete`：删除文件
 - `mcp`
   - `xxx`：对应配置文件`mcp_servers.xxx`。
+- `multi-agent`
+  - `spawn`：生成下级Agent。
+  - `send`：向指定Agent传递消息。
 - `question`：用于向用户提问。仅限REPL运行模式下的非no-ask模式可用。
+- 如果有其它需要的工具，直接补充。
 
 ### 工具：读取文件
 
