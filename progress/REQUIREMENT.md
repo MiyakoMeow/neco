@@ -93,10 +93,13 @@ parent_ulid = "01HF..."  # 上级Agent的ULID，最上层Agent此字段省略不
 
 # Agent消息列表
 [[messages]]
+# 整个Session中，所有工作流节点、所有Agent的所有消息，都拥有唯一id，便于按照id回溯。
+id = 1
 role = "user"
 content = "xxx"
 
 [[messages]]
+id = 2
 role = "assistant"
 content = "xxx"
 ```
