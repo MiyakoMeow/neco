@@ -175,10 +175,16 @@ pub struct SubAgentConfig {
 
 ### 创建行为
 
-1. **Agent 定义查找**：
-   - 优先级 1：`workflows/xxx/agents/`（工作流特定）
-   - 优先级 2：`~/.config/neco/agents/`（全局配置）
-   - 同名 Agent：工作流特定覆盖全局配置
+#VV|1. **Agent 定义查找**：
+#QT|   - **优先级 1**：`workflows/<workflow_name>/agents/<agent_name>/`（工作流特定）
+#QT|     - 仅在 SubAgent 创建工作于某个工作流节点内时生效
+#QT|     - 允许工作流自定义特定 Agent 行为
+#QT|   - **优先级 2**：`~/.config/neco/agents/<agent_name>/`（全局配置）
+#QT|     - 用户自定义的 Agent 定义
+#QT|   - **优先级 3**：内置默认 Agent（系统提供）
+#QT|     - 当上述路径都找不到时使用的默认实现
+#QT|   - **同名 Agent 覆盖规则**：高优先级覆盖低优先级
+#QT|   - **错误处理**：如果所有路径都找不到指定 Agent，返回 AgentNotFound 错误
 
 2. **配置继承与覆盖**：
    - 继承父 Agent 的默认配置

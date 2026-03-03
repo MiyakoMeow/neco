@@ -56,7 +56,7 @@
 
 - 部分模型有图像/语言识别能力。
 - 有多个提供者可选，或有同一提供者的多个API Key，希望循环使用模型，实现负载均衡或避免中断。
-  - 当出现异常，该模型自动重试3次（指数退避：1s, 2s, 4s）均失败时，自动尝试下一个可选模型，或当前模型的下一个API Key。
+  - 当出现异常，该模型最大尝试3次（包括初始请求），失败时自动重试，指数退避：1s, 2s, 4s均失败时，自动尝试下一个可选模型，或当前模型的下一个API Key。
 
 ### 模型调用
 
@@ -72,6 +72,25 @@
 ### Session管理
 
 - 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`文件。该文件存储所有的上下文内容。
+
+### Session ID 与 Agent ULID 关系规则
+
+#### 规则1：顶层容器规则
+- Session ID 是顶级容器的 ULID，在创建 Session 时生成
+- 该 Session 内第一个 Agent 的 ULID = Session ID
+
+#### 规则2：工作流节点规则（规则1的特例）
+- 工作流节点创建时生成 Node Session ID
+- 节点 Agent 的 ULID = Node Session ID（遵循规则1的"第一个Agent"逻辑）
+
+#### 规则3：SubAgent 规则
+- SubAgent 创建时生成新 ULID
+- 通过 parent_ulid 字段关联到父 Agent
+
+#### 存储路径映射
+- 通用格式：`~/.local/neco/(session_id)/(agent_ulid).toml`
+- 非工作流模式：session_id = 顶层 Session ID，agent_ulid = Agent ULID（第一个 Agent 时两者相同）
+- 工作流模式：session_id = Workflow Session ID，agent_ulid = Node Session ID（即节点 Agent 的 ULID）
 - **Session ID与Agent ULID的关系**：
   - Session ID是顶级容器的ULID，在创建Session时生成
   - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成（第一个Agent除外，其使用Session ID）
@@ -496,7 +515,7 @@ flowchart TD
 ## 错误处理机制
 
 1. **模型调用错误**:
-   - 网络错误: 自动重试3次，每次间隔指数退避（1s, 2s, 4s）
+   - 网络错误: 最大尝试3次（包括初始请求），失败时自动重试，每次间隔指数退避（1s, 2s, 4s）
    - API错误（4xx）: 不重试，直接返回错误给Agent
    - API错误（5xx）: 重试3次
    - 所有重试失败后，尝试model_group中的下一个模型

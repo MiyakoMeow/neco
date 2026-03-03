@@ -278,12 +278,14 @@ impl SessionManager {
 ### 并行工具执行
 
 ```rust
+// 并行工具执行器，支持工具调用的并行化
 pub struct ParallelToolExecutor {
     tool_registry: Arc<ToolRegistry>,
     semaphore: Arc<Semaphore>,
-    timeout: Duration,
+    timeout: Duration,  // 默认 30 秒，可配置
 }
-
+```
+```rust
 impl ParallelToolExecutor {
     pub async fn execute_tools(
         &self,
@@ -312,12 +314,27 @@ impl ParallelToolExecutor {
     }
 }
 ```
+**默认配置**：
+- 工具执行超时：30 秒（可通过配置覆盖）
+- 最大并发数：10 个工具同时执行
+
 
 ---
-
 ## 异步设计
 
 ### 模型调用异步处理
+
+```rust
+pub struct AsyncModelClient {
+    client: reqwest::Client,
+    retry_policy: RetryPolicy,
+}
+```
+
+    client: reqwest::Client,
+    retry_policy: RetryPolicy,
+}
+```
 
 ```rust
 pub struct AsyncModelClient {

@@ -72,24 +72,19 @@ flowchart TD
     REVIEW_IMPL -->|require:approve| END([完成])
 ```
 
-### 节点定义文件
+### Agent 查找规则
 
-每个节点对应一个 Markdown 文件：
+工作流节点**不**使用`nodes`目录。Mermaid图中的节点名称直接对应Agent定义：
 
-```markdown
-# workflows/prd/nodes/write-prd.md
+**查找优先级**：
+1. `workflows/xxx/agents/`（工作流特定，优先）
+2. `~/.config/neco/agents/`（全局配置，后备）
 
-## Agent 配置
-- agent: write-prd
-- model_group: think
-- prompts: [base, prd-specialist]
+同名Agent：工作流特定覆盖全局配置
 
-## 节点选项
-- new-session: false
-
-## 输出定义
-- output: prd-document
-```
+**示例**：
+- Mermaid图中的`WRITE_PRD`节点 → 查找`agents/write-prd.md`
+- Mermaid图中的`REVIEW_PRD`节点 → 查找`agents/review.md`
 
 ### 工作流目录结构
 
@@ -97,17 +92,17 @@ flowchart TD
 workflows/prd/
 ├── workflow.mermaid          # 工作流图定义
 ├── neco.toml                 # 工作流特定配置
-├── nodes/
-│   ├── write-prd.md          # 节点定义
-│   ├── review-prd.md
-│   ├── write-tech-doc.md
-│   └── ...
-├── agents/
-│   ├── write-prd.md          # 工作流特定Agent定义
-│   └── review.md
-└── prompts/
-    └── prd-specialist.md     # 工作流特定提示词
+├── agents/                   # 工作流特定Agent定义
+│   ├── write-prd.md          # WRITE_PRD节点使用的Agent
+│   ├── write-tech-doc.md     # WRITE_TECH_DOC节点使用的Agent  
+│   ├── write-impl.md         # WRITE_IMPL节点使用的Agent
+│   └── review.md             # REVIEW_*节点使用的Agent
+└── prompts/                  # 工作流特定提示词
+    ├── prd-specialist.md
+    └── tech-writer.md
 ```
+
+**注意**：工作流节点配置直接引用`agents`目录的Agent定义，无需额外的`nodes`目录。
 
 ---
 

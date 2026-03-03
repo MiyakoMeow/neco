@@ -22,14 +22,22 @@ pub struct ModelGroup {
 }
 
 pub enum SelectionStrategy {
-    RoundRobin,     // 轮询选择
-    LoadBalance,    // 负载均衡
-    Failover,       // 失败切换
-    Priority,       // 优先级选择
+    RoundRobin,     // 轮询选择，配置值："round_robin"
+    LoadBalance,    // 负载均衡，配置值："load_balance"  
+    Failover,       // 失败切换，配置值："failover"
+    Priority,       // 优先级选择，配置值："priority"
 }
 ```
 
 ### 配置示例
+
+**配置值说明**：
+- `failover` - 失败时切换到下一个模型
+- `round_robin` - 轮询使用多个模型
+- `load_balance` - 基于负载动态选择
+- `priority` - 按优先级顺序选择（TECH-Model.md 扩展）
+
+```toml
 
 ```toml
 # 模型组定义

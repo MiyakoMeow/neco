@@ -53,7 +53,54 @@ flowchart TD
 
 ---
 
+## 三层 Session 架构
+
+Neco 使用三层 Session 架构来管理不同层次的状态：
+
+### 第一层：WorkflowSession
+- **职责**：管理工作流级别的全局状态
+- **包含数据**：
+  - 全局计数器（边条件状态）
+  - 全局变量
+  - 节点 Session 集合
+- **生命周期**：工作流启动时创建，工作流完成时销毁
+
+### 第二层：NodeSession  
+- **职责**：管理单个工作流节点的执行上下文
+- **包含数据**：
+  - 节点 Session ID
+  - 关联的 Workflow Session ID
+  - 节点级别的变量
+- **生命周期**：节点开始执行时创建，节点完成时销毁
+
+### 第三层：AgentSession
+- **职责**：管理单个 Agent 的会话状态
+- **包含数据**：
+  - Agent ULID
+  - parent_ulid（用于构建 Agent 树）
+  - 消息历史
+  - Agent 配置
+- **生命周期**：Agent 启动时创建，Agent 完成时销毁
+
+```mermaid
+graph TD
+    WS[WorkflowSession<br/>workflow_session_id] --> NS1[NodeSession<br/>node_session_id]
+    WS --> NS2[NodeSession<br/>node_session_id]
+    WS --> NS3[NodeSession<br/>node_session_id]
+    
+    NS1 --> AS1[AgentSession<br/>agent_ulid = node_session_id]
+    AS1 --> AS2[AgentSession<br/>agent_ulid]
+    AS1 --> AS3[AgentSession<br/>agent_ulid]
+    
+    style WS fill:#f9f,stroke:#333,stroke-width:2px
+    style NS1 fill:#bbf,stroke:#333,stroke-width:2px
+    style AS1 fill:#bfb,stroke:#333,stroke-width:2px
+```
+
+---
+
 ## 双层架构设计
+null
 
 ### 第一层：工作流图（Workflow-Level Graph）
 
