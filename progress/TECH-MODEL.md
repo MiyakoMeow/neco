@@ -140,6 +140,8 @@ impl ProviderFactory {
 
 ### 4.1 请求数据结构
 
+> **注意**: `Message` 和 `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)
+
 ```rust
 /// 聊天完成请求
 pub struct ChatRequest {
@@ -186,106 +188,7 @@ pub enum Role {
     Tool,
 }
 
-/// 工具定义（OpenAI格式）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tool {
-    pub r#type: String,
-    pub function: Function,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Function {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
-/// 工具选择策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolChoice {
-    None,
-    Auto,
-    Required,
-    Function { name: String },
-}
-
-/// 响应格式
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResponseFormat {
-    pub r#type: String,
-}
-```
-
-### 4.2 响应数据结构
-
-```rust
-/// 聊天完成响应
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChatResponse {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<Choice>,
-    pub usage: Usage,
-}
-
-/// 选择项
-#[derive(Debug, Clone, Deserialize)]
-pub struct Choice {
-    pub index: u32,
-    pub message: Message,
-    pub finish_reason: Option<String>,
-}
-
-/// Token使用量
-#[derive(Debug, Clone, Deserialize)]
-pub struct Usage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
-
-/// 工具调用
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub r#type: String,
-    pub function: FunctionCall,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
-/// 流式响应块
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChatStreamChunk {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<StreamChoice>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct StreamChoice {
-    pub index: u32,
-    pub delta: Delta,
-    pub finish_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Delta {
-    pub role: Option<Role>,
-    pub content: Option<String>,
-    #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-}
-```
+> **注意**: `Tool` 和 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)
 
 ### 4.3 模型组与故障转移
 
@@ -583,6 +486,9 @@ impl StreamHandler {
 
 ## 7. 工具调用支持
 
+> **注意**: 核心的 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)。
+> `ToolCallRequest` 和 `ToolCallResult` 是模型层用于处理工具调用的辅助类型。
+
 ### 7.1 工具调用处理
 
 ```rust
@@ -666,6 +572,8 @@ pub async fn execute_tool_calls_parallel(
 ```
 
 ## 8. 错误处理
+
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 
 ```rust
 use thiserror::Error;

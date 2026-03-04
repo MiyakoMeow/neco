@@ -1031,6 +1031,8 @@ impl ContextBuilder {
 
 ## 8. 错误处理
 
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+
 ```rust
 #[derive(Debug, Error)]
 pub enum SessionError {
