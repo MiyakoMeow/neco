@@ -557,6 +557,12 @@ flowchart TD
 3. **状态暴露**: 提供HTTP API查询Session状态和进度
 4. **多前端支持**: 支持CLI、Web UI、IDE插件等多种前端
 
+- 与ZeroClaw的主要区别:
+  - ZeroClaw是通用自动化工具，Neco专注于AI Agent协作
+  - Neco的Session管理更复杂（支持智能体树）
+
+#### API支持
+
 - **工作流状态API**：提供RESTful/gRPC接口查询工作流执行状态
   - `GET /api/v1/workflows/{workflow_id}/status`：获取工作流整体状态
   - `GET /api/v1/workflows/{workflow_id}/graph`：获取工作流图结构（Mermaid/JSON格式）
@@ -574,10 +580,9 @@ flowchart TD
   - 工具调用开始/完成事件
   - 条件表达式求值结果事件
 
-- 与ZeroClaw的主要区别:
-
-- ZeroClaw是通用自动化工具，Neco专注于AI Agent协作
-- Neco的Session管理更复杂（支持智能体树）
+- **权限设计**：
+  - 默认无密钥，用户可以选择使用固定密钥。
+  - 暂不实现：授权策略、跨域访问控制、速率限制。
 
 ### 用户接口要求
 
