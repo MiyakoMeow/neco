@@ -207,11 +207,13 @@ impl Default for RetryConfig {
 
 ### 3.4 MCP服务器配置
 
+> 注意: MCP传输配置定义在 [TECH-MCP.md](./TECH-MCP.md) 的 `McpTransportConfig` 中
+
 ```rust
 /// MCP服务器配置
 pub struct McpServer {
-    /// 传输类型
-    pub transport: McpTransport,
+    /// 传输类型 (引用自 neco_mcp::McpTransportConfig)
+    pub transport: crate::mcp::McpTransportConfig,
     
     /// 环境变量
     pub env: HashMap<String, String>,
@@ -220,26 +222,7 @@ pub struct McpServer {
     #[serde(skip)]
     pub status: ServerStatus,
 }
-
-/// MCP传输方式
-pub enum McpTransport {
-    /// 本地stdio传输
-    Stdio {
-        /// 命令
-        command: String,
-        /// 参数
-        args: Vec<String>,
-    },
-    /// HTTP传输
-    Http {
-        /// 服务器URL
-        url: Url,
-        /// Bearer Token环境变量名
-        bearer_token_env: Option<String>,
-        /// 额外HTTP头
-        headers: HashMap<String, String>,
-    },
-}
+```
 
 impl McpServer {
     /// 判断是否使用stdio模式

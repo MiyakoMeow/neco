@@ -142,15 +142,18 @@ impl MessageIdAllocator {
     }
     
     /// 获取下一个消息ID
+    /// 
+    /// 使用 fetch_update 实现原子检查+递增，避免 TOCTOU 并发漏洞
     pub fn next_id(&self) -> Result<u64, Error> {
-        // 检查溢出：u64::MAX - 1 已达到则返回错误（fetch_add会溢出）
-        let current = self.counter.load(Ordering::SeqCst);
-        if current >= u64::MAX - 1 {
-            return Err(Error::MessageIdOverflow);
-        }
-        // 使用fetch_add原子操作递增counter，返回之前的值
-        let id = self.counter.fetch_add(1, Ordering::SeqCst);
-        Ok(id)
+        self.counter
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                if current >= u64::MAX - 1 {
+                    None // 返回None表示不更新，fetch_update会返回Err
+                } else {
+                    Some(current + 1)
+                }
+            })
+            .map_err(|_| Error::MessageIdOverflow)
     }
 }
 ```
@@ -734,7 +737,7 @@ impl SessionManager {
     pub async fn load_session(
         &self,
         session_id: SessionId,
-    ) -> Result<Session, SessionError> {
+    ) -> Result<Arc<RwLock<Session>>, SessionError> {
         // 1. 先检查内存缓存
         if let Some(session) = self.sessions.get(&session_id) {
             return Ok(Arc::clone(session));

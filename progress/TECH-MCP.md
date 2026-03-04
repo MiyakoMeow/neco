@@ -53,17 +53,17 @@ graph TB
 pub struct McpServerConfig {
     /// 传输类型
     #[serde(flatten)]
-    pub transport: McpTransport,
+    pub transport: McpTransportConfig,
     
     /// 环境变量
     #[serde(default)]
     pub env: HashMap<String, String>,
 }
 
-/// MCP传输方式
+/// MCP传输方式配置
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
-pub enum McpTransport {
+pub enum McpTransportConfig {
     /// 本地stdio传输
     #[serde(rename = "stdio")]
     Stdio {
