@@ -93,10 +93,15 @@ parent_ulid = "01HF..."  # 上级Agent的ULID，最上层Agent此字段省略不
 
 # Agent消息列表
 [[messages]]
+# 整个Session中，所有工作流节点、所有Agent的所有消息，都拥有唯一整数id。
+# id来源：作用于整个Session的原子化自增id分配器。
+# 回溯时，指定特定id为x，只保留id <= x的消息。
+id = 1
 role = "user"
 content = "xxx"
 
 [[messages]]
+id = 2
 role = "assistant"
 content = "xxx"
 ```
@@ -160,33 +165,38 @@ content = "xxx"
 
 #### SubAgent创建行为
 
-- 可以指定使用的Agent（来自配置目录的`agents`下的Agent定义）。
+- 可以指定使用的Agent（来自配置目录或工作流目录的`agents`下的Agent定义）。
 - 默认可以覆盖`model`、`model_group`、`prompts`等字段。
+  - 来源优先级：Agent定义可来自配置目录或工作流目录的agents定义，优先级为工作流目录 > 配置目录（即工作流目录中的定义覆盖配置目录）。详细规则见后文“Agent查找优先级”部分。
 
 ### 自定义工作流
 
 - 在没有定义工作流时，默认工作流只有一个节点。
 
-- 使用Mermaid图 + 每个节点一个.md文件表示node
+- 使用TOML配置文件 + 复用已有的Agent文件表示node
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
-  - 使用转场工具`workflow:<option>`触发下游节点（`workflow:pass`表示无条件传递）。
+  - 使用转场工具`workflow::<option>`触发下游节点（`workflow::pass`表示无条件传递）。
   - 边条件：`select`触发时计数器+1，`require`要求计数器>0才能执行。
   - 转场时需带上`message`参数传递信息内容。
 
 - 节点选项：
-  - new-session表示为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session
+  - `new-session`表示每次传递消息时，都为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session。
 
 #### 工作流Session层次结构
 
 - 工作流Session：存储工作流状态（计数器、全局变量）
 - 节点Session：工作流Session的子Session，存储节点执行上下文
-- `new-session`创建的节点Session自动关联到工作流Session
 
-- 使用示例：
-  - 定义PRD流程
-  - 执行/审阅循环流程
+#### 使用示例
+
+- 定义PRD流程
+- 执行/审阅循环流程
+
+#### 定义格式说明
+
+详见下方"工作流定义"部分的TOML格式说明。
 
 #### 重要概念：双层结构区分
 
@@ -194,12 +204,11 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 ##### **1. 工作流节点之间的图结构（Workflow-Level Graph）**
 
-- **定义方式**：通过Mermaid图（`workflow.mermaid`）静态定义
+- **定义方式**：通过TOML配置文件（`workflow.toml`）静态定义
 - **结构类型**：有向图（DAG），节点之间通过边（edges）连接
 - **转换控制**：由边条件（`select`/`require`计数器）控制节点之间的转换
 - **存储位置**：工作流Session存储计数器、全局变量
 - **生命周期**：工作流启动时创建，工作流完成时销毁
-- **示例**：`WRITE_PRD --> REVIEW_PRD`（节点之间的转换）
 
 ##### **2. 单个节点下的Agent树结构（Node-Level Agent Tree）**
 
@@ -226,7 +235,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ### 模块化提示词与工具，以及按需加载
 
 - 模块化提示词、工具、MCP、Skills等实例的目的是，支持内容的按需加载。
-- 添加一个统一的`Activate`工具，用于加载未加载的内容。
+- 添加一个统一的`activate`工具，用于加载未加载的内容。
 
 ---
 
@@ -238,29 +247,67 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 ## 工具注意事项
 
-- 工具名应小写。以下工具名默认转换成小写格式。
+- 工具名应小写。
 
-### 1、read
+### 工具列表
 
-- 读取文件
-- 实现 Hashline 技术。Agent 读到的每一行代码，末尾都会打上一个强绑定的内容哈希值，格式类似下文的`AKVK`，称为“行哈希”。
+- 分隔符统一使用`::`。
+  - 注：此规则适用于所有工具，包括前面提到的`workflow`工具（例如`workflow::<option>`、`workflow::pass`）。
+
+- `activate`：激活内容，见上文。
+  - `mcp`
+  - `skill`
+- `fs`
+  1. `read`
+  2. `write`：完全重写
+  3. `edit`：编辑已有文件
+  4. `delete`：删除文件
+- `mcp`
+  - `xxx`：对应配置文件`mcp_servers.xxx`。
+    - 注：配置名称中的特殊字符（如`-`）会映射为`::`（如`my-tool` → `mcp::my-tool`）
+- `multi-agent`
+  - `spawn`：生成下级Agent。
+  - `send`：向指定Agent传递消息。
+- `question`：用于向用户提问。仅限REPL运行模式下的非no-ask模式可用。
+- 如果有其它需要的工具，直接补充。
+
+### 工具：读取文件
+
+- 工具名：`fs::read`。
+
+#### Hashline
+
+- 实现 Hashline 技术。Agent 读到的每一行代码，开头都会加上一个强绑定的内容哈希值（行哈希）。
+  - 格式类似下文的`AKVK`，称为“行哈希”。
+    - 行哈希位于行首，作为前缀（格式为“哈希|内容”）。
 
 ```text
-AKVK| function hello() {
-VNXJ|   return "world";
-AIMB| }
+AKVK|function hello() {
+VNXJ|  return "world";
+AIMB|}
 ```
 
 - 假设当前行号为`N`，则每一行的哈希值来源于：
   - 将第`MAX(N-4,1)`行到第`N`行的内容合并为一个字符串，再计算哈希值。
   - 使用xxHash方法和`xxhash-rust`这个crate。
-- 以上示例仅供格式参考，实际生成的哈希值不一定要与此相同。
 
-### 2、edit
+- 特别注意：在工具介绍中，将Hashline机制解释清楚。
 
-- 编辑文件
+##### 哈希冲突处理
+
+- 在**读取文件**时，如果检测到哈希冲突（不同内容产生相同哈希值），使用以下算法调整：
+  1. 初始哈希使用 `xxhash(content_window, seed=0)`
+  2. 若冲突，使用 `xxhash(content_window, seed=1)`，依次递增 seed
+  3. 重复直到获得唯一哈希（seed 上限为 255，超过则报错）
+- 确保每个行哈希在文件中唯一标识其内容。
+
+### 工具：编辑文件
+
+- 工具名：`fs::edit`。
 - 传入开始行哈希和结束行哈希（都是闭区间），以及修改后的内容。
-  - 选择匹配的第一行。
+  - 必须同时匹配起始行哈希和结束行哈希（精确匹配）才能应用编辑。
+  - 如果哈希匹配失败（例如文件已更改或哈希冲突），返回明确的冲突错误给调用方Agent。
+  - 冲突策略：在接收到开始行哈希和结束行哈希及修改内容时，先在目标文件中查找所有匹配位置，只有在“唯一命中”时才应用修改并返回成功，否则不做修改并返回冲突/错误状态。
 
 ---
 
@@ -290,14 +337,21 @@ AIMB| }
 ```toml
 
 # 模型组定义
-[model_groups.think]
+[model_groups.frontier]
 models = ["zhipuai/glm-4.7"]
 # 对应 model_providers.zhipuai （完全匹配）
+
+[model_groups.smart]
+models = ["zhipuai/glm-4.7?reasoning_effort=high"]
+# 可以在这里配置模型调用参数，语法与URL参数类似
+
+[model_groups.review]
+models = ["zhipuai/glm-4.7?reasoning_effort=high&temperature=0.1"]
 
 [model_groups.balanced]
 models = ["zhipuai/glm-4.7", "minimax-cn/MiniMax-M2.5"]
 
-[model_groups.act]
+[model_groups.fast]
 models = ["zhipuai/glm-4.7-flashx"]
 
 [model_groups.image]
@@ -344,6 +398,7 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 
 - **方式1（最高优先级）**: 单个环境变量 - `api_key_env = "API_KEY"`
 - **方式2**: 多个环境变量（轮询使用，失败则尝试下一个） - `api_key_envs = ["API_KEY_1", "API_KEY_2"]`
+  - 所有Key均失败后，视为该provider失败，触发model_group切换或错误返回
 - **方式3（最低优先级，不推荐）**: 直接写入密钥 - `api_key = "sk-..."`
 
 **优先级**: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
@@ -387,31 +442,119 @@ prompts:
 
 - 类似配置目录，可以单独为工作流配置`neco.toml`、`prompts`、`agents`、`skills`等。
 
-#### 参考：PRD工作流
+#### 定义格式
 
-- 相对工作流根路径的路径：`workflow.mermaid`
+- 相对工作流根路径的路径：`workflow.toml`
 
-```mermaid
-flowchart TD
-    START([开始]) --> WRITE_PRD[write-prd]
+```toml
+# 工作流元数据
+name = "PRD工作流"
+description = "产品需求文档生成与审阅流程"
 
-    WRITE_PRD --> REVIEW_PRD[review / new-session]
-    REVIEW_PRD -->|select:approve_prd,reject| WRITE_PRD
-    WRITE_PRD -->|require:approve_prd| WRITE_TECH_DOC[write-tech-doc]
+# 工作流参数（可选，用于参数化模板）
+[workflow_params]
+min_approvers = 2
+quality_threshold = 0.7
 
-    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review / new-session]
-    REVIEW_TECH_DOC -->|select:approve_tech,reject| WRITE_TECH_DOC
-    WRITE_TECH_DOC -->|require:approve_tech| WRITE_IMPL[write-impl]
-    
-    WRITE_IMPL --> REVIEW_IMPL[review / new-session]
-    REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
-    REVIEW_IMPL -->|require:approve| END([完成])
+# 节点定义
+[[nodes]]
+id = "write-prd"  # 使用kebab-case命名法
+# agent字段可选，当省略时使用id作为agent标识
+# 即：查找agents/write-prd.md或配置目录中的同名Agent
+new_session = false
+
+[[nodes]]
+id = "review-prd"
+agent = "review"  # 当需要不同的节点ID和agent时，显式指定agent
+new_session = true
+
+[[nodes]]
+id = "write-tech-doc"
+new_session = false
+
+[[nodes]]
+id = "review-tech-doc"
+agent = "review"
+new_session = true
+
+[[nodes]]
+id = "write-impl"
+new_session = false
+
+[[nodes]]
+id = "review-impl"
+agent = "review"
+new_session = true
+
+# 边定义（节点之间的转换条件）
+[[edges]]
+from = "write-prd"
+to = "review-prd"
+
+[[edges]]
+from = "review-prd"
+to = "write-prd"
+select = ["approve_prd", "reject"]  # 触发时计数器+1
+
+[[edges]]
+from = "write-prd"
+to = "write-tech-doc"
+require = ["approve_prd"]  # 计数器>0才能执行
+
+[[edges]]
+from = "write-tech-doc"
+to = "review-tech-doc"
+
+[[edges]]
+from = "review-tech-doc"
+to = "write-tech-doc"
+select = ["approve_tech", "reject"]
+
+[[edges]]
+from = "write-tech-doc"
+to = "write-impl"
+require = ["approve_tech"]
+
+[[edges]]
+from = "write-impl"
+to = "review-impl"
+
+[[edges]]
+from = "review-impl"
+to = "write-impl"
+select = ["approve", "reject"]
+
+[[edges]]
+from = "review-impl"
+to = "END"
+require = ["approve"]
 ```
 
-- **Agent查找优先级**：
-  1. `workflows/xxx/agents/`（工作流特定，优先）
-  2. `~/.config/neco/agents/`（全局配置，后备）
-  同名Agent：工作流特定覆盖全局配置
+#### 边条件说明
+
+- **无条件传递**：不指定`select`或`require`，直接触发下游节点
+- **select**：指定选项名称数组，触发时对应计数器+1，允许多次累加
+- **require**：要求指定选项的计数器>0才能执行，实现"或"逻辑
+  - 示例：`require = ["approve_prd"]`表示需要至少一次approve_prd选择
+  - 示例：`require = ["option1", "option2"]`表示option1或option2任一计数>0即可
+  - 注：可通过`@params.<param_name>`引用workflow_params中定义的参数（如`@params.min_approvers`）
+  - 注：计数器在工作流Session全局作用域内共享，不同边的相同选项名共享同一计数器
+
+#### Agent查找优先级
+
+1. **确定Agent标识**：
+   - 如果节点定义了`agent`字段，使用`agent`字段的值作为Agent标识
+   - 如果节点未定义`agent`字段，使用`id`字段的值作为Agent标识
+
+2. **Agent文件查找顺序**：
+   - 优先查找：`workflows/xxx/agents/<agent_id>.md`
+   - 后备查找：`~/.config/neco/agents/<agent_id>.md`
+
+3. **命名规范**：
+   - 节点`id`使用kebab-case命名法（如`write-prd`）
+   - Agent文件名与Agent标识一致（如`write-prd.md`）
+
+- 同名Agent：工作流特定覆盖全局配置
 
 - 此时，根据该PRD工作流节点配置，工作流目录或配置目录的`agents`目录，应该有：
   1. `write-prd.md`
@@ -437,6 +580,34 @@ flowchart TD
   - 输入框：上下左右边框线宽1字符。支持多行输入。`Shift+Enter`换行，`Ctrl+hjkl`移动光标。
   - 状态显示：固定1行。
 
+#### 工作流与Agent树可视化
+
+- **工作流状态显示**：在状态显示区域下方添加工作流可视化面板
+  - 显示当前工作流图结构，高亮当前活动节点
+  - 显示节点状态：等待、执行中、成功、失败、跳过
+  - 显示边条件状态：计数器值
+  - 支持缩放和平移，适应复杂工作流
+
+- **Agent树形结构显示**：在消息历史区域右侧添加Agent树面板
+  - 树状显示当前节点内的Agent层级关系
+  - 显示每个Agent的状态：活跃、等待、完成、错误
+  - 显示Agent间通信关系和消息统计
+  - 支持展开/折叠节点，查看详细状态
+
+- **交互操作**：
+  - 点击工作流节点：查看节点详细信息和执行历史
+  - 点击Agent节点：查看Agent消息记录和工具调用历史
+  - 快捷键：`Ctrl+o`切换工作流面板，`Ctrl+i`切换Agent树面板
+  - 实时更新：工作流/Agent状态变化时自动刷新显示（通过事件驱动机制）
+
+- **命令扩展**：
+  - `/workflow status`：显示工作流详细状态
+  - `/workflow graph`：导出工作流图为Mermaid或图片
+  - `/agents tree`：显示Agent树详细结构
+  - `/agents stats`：显示Agent执行统计信息
+
+- 工作流、Agent树的TUI显示设计，延后至设计阶段。
+
 #### 命令系统
 
 - 输入框为空时输入`/`，出现命令补全提示。
@@ -453,14 +624,36 @@ flowchart TD
 参考ZeroClaw项目的架构设计:
 
 1. **守护进程**: neco作为系统服务运行，管理Session生命周期
-2. **IPC通信**: 使用gRPC或Unix Socket与前端交互
+2. **IPC通信**: 守护进程与前端通过RESTful API交互
 3. **状态暴露**: 提供HTTP API查询Session状态和进度
 4. **多前端支持**: 支持CLI、Web UI、IDE插件等多种前端
 
-与ZeroClaw的主要区别:
+- 与ZeroClaw的主要区别:
+  - ZeroClaw是通用自动化工具，Neco专注于AI Agent协作
+  - Neco的Session管理更复杂（支持智能体树）
 
-- ZeroClaw是通用自动化工具，Neco专注于AI Agent协作
-- Neco的Session管理更复杂（支持智能体树）
+#### API支持
+
+- **工作流状态API**：提供RESTful接口查询工作流执行状态
+  - `GET /api/v1/workflows/{workflow_id}/status`：获取工作流整体状态
+  - `GET /api/v1/workflows/{workflow_id}/graph`：获取工作流图结构（Mermaid/JSON格式）
+  - `GET /api/v1/workflows/{workflow_id}/nodes/{node_id}/status`：获取节点详细状态
+  - `GET /api/v1/workflows/{workflow_id}/variables`：获取工作流变量和表达式求值结果
+  - `POST /api/v1/workflows/{workflow_id}/control`：控制工作流执行（暂停、继续、终止）
+- **Agent树查询API**：提供Agent层级结构查询接口
+  - `GET /api/v1/sessions/{session_id}/agents/tree`：获取Agent树形结构
+  - `GET /api/v1/sessions/{session_id}/agents/{agent_id}/messages`：获取Agent消息历史
+  - `GET /api/v1/sessions/{session_id}/agents/{agent_id}/tools`：获取Agent工具调用记录
+  - `GET /api/v1/sessions/{session_id}/agents/stats`：获取Agent执行统计信息
+- **实时事件流**：通过WebSocket/Server-Sent Events推送状态变更
+  - 工作流节点状态变更事件
+  - Agent状态变更事件
+  - 工具调用开始/完成事件
+  - 条件表达式求值结果事件
+
+- **权限设计**：
+  - 默认无密钥，用户可以选择使用固定密钥。
+  - 暂不实现：授权策略、跨域访问控制、速率限制。
 
 ### 用户接口要求
 
@@ -496,18 +689,22 @@ flowchart TD
 ## 错误处理机制
 
 1. **模型调用错误**:
-   - 网络错误: 自动重试3次，每次间隔指数退避（1s, 2s, 4s）
-   - API错误（4xx）: 不重试，直接返回错误给Agent
-   - API错误（5xx）: 重试3次
-   - 所有重试失败后，尝试model_group中的下一个模型
+   - 网络错误、API错误等: 自动重试3次，每次间隔指数退避（1s, 2s, 4s）
+   - 所有重试失败后，尝试model_group中的下一个模型（按配置顺序，不循环）
+   - 若model_group中所有模型都尝试失败，将错误返回给调用方（Agent/workflow节点）由其决定后续处理
 
 2. **工具调用错误**:
    - 工具执行失败: 将错误信息返回给Agent，由Agent决定如何处理（重试、跳过或终止）
    - Agent对工具错误的最终决定即为节点状态（无需额外workflow配置介入）
-   - 工具超时: 默认30秒超时，可配置
+   - 工具超时（可配置）
+     - 默认：30秒超时
+     - 工具类型级别默认配置，例如`fs`为10秒，`mcp`为60秒。
+     - 可以为指定类别或指定工具配置超时时间，使用前缀匹配。
+     - 匹配规则：最长前缀优先（如`fs::read`匹配`fs::read`而非`fs`）
 
 3. **配置错误**:
-   - 启动时配置验证失败: 立即报错退出，不启动
+   - 启动时配置验证失败: 立即报错退出，不启动（仅验证配置目录文件）
+   - 工作流加载时: 验证工作流特定配置（如workflow.toml），失败则拒绝加载该工作流
    - 运行时配置热加载失败: 回滚到上一版本，记录错误日志
 
 4. **工作流错误**:
