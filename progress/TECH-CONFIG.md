@@ -10,7 +10,7 @@
 
 ### 2.1 配置目录结构
 
-```
+```text
 ~/.config/neco/                    # 主配置目录
 ├── neco.toml                     # 主配置文件
 ├── neco.<tag>.toml               # 带标签的配置文件

@@ -107,6 +107,19 @@ pub struct SessionMetadata {
     pub custom_data: HashMap<String, Value>,
 }
 
+/// Session元数据（存储层使用）
+/// 包含Session的基本信息，用于持久化存储
+pub struct SessionMeta {
+    /// Session ID
+    pub session_id: SessionId,
+    /// 创建时间
+    pub created_at: DateTime<Utc>,
+    /// 最后更新时间
+    pub updated_at: DateTime<Utc>,
+    /// 元数据
+    pub metadata: SessionMetadata,
+}
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 消息ID分配器错误

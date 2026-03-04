@@ -477,7 +477,7 @@ pub struct ActivateTool {
 
 impl ToolProvider for ActivateTool {
     fn name(&self) -> &str {
-        "activate"
+        &self.suffix
     }
     
     fn description(&self) -> &str {
@@ -523,14 +523,8 @@ impl ActivateTool {
             skill_manager: Arc::new(SkillManager::new()),
         }
     }
-}
 
-impl ToolProvider for ActivateTool {
-    fn name(&self) -> &str {
-        &self.suffix
-    }
-    
-    async fn activate_skill(
+    pub async fn activate_skill(
         &self,
         name: &str,
     ) -> Result<ToolResult, ToolError> {

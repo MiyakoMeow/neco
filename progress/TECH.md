@@ -147,7 +147,7 @@ graph TD
     model --> config
     mcp --> config
     skill --> config
-    context --> session
+    context --> core
     
     config --> core
     model --> core
