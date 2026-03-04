@@ -235,7 +235,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 ### 模块化提示词与工具，以及按需加载
 
 - 模块化提示词、工具、MCP、Skills等实例的目的是，支持内容的按需加载。
-- 添加一个统一的`Activate`工具，用于加载未加载的内容。
+- 添加一个统一的`activate`工具，用于加载未加载的内容。
 
 ---
 
@@ -264,6 +264,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
   4. `delete`：删除文件
 - `mcp`
   - `xxx`：对应配置文件`mcp_servers.xxx`。
+    - 注：配置名称中的特殊字符（如`-`）会映射为`::`（如`my-tool` → `mcp::my-tool`）
 - `multi-agent`
   - `spawn`：生成下级Agent。
   - `send`：向指定Agent传递消息。
@@ -397,6 +398,7 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 
 - **方式1（最高优先级）**: 单个环境变量 - `api_key_env = "API_KEY"`
 - **方式2**: 多个环境变量（轮询使用，失败则尝试下一个） - `api_key_envs = ["API_KEY_1", "API_KEY_2"]`
+  - 所有Key均失败后，视为该provider失败，触发model_group切换或错误返回
 - **方式3（最低优先级，不推荐）**: 直接写入密钥 - `api_key = "sk-..."`
 
 **优先级**: `api_key_env` > `api_key_envs` > `api_key`。若同时配置多个方式，按优先级使用最高者。
@@ -535,6 +537,8 @@ require = ["approve"]
 - **require**：要求指定选项的计数器>0才能执行，实现"或"逻辑
   - 示例：`require = ["approve_prd"]`表示需要至少一次approve_prd选择
   - 示例：`require = ["option1", "option2"]`表示option1或option2任一计数>0即可
+  - 注：可通过`@params.<param_name>`引用workflow_params中定义的参数（如`@params.min_approvers`）
+  - 注：计数器在工作流Session全局作用域内共享，不同边的相同选项名共享同一计数器
 
 #### Agent查找优先级
 
@@ -593,8 +597,8 @@ require = ["approve"]
 - **交互操作**：
   - 点击工作流节点：查看节点详细信息和执行历史
   - 点击Agent节点：查看Agent消息记录和工具调用历史
-  - 快捷键：`Ctrl+w`切换工作流面板，`Ctrl+a`切换Agent树面板
-  - 实时更新：工作流状态变化时自动刷新显示
+  - 快捷键：`Ctrl+o`切换工作流面板，`Ctrl+i`切换Agent树面板
+  - 实时更新：工作流/Agent状态变化时自动刷新显示（通过事件驱动机制）
 
 - **命令扩展**：
   - `/workflow status`：显示工作流详细状态
@@ -620,7 +624,7 @@ require = ["approve"]
 参考ZeroClaw项目的架构设计:
 
 1. **守护进程**: neco作为系统服务运行，管理Session生命周期
-2. **IPC通信**: 使用gRPC或Unix Socket与前端交互
+2. **IPC通信**: 守护进程与前端通过RESTful API交互
 3. **状态暴露**: 提供HTTP API查询Session状态和进度
 4. **多前端支持**: 支持CLI、Web UI、IDE插件等多种前端
 
@@ -630,7 +634,7 @@ require = ["approve"]
 
 #### API支持
 
-- **工作流状态API**：提供RESTful/gRPC接口查询工作流执行状态
+- **工作流状态API**：提供RESTful接口查询工作流执行状态
   - `GET /api/v1/workflows/{workflow_id}/status`：获取工作流整体状态
   - `GET /api/v1/workflows/{workflow_id}/graph`：获取工作流图结构（Mermaid/JSON格式）
   - `GET /api/v1/workflows/{workflow_id}/nodes/{node_id}/status`：获取节点详细状态
@@ -696,9 +700,11 @@ require = ["approve"]
      - 默认：30秒超时
      - 工具类型级别默认配置，例如`fs`为10秒，`mcp`为60秒。
      - 可以为指定类别或指定工具配置超时时间，使用前缀匹配。
+     - 匹配规则：最长前缀优先（如`fs::read`匹配`fs::read`而非`fs`）
 
 3. **配置错误**:
-   - 启动时配置验证失败: 立即报错退出，不启动
+   - 启动时配置验证失败: 立即报错退出，不启动（仅验证配置目录文件）
+   - 工作流加载时: 验证工作流特定配置（如workflow.toml），失败则拒绝加载该工作流
    - 运行时配置热加载失败: 回滚到上一版本，记录错误日志
 
 4. **工作流错误**:
