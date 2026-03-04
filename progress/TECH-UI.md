@@ -236,7 +236,7 @@ impl ReplInterface {
         // TODO: 设置默认REPL模式为Normal
         
         Ok(Self {
-            terminal: unimplemented!(),
+            terminal: Terminal::new(CrosstermBackend::new(std::io::stdout()))?,
             session_manager,
             current_session: None,
             input_buffer: String::new(),
