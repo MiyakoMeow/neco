@@ -173,18 +173,13 @@ content = "xxx"
 
 - 在没有定义工作流时，默认工作流只有一个节点。
 
-- 使用Mermaid图 + 每个节点一个.md文件表示node
+- 使用TOML配置文件 + 复用已有的Agent文件表示node
 
 - 多个节点可以同时运行。
 - 如果箭头有出节点，则必须调用出节点工具，该节点才能结束运行。
   - 使用转场工具`workflow::<option>`触发下游节点（`workflow::pass`表示无条件传递）。
   - 边条件：`select`触发时计数器+1，`require`要求计数器>0才能执行。
   - 转场时需带上`message`参数传递信息内容。
-  - **增强条件系统（表达式引擎）**：支持复杂的表达式条件，基于`rhai`引擎实现：
-    - 表达式语法：支持算术运算、比较运算、逻辑运算、变量引用
-    - 变量系统：工作流Session存储全局变量，节点Session存储局部变量
-    - 内置函数：支持字符串处理、数值计算、数组操作等常用函数
-    - 条件示例：`if: approval_count >= 2 && quality_score > 0.7`
 
 - 节点选项：
   - new-session表示为该节点创建一个新的节点Session（归属于工作流Session），而非复用已有节点Session
@@ -205,7 +200,6 @@ content = "xxx"
 - **参数化工作流模板**：支持创建可配置的工作流模板
   - 模板定义：在工作流根目录添加`template.toml`，声明参数和默认值
   - 参数传递：实例化时提供参数值，替换模板中的占位符
-  - 条件参数化：条件表达式可使用模板参数，实现动态条件
   - 示例：创建可配置的代码审查工作流，参数包括最少审查人数、质量阈值等
 
 - **工作流库与共享**：
@@ -218,18 +212,21 @@ content = "xxx"
 - 定义PRD流程
 - 执行/审阅循环流程
 
+#### 定义格式说明
+
+详见下方"工作流定义"部分的TOML格式说明。
+
 #### 重要概念：双层结构区分
 
 Neco系统中存在**两个独立的层次结构**，它们在不同层面运作：
 
 ##### **1. 工作流节点之间的图结构（Workflow-Level Graph）**
 
-- **定义方式**：通过Mermaid图（`workflow.mermaid`）静态定义
+- **定义方式**：通过TOML配置文件（`workflow.toml`）静态定义
 - **结构类型**：有向图（DAG），节点之间通过边（edges）连接
 - **转换控制**：由边条件（`select`/`require`计数器）控制节点之间的转换
 - **存储位置**：工作流Session存储计数器、全局变量
 - **生命周期**：工作流启动时创建，工作流完成时销毁
-- **示例**：`WRITE_PRD --> REVIEW_PRD`（节点之间的转换）
 
 ##### **2. 单个节点下的Agent树结构（Node-Level Agent Tree）**
 
@@ -461,31 +458,117 @@ prompts:
 
 - 类似配置目录，可以单独为工作流配置`neco.toml`、`prompts`、`agents`、`skills`等。
 
-#### 参考：PRD工作流
+#### 定义格式
 
-- 相对工作流根路径的路径：`workflow.mermaid`
+- 相对工作流根路径的路径：`workflow.toml`
 
-```mermaid
-flowchart TD
-    START([开始]) --> WRITE_PRD[write-prd]
+```toml
+# 工作流元数据
+name = "PRD工作流"
+description = "产品需求文档生成与审阅流程"
 
-    WRITE_PRD --> REVIEW_PRD[review / new-session]
-    REVIEW_PRD -->|select:approve_prd,reject| WRITE_PRD
-    WRITE_PRD -->|require:approve_prd| WRITE_TECH_DOC[write-tech-doc]
+# 工作流参数（可选，用于参数化模板）
+[workflow_params]
+min_approvers = 2
+quality_threshold = 0.7
 
-    WRITE_TECH_DOC --> REVIEW_TECH_DOC[review / new-session]
-    REVIEW_TECH_DOC -->|select:approve_tech,reject| WRITE_TECH_DOC
-    WRITE_TECH_DOC -->|require:approve_tech| WRITE_IMPL[write-impl]
-    
-    WRITE_IMPL --> REVIEW_IMPL[review / new-session]
-    REVIEW_IMPL -->|select:approve,reject| WRITE_IMPL
-    REVIEW_IMPL -->|require:approve| END([完成])
+# 节点定义
+[[nodes]]
+id = "write-prd"  # 使用kebab-case命名法
+# agent字段可选，当省略时使用id作为agent标识
+# 即：查找agents/write-prd.md或配置目录中的同名Agent
+new_session = false
+
+[[nodes]]
+id = "review-prd"
+agent = "review"  # 当需要不同的节点ID和agent时，显式指定agent
+new_session = true
+
+[[nodes]]
+id = "write-tech-doc"
+new_session = false
+
+[[nodes]]
+id = "review-tech-doc"
+agent = "review"
+new_session = true
+
+[[nodes]]
+id = "write-impl"
+new_session = false
+
+[[nodes]]
+id = "review-impl"
+agent = "review"
+new_session = true
+
+# 边定义（节点之间的转换条件）
+[[edges]]
+from = "write-prd"
+to = "review-prd"
+
+[[edges]]
+from = "review-prd"
+to = "write-prd"
+select = ["approve_prd", "reject"]  # 触发时计数器+1
+
+[[edges]]
+from = "write-prd"
+to = "write-tech-doc"
+require = ["approve_prd"]  # 计数器>0才能执行
+
+[[edges]]
+from = "write-tech-doc"
+to = "review-tech-doc"
+
+[[edges]]
+from = "review-tech-doc"
+to = "write-tech-doc"
+select = ["approve_tech", "reject"]
+
+[[edges]]
+from = "write-tech-doc"
+to = "write-impl"
+require = ["approve_tech"]
+
+[[edges]]
+from = "write-impl"
+to = "review-impl"
+
+[[edges]]
+from = "review-impl"
+to = "write-impl"
+select = ["approve", "reject"]
+
+[[edges]]
+from = "review-impl"
+to = "END"
+require = ["approve"]
 ```
 
-- **Agent查找优先级**：
-  1. `workflows/xxx/agents/`（工作流特定，优先）
-  2. `~/.config/neco/agents/`（全局配置，后备）
-  同名Agent：工作流特定覆盖全局配置
+#### 边条件说明
+
+- **无条件传递**：不指定`select`或`require`，直接触发下游节点
+- **select**：指定选项名称数组，触发时对应计数器+1，允许多次累加
+- **require**：要求指定选项的计数器>0才能执行，实现"或"逻辑
+  - 示例：`require = ["approve_prd"]`表示需要至少一次approve_prd选择
+  - 示例：`require = ["option1", "option2"]`表示option1或option2任一计数>0即可
+
+#### Agent查找优先级
+
+1. **确定Agent标识**：
+   - 如果节点定义了`agent`字段，使用`agent`字段的值作为Agent标识
+   - 如果节点未定义`agent`字段，使用`id`字段的值作为Agent标识
+
+2. **Agent文件查找顺序**：
+   - 优先查找：`workflows/xxx/agents/<agent_id>.md`
+   - 后备查找：`~/.config/neco/agents/<agent_id>.md`
+
+3. **命名规范**：
+   - 节点`id`使用kebab-case命名法（如`write-prd`）
+   - Agent文件名与Agent标识一致（如`write-prd.md`）
+
+- 同名Agent：工作流特定覆盖全局配置
 
 - 此时，根据该PRD工作流节点配置，工作流目录或配置目录的`agents`目录，应该有：
   1. `write-prd.md`
@@ -516,7 +599,7 @@ flowchart TD
 - **工作流状态显示**：在状态显示区域下方添加工作流可视化面板
   - 显示当前工作流图结构，高亮当前活动节点
   - 显示节点状态：等待、执行中、成功、失败、跳过
-  - 显示边条件状态：计数器值、表达式求值结果
+  - 显示边条件状态：计数器值
   - 支持缩放和平移，适应复杂工作流
 
 - **Agent树形结构显示**：在消息历史区域右侧添加Agent树面板
