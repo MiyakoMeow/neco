@@ -720,6 +720,11 @@ pub struct SessionManager {
 }
 
 /// LRU缓存实现（使用VecDeque优化性能）
+/// 
+/// **策略说明：**
+/// - `push_front` 添加最新条目（队首为最新）
+/// - `pop_front` 移除最新条目
+/// - `pop_back` 移除最旧条目（队尾为最旧）
 pub struct LruCache<K, V> {
     cache: VecDeque<(K, V)>,
     capacity: usize,

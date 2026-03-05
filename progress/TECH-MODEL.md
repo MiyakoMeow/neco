@@ -141,6 +141,8 @@ impl ProviderFactory {
 ### 4.1 请求数据结构
 
 > **注意**: `Message` 和 `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)
+> 
+> **注意**: 上述 `Message` 包含Session管理的 `id` 字段。对于Model API请求（如ChatRequest），使用不含 `id` 的简化版本。
 
 ```rust
 /// 聊天完成请求
@@ -159,33 +161,14 @@ pub struct ChatRequest {
     pub tools: Option<Vec<Tool>>,
     /// 工具选择策略
     pub tool_choice: Option<ToolChoice>,
-    /// 响应格式
+/// 响应格式
     pub response_format: Option<ResponseFormat>,
+    
     /// 停止序列
     pub stop: Option<Vec<String>>,
+    
     /// 额外参数（提供商特定）
     pub extra_params: HashMap<String, Value>,
-}
-
-/// 消息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: Role,
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
-
-/// 角色
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    System,
-    User,
-    Assistant,
-    Tool,
 }
 
 > **注意**: `Tool` 和 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)

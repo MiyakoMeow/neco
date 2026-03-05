@@ -712,6 +712,16 @@ pub enum ControlAction {
     Terminate,
 }
 
+impl std::fmt::Display for ControlAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ControlAction::Pause => write!(f, "paused"),
+            ControlAction::Resume => write!(f, "resumed"),
+            ControlAction::Terminate => write!(f, "terminated"),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for ControlAction {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -778,26 +788,30 @@ async fn get_workflow_status(State(state): State<AppState>, Path(workflow_id): P
 }
 
 /// 控制工作流
-async fn control_workflow(State(state): State<AppState>, Path(workflow_id): Path<String>, Json(req): Json<ControlRequest>) -> Result<Json<ControlResponse>, ApiError> {
+async fn control_workflow(
+    State(state): State<AppState>,
+    Path(workflow_id): Path<String>,
+    result: Result<Json<ControlRequest>, JsonRejection>,
+) -> Result<Json<ControlResponse>, ApiError> {
     // 验证workflow_id
     if workflow_id.is_empty() {
         return Err(ApiError::BadRequest("workflow_id cannot be empty".to_string()));
     }
     
+    // 映射反序列化错误
+    let req = result.map_err(|_| ApiError::BadRequest("Invalid request body".to_string()))?;
+    
     // TODO: 解析workflow_id为SessionId
     // TODO: 根据请求action执行相应操作
-        // "pause": 暂停工作流执行
-        // "resume": 恢复工作流执行  
-        // "terminate": 终止工作流执行
-        match req.action {
-            ControlAction::Pause => todo!(),
-            ControlAction::Resume => todo!(),
-            ControlAction::Terminate => todo!(),
-        }
+    match req.action {
+        ControlAction::Pause => todo!(),
+        ControlAction::Resume => todo!(),
+        ControlAction::Terminate => todo!(),
+    }
     
     Ok(Json(ControlResponse {
         success: true,
-        message: format!("Workflow {:?}", req.action),
+        message: format!("Workflow {}", req.action),
     }))
 }
 
