@@ -38,7 +38,6 @@ graph TB
 ```
 
 **设计原则：**
-
 - **层次化结构**：上级Agent可以创建多个下级Agent
 - **通信隔离**：下级Agent不能直接相互通信，必须通过上级
 - **生命周期管理**：上级Agent可以监控和控制下级Agent
@@ -84,82 +83,11 @@ graph TB
 
 ## 3. 数据结构设计
 
-### 3.1 Agent定义
+> **注意**: 
+> - `Agent` 和 `AgentConfig` 结构定义见 [TECH-SESSION.md#32-agent结构](TECH-SESSION.md#32-agent结构)
+> - `Message` 类型定义见 [TECH-SESSION.md#33-消息结构](TECH-SESSION.md#33-消息结构)
 
-```rust
-/// Agent实例
-pub struct Agent {
-    /// Agent唯一标识
-    pub ulid: AgentUlid,
-    
-    /// 上级Agent（None表示根Agent）
-    pub parent_ulid: Option<AgentUlid>,
-    
-    /// 下级Agent列表
-    pub children: Vec<AgentUlid>,
-    
-    /// Agent配置
-    pub config: AgentConfig,
-    
-    /// 消息历史
-    pub messages: Vec<Message>,
-    
-    /// Agent状态
-    pub state: AgentState,
-    
-    /// 激活的工具列表
-    pub active_tools: Vec<ToolId>,
-    
-    /// 激活的MCP服务器
-    pub active_mcp_servers: Vec<String>,
-    
-    /// 激活的Skills
-    pub active_skills: Vec<String>,
-    
-    /// 创建时间
-    pub created_at: DateTime<Utc>,
-    
-    /// 最后活动时间
-    pub last_activity: DateTime<Utc>,
-}
-
-/// Agent配置
-pub struct AgentConfig {
-    /// 使用的模型组
-    pub model_group: String,
-    
-    /// 激活的提示词组件
-    pub prompts: Vec<String>,
-    
-    /// Agent定义来源路径
-    pub agent_def: Option<PathBuf>,
-    
-    /// 最大下级Agent数量
-    pub max_children: Option<u32>,
-    
-    /// 是否可以创建下级Agent
-    pub can_spawn_children: bool,
-}
-
-/// Agent状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentState {
-    /// 空闲
-    Idle,
-    /// 运行中（正在处理消息）
-    Running,
-    /// 等待工具调用完成
-    WaitingForTool,
-    /// 等待用户输入
-    WaitingForUser,
-    /// 已完成
-    Completed,
-    /// 错误状态
-    Error,
-}
-```
-
-### 3.2 Agent间通信
+### 3.1 Agent间通信
 
 ```rust
 /// Agent间消息
@@ -655,6 +583,8 @@ impl AgentManager {
 ```
 
 ## 8. 错误处理
+
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 
 ```rust
 #[derive(Debug, Error)]

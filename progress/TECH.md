@@ -866,6 +866,79 @@ pub enum WorkflowEvent {
 // - 事件监听器管理
 ```
 
+### 5.3 统一错误类型设计
+
+> **设计原则**: 所有模块错误类型统一在 `neco-core` 中定义，便于错误传播和转换。
+
+```rust
+/// 统一错误类型 - 应用层错误
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error("Session错误: {0}")]
+    Session(#[from] SessionError),
+    
+    #[error("Agent错误: {0}")]
+    Agent(#[from] AgentError),
+    
+    #[error("工作流错误: {0}")]
+    Workflow(#[from] WorkflowError),
+    
+    #[error("模型错误: {0}")]
+    Model(#[from] ModelError),
+    
+    #[error("工具错误: {0}")]
+    Tool(#[from] ToolError),
+    
+    #[error("配置错误: {0}")]
+    Config(#[from] ConfigError),
+    
+    #[error("存储错误: {0}")]
+    Storage(#[from] StorageError),
+    
+    #[error("MCP错误: {0}")]
+    Mcp(#[from] McpError),
+    
+    #[error("上下文错误: {0}")]
+    Context(#[from] ContextError),
+    
+    #[error("Skill错误: {0}")]
+    Skill(#[from] SkillError),
+}
+```
+
+**各模块错误类型定义位置**:
+
+| 模块 | 错误类型 | 定义位置 |
+|------|----------|----------|
+| Session | `SessionError` | TECH-SESSION.md |
+| Agent | `AgentError` | TECH-AGENT.md |
+| Workflow | `WorkflowError` | TECH-WORKFLOW.md |
+| Model | `ModelError` | TECH-MODEL.md |
+| Tool | `ToolError` | TECH-TOOL.md |
+| Config | `ConfigError` | TECH-CONFIG.md |
+| Storage | `StorageError` | TECH-SESSION.md |
+| MCP | `McpError` | TECH-MCP.md |
+| Context | `ContextError` | TECH-CONTEXT.md |
+| Skill | `SkillError` | TECH-SKILL.md |
+
+**错误转换示例**:
+
+```rust
+// 模块错误转换为统一错误
+impl From<SessionError> for AppError {
+    fn from(e: SessionError) -> Self {
+        AppError::Session(e)
+    }
+}
+
+// 使用 ? 运算符自动传播
+fn some_operation() -> Result<Output, AppError> {
+    let session = load_session()?;  // SessionError -> AppError
+    let agent = create_agent()?;   // AgentError -> AppError
+    // ...
+}
+```
+
 ## 6. 存储设计
 
 ### 6.1 文件系统布局

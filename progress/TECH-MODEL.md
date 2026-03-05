@@ -140,13 +140,22 @@ impl ProviderFactory {
 
 ### 4.1 请求数据结构
 
+> **注意**: `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)。
+> 模型层请求使用 `ModelMessage`（不含 `id`），与 Session 层 `Message`（含 `id`）分离。
+
 ```rust
+/// 模型层消息（不含Session管理的id字段）
+pub struct ModelMessage {
+    pub role: Role,
+    pub content: String,
+}
+
 /// 聊天完成请求
 pub struct ChatRequest {
     /// 使用的模型（格式：provider/model）
     pub model: String,
     /// 消息列表
-    pub messages: Vec<Message>,
+    pub messages: Vec<ModelMessage>,
     /// 是否流式输出
     pub stream: bool,
     /// 温度参数（0.0 - 2.0）
@@ -157,137 +166,19 @@ pub struct ChatRequest {
     pub tools: Option<Vec<Tool>>,
     /// 工具选择策略
     pub tool_choice: Option<ToolChoice>,
-    /// 响应格式
+    /// 响应格式（定义见 TECH-TOOL.md）
     pub response_format: Option<ResponseFormat>,
+    
     /// 停止序列
     pub stop: Option<Vec<String>>,
+    
     /// 额外参数（提供商特定）
     pub extra_params: HashMap<String, Value>,
 }
 
-/// 消息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: Role,
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-}
+> **注意**: `Tool` 和 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)
 
-/// 角色
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
-
-/// 工具定义（OpenAI格式）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tool {
-    pub r#type: String,
-    pub function: Function,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Function {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
-/// 工具选择策略
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolChoice {
-    None,
-    Auto,
-    Required,
-    Function { name: String },
-}
-
-/// 响应格式
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResponseFormat {
-    pub r#type: String,
-}
-```
-
-### 4.2 响应数据结构
-
-```rust
-/// 聊天完成响应
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChatResponse {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<Choice>,
-    pub usage: Usage,
-}
-
-/// 选择项
-#[derive(Debug, Clone, Deserialize)]
-pub struct Choice {
-    pub index: u32,
-    pub message: Message,
-    pub finish_reason: Option<String>,
-}
-
-/// Token使用量
-#[derive(Debug, Clone, Deserialize)]
-pub struct Usage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
-
-/// 工具调用
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub r#type: String,
-    pub function: FunctionCall,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
-/// 流式响应块
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChatStreamChunk {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<StreamChoice>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct StreamChoice {
-    pub index: u32,
-    pub delta: Delta,
-    pub finish_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Delta {
-    pub role: Option<Role>,
-    pub content: Option<String>,
-    #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-}
-```
-
-### 4.3 模型组与故障转移
+### 4.2 模型组与故障转移
 
 ```rust
 /// 模型组客户端
@@ -445,7 +336,7 @@ impl OpenAiClient {
     }
     
     /// 转换消息格式
-    fn convert_message(msg: &Message) -> ChatCompletionRequestMessage {
+    fn convert_message(msg: &ModelMessage) -> ChatCompletionRequestMessage {
         // TODO: 实现消息格式转换
         // 将通用Message格式转换为OpenAI特定的消息格式
         // TODO: 实现代码:
@@ -583,6 +474,9 @@ impl StreamHandler {
 
 ## 7. 工具调用支持
 
+> **注意**: 核心的 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)。
+> `ToolCallRequest` 和 `ToolCallResult` 是模型层用于处理工具调用的辅助类型。
+
 ### 7.1 工具调用处理
 
 ```rust
@@ -667,6 +561,10 @@ pub async fn execute_tool_calls_parallel(
 
 ## 8. 错误处理
 
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> 
+> `ModelError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`ModelError::OpenAi` 携带的原生错误会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
+
 ```rust
 use thiserror::Error;
 
@@ -710,7 +608,7 @@ pub enum ModelError {
 ### 9.1 基本调用
 
 ```rust
-use neco_model::{ModelGroupClient, ChatRequest, Message, Role};
+use neco_model::{ModelGroupClient, ChatRequest, ModelMessage, Role};
 
 // 创建模型组客户端
 let client = ModelGroupClient::new(
@@ -723,17 +621,13 @@ let client = ModelGroupClient::new(
 let request = ChatRequest {
     model: "glm-4.7".to_string(),
     messages: vec![
-        Message {
+        ModelMessage {
             role: Role::System,
-            content: Some("你是一个 helpful assistant".to_string()),
-            tool_calls: None,
-            tool_call_id: None,
+            content: "你是一个 helpful assistant".to_string(),
         },
-        Message {
+        ModelMessage {
             role: Role::User,
-            content: Some("Hello!".to_string()),
-            tool_calls: None,
-            tool_call_id: None,
+            content: "Hello!".to_string(),
         },
     ],
     stream: false,

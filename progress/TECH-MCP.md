@@ -386,6 +386,8 @@ pub async fn register_mcp_tools(
 
 ## 7. 错误处理
 
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+
 ```rust
 use rmcp::ErrorData as McpError;
 
@@ -421,7 +423,7 @@ pub enum McpError {
 
 ---
 
-*关联文档：*
+**关联文档：**
 - [TECH.md](./TECH.md) - 总体架构文档
 - [TECH-TOOL.md](./TECH-TOOL.md) - 工具模块
 - [TECH-CONFIG.md](./TECH-CONFIG.md) - 配置管理模块

@@ -120,6 +120,8 @@ pub struct SessionMeta {
     pub metadata: SessionMetadata,
 }
 
+
+```rust
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 消息ID分配器错误
@@ -707,7 +709,7 @@ impl SessionManager {
 ### 6.2 恢复Session
 
 ```rust
-use std::collections::{HashMap, LinkedList};
+use std::collections::{HashMap, VecDeque};
 
 /// Session管理器
 pub struct SessionManager {
@@ -718,9 +720,14 @@ pub struct SessionManager {
     max_agent_cache_size: usize,
 }
 
-/// LRU缓存实现（简化版）
+/// LRU缓存实现（使用VecDeque优化性能）
+/// 
+/// **策略说明：**
+/// - `push_front` 添加最新条目（队首为最新）
+/// - `pop_back` 移除最旧条目（队尾为最旧）
+/// - 新条目在队首，最旧条目在队尾，驱逐时从队尾移除
 pub struct LruCache<K, V> {
-    cache: LinkedList<(K, V)>,
+    cache: VecDeque<(K, V)>,
     capacity: usize,
 }
 
@@ -791,8 +798,8 @@ impl SessionManager {
         // 3. 添加到缓存
         let mut cache = self.agent_cache.write().await;
         if cache.len() >= self.max_agent_cache_size {
-            // 移除最旧的条目
-            if let Some((old_key, _)) = cache.pop_front() {
+            // 移除最旧的条目（队尾为最旧）
+            if let Some((old_key, _)) = cache.pop_back() {
                 tracing::debug!("Evicting agent from cache: {:?}", old_key);
             }
         }
@@ -1030,6 +1037,10 @@ impl ContextBuilder {
 ```
 
 ## 8. 错误处理
+
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> 
+> `SessionError` 和 `StorageError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。
 
 ```rust
 #[derive(Debug, Error)]

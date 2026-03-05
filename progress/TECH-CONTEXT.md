@@ -24,11 +24,11 @@ graph TD
 
 **触发方式：**
 
-| 方式 | 触发条件 | 配置项 |
-|-----|---------|--------|
-| 自动触发 | 上下文大小 > 窗口大小 × 阈值 | `auto_compact_threshold` (默认90%) |
-| 手动触发 | 用户输入 `/compact` 命令 | - |
-| 程序触发 | 代码显式调用 | `context.compact()` |
+| 方式 | 触发条件 | 配置项 | 说明 |
+|-----|---------|--------|------|
+| 自动触发 | 上下文大小 > 窗口大小 × 阈值 | `auto_compact_threshold` (默认90%) | 当上下文占用超过阈值时自动压缩 |
+| 手动触发 | 用户输入 `/compact` 命令 | - | 用户主动触发 |
+| 程序触发 | 代码显式调用 | `Session::manual_compact()` | 开发者通过Session API触发 |
 
 ### 2.2 压缩策略
 
@@ -80,20 +80,16 @@ impl Default for ContextConfig {
 
 /// 默认压缩提示词
 const DEFAULT_COMPACT_PROMPT: &str = r#"
-# 任务：压缩上下文
+压缩以下对话内容，提取所有有价值的信息。
 
-## 目标
-整理当前的上下文内容，提取**所有**有价值的信息。
-
-## 详细回答以下问题
+需要回答以下问题：
 1. 需求是什么？
 2. 目标在哪里？
 3. 现在做到了哪一步？
 4. 接下来要做什么？
 5. 其它信息。
 
-## 输出格式
-用简洁的语言总结，保留所有关键细节。
+请用简洁的语言总结，保留所有关键细节。
 "#;
 ```
 
@@ -469,28 +465,22 @@ impl Session {
         let agent = self.agents.get(&agent_ulid)
             .ok_or(SessionError::AgentNotFound)?;
         
-        // TODO: 获取模型上下文窗口大小
-        // let context_window = self.get_model_context_window(
-        //     &agent.config.model_group
-        // );
-        let context_window = todo!();
+        // 获取模型上下文窗口大小（从Agent配置获取）
+        let context_window = agent.config.context_window.unwrap_or(128_000);
         
-        // TODO: 检查是否需要压缩
-        // if compression_service.should_compact(
-        //     &agent.messages,
-        //     context_window
-        // ) {
-        if false {
-            // TODO: 执行压缩
-            // let result = compression_service.compact(
-            //     &agent.messages,
-            //     CompactStrategy::KeepImportant
-            // ).await?;
-            let result = todo!();
+        // 检查是否需要压缩
+        if compression_service.should_compact(
+            &agent.messages,
+            context_window
+        ) {
+            // 执行压缩
+            let result = compression_service.compact(
+                &agent.messages,
+                CompactStrategy::KeepImportant
+            ).await?;
             
-            // TODO: 应用压缩结果
-            // self.apply_compact_result(agent_ulid, &result).await?;
-            todo!();
+            // 应用压缩结果
+            self.apply_compact_result(agent_ulid, &result).await?;
             
             Ok(Some(result))
         } else {
@@ -624,6 +614,10 @@ pub async fn handle_compact_command(
 ```
 
 ## 8. 错误处理
+
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+>
+> `CompactError` 和 `TokenError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`CompactError::Model` 携带的 `ModelError` 会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
 
 ```rust
 #[derive(Debug, Error)]
