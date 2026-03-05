@@ -63,12 +63,16 @@ pub struct ContextObservationService {
     token_counter: Arc<dyn TokenCounter>,
 }
 
-impl ContextObservationService {
+/// 上下文观测服务接口
+#[async_trait]
+pub trait ContextObservationService: Send + Sync {
     /// 创建观测服务
-    pub fn new(token_counter: Arc<dyn TokenCounter>) -> Self;
+    fn new(token_counter: Arc<dyn TokenCounter>) -> Self
+    where
+        Self: Sized;
 
     /// 观测Agent上下文
-    pub async fn observe_context(
+    async fn observe_context(
         &self,
         agent: &Agent,
         filter: Option<ContextFilter>,
@@ -152,15 +156,16 @@ pub struct ContextObserveTool {
 /// 上下文观测输出格式化器
 pub struct ObservationFormatter;
 
-impl ObservationFormatter {
+/// 上下文观测输出格式化器接口
+pub trait ObservationFormatter: Send + Sync {
     /// 格式化为表格
-    pub fn format_table(observation: &ContextObservation) -> String;
+    fn format_table(observation: &ContextObservation) -> String;
     
     /// 格式化为JSON
-    pub fn format_json(observation: &ContextObservation) -> Result<String, ContextError>;
+    fn format_json(observation: &ContextObservation) -> Result<String, ContextError>;
     
     /// 格式化为摘要
-    pub fn format_summary(observation: &ContextObservation) -> String;
+    fn format_summary(observation: &ContextObservation) -> String;
 }
 ```
 

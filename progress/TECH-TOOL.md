@@ -697,6 +697,7 @@ impl ToolProvider for ContextObserveTool {
 #### table格式（默认）
 
 ```
+```text
 ## 上下文统计
 
 - 总消息数: 15
@@ -716,7 +717,7 @@ impl ToolProvider for ContextObserveTool {
 
 #### summary格式
 
-```
+```text
 # 上下文摘要
 
 当前上下文共有 15 条消息，总计 3,245 tokens，使用率为 2.5%
@@ -727,6 +728,7 @@ impl ToolProvider for ContextObserveTool {
 用户消息: 6 条
 助手消息: 5 条
 工具返回: 2 条
+```
 ```
 
 #### json格式
