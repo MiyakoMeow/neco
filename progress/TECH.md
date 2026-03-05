@@ -812,109 +812,22 @@ sequenceDiagram
 
 ## 5. 模块间接口设计
 
+> **说明**: 核心Trait定义分布在各功能模块中，以下是模块间接口的引用说明。
+
 ### 5.1 核心Trait定义
 
-```rust
-// neco-core/src/traits.rs
-
-/// 可配置的组件
-pub trait Configurable {
-    type Config;
-    fn configure(config: Self::Config) -> Self {
-        // TODO: 实现配置逻辑
-        todo!()
-    }
-}
-
-/// Agent能力提供者
-#[async_trait]
-pub trait AgentCapability: Send + Sync {
-    async fn execute(&self, input: AgentInput) -> Result<AgentOutput, AgentError> {
-        // TODO: 实现Agent执行逻辑
-        // - 解析输入消息
-        // - 构建上下文
-        // - 调用模型或工具
-        // - 返回结果
-        todo!()
-    }
-}
-
-/// 模型客户端
-#[async_trait]
-pub trait ModelClient: Send + Sync {
-    async fn chat_completion(&self, request: ChatRequest) -> Result<ChatResponse, ModelError> {
-        // TODO: 实现模型调用逻辑
-        // - 解析请求参数
-        // - 选择合适模型
-        // - 发送API请求
-        // - 处理响应
-        todo!()
-    }
-    async fn chat_completion_stream(&self, request: ChatRequest) -> Result<ChatStream, ModelError> {
-        // TODO: 实现流式模型调用逻辑
-        // - 解析请求参数
-        // - 选择合适模型
-        // - 建立流式连接
-        // - 返回流式响应
-        todo!()
-    }
-}
-
-/// 工具提供者
-#[async_trait]
-pub trait ToolProvider: Send + Sync {
-    fn name(&self) -> &str {
-        // TODO: 返回工具名称
-        todo!()
-    }
-    fn description(&self) -> &str {
-        // TODO: 返回工具描述
-        todo!()
-    }
-    fn schema(&self) -> Value {
-        // TODO: 返回工具参数的JSON Schema
-        todo!()
-    }
-    async fn execute(&self, args: Value) -> Result<ToolResult, ToolError> {
-        // TODO: 实现工具执行逻辑
-        // - 验证参数
-        // - 执行工具逻辑
-        // - 返回结果或错误
-        todo!()
-    }
-}
-
-/// 存储后端
-#[async_trait]
-pub trait StorageBackend: Send + Sync {
-    async fn save_session(&self, session: &Session) -> Result<(), StorageError> {
-        // TODO: 实现Session保存逻辑
-        // - 序列化Session数据
-        // - 写入存储系统
-        todo!()
-    }
-    async fn load_session(&self, id: SessionId) -> Result<Session, StorageError> {
-        // TODO: 实现Session加载逻辑
-        // - 从存储系统读取数据
-        // - 反序列化Session对象
-        todo!()
-    }
-    async fn save_agent(&self, session_id: SessionId, agent: &Agent) -> Result<(), StorageError> {
-        // TODO: 实现Agent保存逻辑
-        // - 序列化Agent数据
-        // - 关联到Session保存
-        todo!()
-    }
-    async fn load_agent(&self, ulid: AgentUlid) -> Result<Agent, StorageError> {
-        // TODO: 实现Agent加载逻辑
-        // - 根据ULID查找Agent
-        // - 反序列化Agent对象
-        todo!()
-    }
-}
-```
+| Trait | 定义位置 | 说明 |
+|-------|---------|------|
+| `ToolProvider` | [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计) | 工具提供者接口 |
+| `ToolRegistry` | [TECH-TOOL.md](TECH-TOOL.md#32-工具注册表) | 工具注册表 |
+| `ModelProvider` | [TECH-MODEL.md](TECH-MODEL.md#4-provider抽象与factory) | 模型提供者接口 |
+| `StorageBackend` | [TECH-SESSION.md](TECH-SESSION.md#53-存储后端trait) | 存储后端接口 |
+| `TokenCounter` | [TECH-CONTEXT.md](TECH-CONTEXT.md#61-token计数器) | Token计数器接口 |
+| `Channel` | [TECH-CONFIG.md](TECH-CONFIG.md#41-channel-trait-定义) | 消息通道接口 |
 
 ### 5.2 事件系统
+
+> 完整的事件驱动架构设计见 [TECH-AGENT.md#5-事件驱动架构](TECH-AGENT.md#5-事件驱动架构)
 
 ```mermaid
 graph LR
@@ -945,64 +858,14 @@ graph LR
     Bus --> Metric
 ```
 
-**事件类型定义：**
+**事件类型说明：**
 
-```rust
-pub enum Event {
-    Session(SessionEvent),
-    Agent(AgentEvent),
-    Workflow(WorkflowEvent),
-    Model(ModelEvent),
-    Tool(ToolEvent),
-}
-
-pub enum AgentEvent {
-    Created { ulid: AgentUlid, parent: Option<AgentUlid> },
-    MessageAdded { ulid: AgentUlid, message_id: u64 },
-    StateChanged { ulid: AgentUlid, state: AgentState },
-    ToolCalled { ulid: AgentUlid, tool: ToolId },
-}
-
-pub enum WorkflowEvent {
-    Started { session_id: SessionId },
-    NodeStarted { node_id: NodeId },
-    NodeCompleted { node_id: NodeId, result: NodeResult },
-    Transition { from: NodeId, to: NodeId },
-    Completed { session_id: SessionId },
-}
-
-// TODO: 实现事件处理逻辑
-// - 事件序列化/反序列化
-// - 事件路由分发
-// - 事件监听器管理
-```
-
-#### 5.2.1 TriggerEngine 触发器
-
-> 参考 OpenFang 的 TriggerEngine 设计
-
-```mermaid
-graph LR
-    E[Event] --> T[TriggerEngine]
-    T -->|匹配模式| M1[All]
-    T -->|匹配模式| M2[Lifecycle]
-    T -->|匹配模式| M3[AgentSpawned]
-    T -->|匹配模式| M4[SystemKeyword]
-    T -->|匹配模式| M5[MemoryUpdate]
-    T -->|匹配模式| M6[ContentMatch]
-```
-
-**触发模式定义：**
-
-| 模式 | 描述 |
-|------|------|
-| `All` | 匹配所有事件 |
-| `Lifecycle` | 生命周期事件 |
-| `AgentSpawned` | Agent创建匹配 |
-| `AgentTerminated` | Agent终止 |
-| `SystemKeyword` | 关键词匹配 |
-| `MemoryUpdate` | 内存更新 |
-| `ContentMatch` | 内容匹配 |
+| 事件类型 | 定义位置 | 描述 |
+|----------|---------|------|
+| `AgentEvent` | [TECH-AGENT.md#52-事件类型定义](TECH-AGENT.md#52-事件类型定义) | Agent相关事件 |
+| `WorkflowEvent` | [TECH-AGENT.md#52-事件类型定义](TECH-AGENT.md#52-事件类型定义) | 工作流相关事件 |
+| `TriggerPattern` | [TECH-AGENT.md#53-触发器模式](TECH-AGENT.md#53-触发器模式) | 触发器匹配模式 |
+| `TriggerHandler` | [TECH-AGENT.md#53-触发器模式](TECH-AGENT.md#53-触发器模式) | 触发处理器定义 |
 
 ### 5.3 统一错误类型设计
 
