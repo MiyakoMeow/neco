@@ -140,17 +140,22 @@ impl ProviderFactory {
 
 ### 4.1 请求数据结构
 
-> **注意**: `Message` 和 `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)
-> 
-> **注意**: 上述 `Message` 包含Session管理的 `id` 字段。对于Model API请求（如ChatRequest），使用不含 `id` 的简化版本。
+> **注意**: `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)。
+> 模型层请求使用 `ModelMessage`（不含 `id`），与 Session 层 `Message`（含 `id`）分离。
 
 ```rust
+/// 模型层消息（不含Session管理的id字段）
+pub struct ModelMessage {
+    pub role: Role,
+    pub content: String,
+}
+
 /// 聊天完成请求
 pub struct ChatRequest {
     /// 使用的模型（格式：provider/model）
     pub model: String,
     /// 消息列表
-    pub messages: Vec<Message>,
+    pub messages: Vec<ModelMessage>,
     /// 是否流式输出
     pub stream: bool,
     /// 温度参数（0.0 - 2.0）

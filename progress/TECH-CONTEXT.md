@@ -28,7 +28,7 @@ graph TD
 |-----|---------|--------|------|
 | 自动触发 | 上下文大小 > 窗口大小 × 阈值 | `auto_compact_threshold` (默认90%) | 当上下文占用超过阈值时自动压缩 |
 | 手动触发 | 用户输入 `/compact` 命令 | - | 用户主动触发 |
-| 程序触发 | 代码显式调用 | `session.manual_compact()` | 开发者通过API触发 |
+| 程序触发 | 代码显式调用 | `Session::manual_compact()` | 开发者通过Session API触发 |
 
 ### 2.2 压缩策略
 
@@ -465,24 +465,24 @@ impl Session {
         let agent = self.agents.get(&agent_ulid)
             .ok_or(SessionError::AgentNotFound)?;
         
-        // TODO: 获取模型上下文窗口大小
+        // 示意代码：获取模型上下文窗口大小（需根据实际配置实现）
         // let context_window = self.get_model_context_window(
         //     &agent.config.model_group
         // );
         let context_window = todo!();
         
-        // TODO: 检查是否需要压缩
+        // 检查是否需要压缩
         if compression_service.should_compact(
             &agent.messages,
             context_window
         ) {
-            // TODO: 执行压缩
+            // 执行压缩
             let result = compression_service.compact(
                 &agent.messages,
                 CompactStrategy::KeepImportant
             ).await?;
             
-            // TODO: 应用压缩结果
+            // 应用压缩结果
             self.apply_compact_result(agent_ulid, &result).await?;
             
             Ok(Some(result))
