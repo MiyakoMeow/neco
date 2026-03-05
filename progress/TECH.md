@@ -44,6 +44,12 @@ graph TB
         Network[网络层]
     end
 
+    subgraph "内核抽象层 Kernel Core"
+        Core[neco-core]
+        Types[核心类型定义]
+        Traits[抽象接口定义]
+    end
+
     CLI --> SessionMgr
     REPL --> SessionMgr
     Daemon --> SessionMgr
@@ -60,6 +66,55 @@ graph TB
     ModelService --> Config
     ModelService --> Network
     SessionMgr --> Storage
+    
+    SessionMgr --> Core
+    AgentMgr --> Core
+    ToolMgr --> Core
+    Workflow --> Core
+    Config --> Core
+    Storage --> Core
+    
+    Core --> Types
+    Core --> Traits
+```
+
+### 1.3 数据流全景图
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant UI as UI层
+    participant Session as Session管理
+    participant Agent as Agent引擎
+    participant Context as 上下文服务
+    participant Model as 模型服务
+    participant Tool as 工具执行
+    participant Storage as 存储层
+
+    User->>UI: 输入消息
+    UI->>Session: 创建/获取Session
+    Session->>Agent: 路由消息
+    Agent->>Context: 构建上下文
+    Context->>Session: 获取消息历史
+    Context->>Context: 检查上下文大小
+    alt 超过阈值
+        Context->>Context: 触发压缩
+    end
+    Context-->>Agent: 返回格式化上下文
+    Agent->>Model: 发送请求
+    alt 需要工具
+        Model-->>Agent: 工具调用请求
+        Agent->>Tool: 执行工具
+        Tool-->>Agent: 返回结果
+        Agent->>Model: 发送工具结果
+        Model-->>Agent: 最终响应
+    else 直接响应
+        Model-->>Agent: 响应内容
+    end
+    Agent->>Session: 存储消息
+    Agent->>Storage: 持久化
+    Agent-->>UI: 返回响应
+    UI-->>User: 显示结果
 ```
 
 ## 2. Crate划分
@@ -167,34 +222,25 @@ graph TD
 
 为解决 `session → agent → context → session` 的循环依赖问题，在 `neco-core` 中定义抽象接口：
 
-```rust
-/// Session抽象接口
-/// 
-/// neco-context 通过此接口访问Session信息，避免直接依赖neco-session
-#[async_trait]
-pub trait SessionContainer: Send + Sync {
-    /// 获取Session ID
-    fn session_id(&self) -> &SessionId;
-    
-    /// 获取根Agent ID
-    fn root_agent_id(&self) -> Option<&AgentUlid>;
-    
-    /// 获取Agent数量
-    fn agent_count(&self) -> usize;
-    
-    /// 获取消息数量
-    fn message_count(&self) -> usize;
-    
-    /// 获取所有消息（用于上下文压缩）
-    async fn get_messages(&self) -> Vec<Message>;
-    
-    /// 获取指定Agent
-    async fn get_agent(&self, ulid: &AgentUlid) -> Option<Agent>;
-    
-    /// 添加消息
-    async fn add_message(&self, message: Message) -> Result<MessageId, SessionError>;
-}
+```mermaid
+graph LR
+    subgraph "依赖关系"
+        Context[neco-context] -->|依赖| SessionContainer[SessionContainer trait]
+        Session[neco-session] -->|实现| SessionContainer
+    end
 ```
+
+**SessionContainer 接口定义：**
+
+| 方法 | 描述 |
+|------|------|
+| `session_id(&self) -> &SessionId` | 获取Session ID |
+| `root_agent_id(&self) -> Option<&AgentUlid>` | 获取根Agent ID |
+| `agent_count(&self) -> usize` | 获取Agent数量 |
+| `message_count(&self) -> usize` | 获取消息数量 |
+| `get_messages(&self) -> Vec<Message>` | 获取所有消息 |
+| `get_agent(&self, ulid: &AgentUlid) -> Option<Agent>` | 获取指定Agent |
+| `add_message(&self, message: Message) -> Result<MessageId, SessionError>` | 添加消息 |
 
 **依赖反转说明：**
 - `neco-context` 依赖 `neco-core::SessionContainer` trait
@@ -1223,16 +1269,79 @@ graph TB
 
 ## 9. 安全设计
 
-### 9.1 权限隔离
+> 参考 OpenFang 的 16 层安全体系设计
 
-参考OpenFang的设计，考虑以下安全措施：
+### 9.1 安全架构分层
 
-1. **文件系统隔离**：工具只能访问允许的目录
-2. **网络隔离**：MCP服务器的网络访问控制
-3. **环境变量隔离**：敏感信息通过环境变量传递，不存储在代码中
-4. **API密钥管理**：支持轮询和自动切换
+```mermaid
+graph TB
+    subgraph "N Layer 安全体系"
+        S1[1. 工具执行沙箱]
+        S2[2. 文件系统隔离]
+        S3[3. 网络访问控制]
+        S4[4. 环境变量隔离]
+        S5[5. 密钥管理]
+        S6[6. 路径穿越防护]
+        S7[7. 输入验证层]
+        S8[8. 输出脱敏层]
+        S9[9. 会话状态隔离]
+        S10[10. 审计日志]
+    end
+    
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> S6
+    S6 --> S7
+    S7 --> S8
+    S8 --> S9
+    S9 --> S10
+```
 
-### 9.2 输入验证
+### 9.2 核心安全机制
+
+| 层级 | 安全机制 | 实现方式 |
+|------|----------|----------|
+| **L1 工具执行沙箱** | 资源限制 | 超时控制、燃料计量 |
+| **L2 文件系统隔离** | 路径白名单 | 配置文件指定可访问目录 |
+| **L3 网络访问控制** | SSRF 防护 | 阻止内网 IP、云元数据端点 |
+| **L4 环境变量隔离** | 敏感信息隔离 | 环境变量注入而非硬编码 |
+| **L5 密钥管理** | 密钥轮询 | 多 API Key 自动切换 |
+| **L6 路径穿越防护** | 路径规范化 | symlink 转义检测 |
+| **L7 输入验证层** | Schema 验证 | JSON Schema + 类型检查 |
+| **L8 输出脱敏层** | 敏感信息过滤 | 正则匹配脱敏 |
+| **L9 会话状态隔离** | Session 隔离 | 每个 Session 独立存储 |
+| **L10 审计日志** | 操作记录 | 完整操作链追溯 |
+
+### 9.3 能力驱动安全模型
+
+```mermaid
+classDiagram
+    class Capability {
+        <<enumeration>>
+        FileRead
+        FileWrite
+        FileDelete
+        NetConnect
+        ShellExec
+        AgentSpawn
+        AgentMessage
+    }
+    
+    class Agent {
+        +capabilities: Vec~Capability~
+    }
+    
+    class Tool {
+        +required_capability: Capability
+    }
+    
+    Agent --> Capability: 授权
+    Tool --> Capability: 要求
+```
+
+### 9.4 输入验证
 
 | 输入类型 | 验证方式 |
 |---------|---------|
@@ -1241,62 +1350,93 @@ graph TB
 | 用户输入 | 长度限制 + 内容过滤 |
 | 模型输出 | 敏感信息脱敏 |
 
-## 10. 扩展点
+### 9.5 应急停止机制
 
-### 10.1 新增模型提供商
+```mermaid
+stateDiagram-v2
+    [*] --> Normal: 正常运行
+    Normal --> ToolFreeze: 触发工具冻结
+    ToolFreeze --> Normal: 手动恢复
+    Normal --> NetworkKill: 触发网络切断
+    NetworkKill --> Normal: 手动恢复
+    Normal --> KillAll: 触发完全停止
+    KillAll --> [*]
+```
 
-实现`ModelClient` trait：
+---
 
-```rust
-pub struct NewProvider {
-    config: ProviderConfig,
-}
+## 10. 扩展性设计
 
-#[async_trait]
-impl ModelClient for NewProvider {
-    async fn chat_completion(&self, request: ChatRequest) -> Result<ChatResponse, ModelError> {
-        // TODO: 实现提供商特定的调用逻辑
-        // - 解析请求参数
-        // - 构建HTTP请求
-        // - 处理响应
-        // - 返回ChatResponse
-        todo!()
-    }
+> 参考 ZeroClaw 的 Trait-driven 架构设计
+
+### 10.1 扩展点总览
+
+```mermaid
+graph TB
+    subgraph "扩展层"
+        P[Provider抽象]
+        T[Tool抽象]
+        C[Channel抽象]
+        M[Memory抽象]
+    end
     
-    async fn chat_completion_stream(&self, request: ChatRequest) -> Result<ChatStream, ModelError> {
-        // TODO: 实现流式调用逻辑
-        todo!()
-    }
-}
+    subgraph "工厂层"
+        F[Factory注册中心]
+    end
+    
+    P --> F
+    T --> F
+    C --> F
+    M --> F
 ```
 
-### 10.2 新增工具
+### 10.2 核心扩展 Trait 定义
 
-实现`ToolProvider` trait：
+| Trait | 位置 | 扩展方式 |
+|-------|------|----------|
+| `ModelClient` | neco-model | 实现 trait + 注册到 Factory |
+| `ToolProvider` | neco-tool | 实现 trait + 注册到 Registry |
+| `StorageBackend` | neco-session | 实现 trait + 配置启用 |
+| `Channel` | neco-daemon | 实现 trait + 配置通道 |
+| `Memory` | neco-context | 实现 trait + 配置后端 |
 
-```rust
-pub struct NewTool;
+### 10.3 Factory 注册机制
 
-#[async_trait]
-impl ToolProvider for NewTool {
-    fn name(&self) -> &str { 
-        // TODO: 返回工具名称
-        todo!()
-    }
-    fn schema(&self) -> Value { 
-        // TODO: 返回工具参数的JSON Schema
-        // 示例：定义工具的输入参数结构
-        todo!()
-    }
-    async fn execute(&self, args: Value) -> Result<ToolResult, ToolError> {
-        // TODO: 实现工具逻辑
-        // - 验证输入参数
-        // - 执行具体功能
-        // - 返回结果或错误
-        todo!()
-    }
-}
+```mermaid
+sequenceDiagram
+    participant App as 应用启动
+    participant Factory as Factory注册中心
+    participant Provider as 模型提供商
+    
+    App->>Factory: 注册 Provider 类型
+    Factory->>Factory: 存储类型映射
+    
+    App->>Factory: create("provider_name")
+    Factory->>Provider: 实例化
+    Provider-->>App: 返回 Provider 实例
 ```
+
+### 10.4 动态组件发现
+
+```mermaid
+graph LR
+    A[配置文件] --> B[ConfigLoader]
+    B --> C[动态发现]
+    C --> D[Factory注册]
+    D --> E[运行时使用]
+```
+
+### 10.5 Feature Flag 配置
+
+| Feature | 描述 | 默认 |
+|---------|------|------|
+| `model-openai` | OpenAI 提供商支持 | 启用 |
+| `model-anthropic` | Anthropic 提供商支持 | 禁用 |
+| `mcp-stdio` | MCP stdio 传输 | 启用 |
+| `mcp-http` | MCP HTTP 传输 | 启用 |
+| `workflow` | 工作流引擎 | 启用 |
+| `cli` | CLI 界面 | 启用 |
+| `daemon` | 守护进程模式 | 启用 |
 
 ## 11. 性能考虑
 
@@ -1319,21 +1459,73 @@ impl ToolProvider for NewTool {
 
 ### 12.1 ZeroClaw
 
-- **架构特点**：Trait-driven架构、守护进程模式、IPC通信
-- **借鉴点**：
-  - 模块化设计，每个核心系统都是trait
-  - 守护进程与前端分离的架构
-  - RESTful API作为IPC机制
+| 维度 | ZeroClaw | Neco |
+|------|----------|------|
+| **定位** | Rust 原生自主 AI 助手运行时 | 多智能体协作 AI 应用 |
+| **架构** | Trait-driven + Factory | Trait-driven + 依赖反转 |
+| **内存占用** | <5MB | 待优化 |
+| **启动速度** | <10ms | 待优化 |
+| **Provider** | 多 Provider 抽象 | 多 Provider 支持 |
+| **安全** | OTP/E-Stop/配对/沙箱 | 10 层安全体系 |
+| **通信** | IPC + Channel 抽象 | EventBus + 工具调用 |
+
+**核心借鉴点：**
+- 统一 Trait 接口定义（Provider, Channel, Tool, Memory）
+- Factory 注册机制实现动态组件发现
+- 分层安全模型（OTP + E-Stop + 沙箱）
+- 极致性能优化（opt-level = "z", lto = "fat"）
 
 ### 12.2 OpenFang
 
-- **架构特点**：14个crates、模块化内核、16层安全
-- **借鉴点**：
-  - 细粒度的crate划分
-  - 事件驱动的内部通信
-  - 完善的安全体系
+| 维度 | OpenFang | Neco |
+|------|----------|------|
+| **规模** | 137K LOC, 14 crates | 待评估 |
+| **架构** | Kernel Handle Trait | 依赖反转接口 |
+| **安全** | 16 层独立安全系统 | 10 层安全体系 |
+| **通信** | EventBus + Trigger | EventBus |
+| **工具** | Wasmtime 双计量沙箱 | 工具执行沙箱 |
+| **Provider** | 27 个 LLM 驱动 | 多 Provider 支持 |
+| **Channel** | 40 个消息适配器 | MCP 协议 |
+
+**核心借鉴点：**
+- Kernel Handle Trait 解耦内核与运行时
+- EventBus + TriggerEngine 事件驱动架构
+- Capability 能力驱动安全模型
+- 防御深度（Defense in Depth）安全理念
+
+### 12.3 架构对比总结
+
+```mermaid
+graph TB
+    subgraph "Neco 架构定位"
+        N[多智能体协作]
+    end
+    
+    subgraph "ZeroClaw 特点"
+        Z1[Trait-driven]
+        Z2[极致性能]
+        Z3[IPC通信]
+    end
+    
+    subgraph "OpenFang 特点"
+        O1[模块化内核]
+        O2[事件驱动]
+        O3[16层安全]
+    end
+    
+    N --> Z1
+    N --> O1
+    N --> O2
+    N --> Z3
+```
+
+**Neco 架构演进方向：**
+1. 引入 Kernel Handle Trait 模式解耦核心模块
+2. 完善 EventBus + Trigger 事件驱动机制
+3. 扩展安全体系至 16 层
+4. 优化性能达到 ZeroClaw 级别
 
 ---
 
-*文档版本：0.1.0*
-*最后更新：2026-03-04*
+*文档版本：0.2.0*
+*最后更新：2026-03-06*

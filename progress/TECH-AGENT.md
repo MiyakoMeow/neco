@@ -275,6 +275,101 @@ impl AgentManager {
 }
 ```
 
+## 5. 事件驱动架构
+
+> 参考 OpenFang 的 EventBus + TriggerEngine 模式设计
+
+### 5.1 EventBus 架构
+
+```mermaid
+graph TB
+    subgraph "事件发布者"
+        A[Agent]
+        W[工作流]
+        S[Session]
+        M[模型]
+    end
+    
+    subgraph "事件总线 EventBus"
+        Bus[事件路由器]
+    end
+    
+    subgraph "事件消费者"
+        UI[UI更新]
+        Log[日志]
+        Metric[指标]
+        Trigger[触发器引擎]
+    end
+    
+    A -->|AgentEvent| Bus
+    W -->|WorkflowEvent| Bus
+    S -->|SessionEvent| Bus
+    M -->|ModelEvent| Bus
+    
+    Bus --> UI
+    Bus --> Log
+    Bus --> Metric
+    Bus --> Trigger
+```
+
+### 5.2 事件类型定义
+
+| 事件类型 | 描述 | 包含字段 |
+|----------|------|----------|
+| `AgentCreated` | Agent创建事件 | agent_ulid, parent_ulid |
+| `AgentStateChanged` | Agent状态变更 | agent_ulid, old_state, new_state |
+| `MessageAdded` | 消息添加 | agent_ulid, message_id, role |
+| `ToolCalled` | 工具调用 | agent_ulid, tool_name, args |
+| `ToolResult` | 工具结果 | agent_ulid, tool_name, result |
+| `WorkflowStarted` | 工作流启动 | session_id, workflow_def |
+| `WorkflowNodeStarted` | 节点启动 | session_id, node_id |
+| `WorkflowNodeCompleted` | 节点完成 | session_id, node_id, result |
+| `WorkflowTransition` | 工作流转场 | session_id, from_node, to_node |
+| `SessionCreated` | Session创建 | session_id, session_type |
+| `ContextCompact` | 上下文压缩 | agent_ulid, before_tokens, after_tokens |
+
+### 5.3 触发器模式
+
+```mermaid
+graph LR
+    T[TriggerEngine] -->|监听| E[EventBus]
+    E -->|触发| T
+    
+    T -->|匹配模式| M1[All]
+    T -->|匹配模式| M2[Lifecycle]
+    T -->|匹配模式| M3[AgentSpawned]
+    T -->|匹配模式| M4[SystemKeyword]
+    T -->|匹配模式| M5[MemoryUpdate]
+    T -->|匹配模式| M6[ContentMatch]
+```
+
+| 触发模式 | 描述 |
+|----------|------|
+| `All` | 匹配所有事件 |
+| `Lifecycle` | 生命周期事件 |
+| `AgentSpawned` | Agent创建匹配 |
+| `AgentTerminated` | Agent终止 |
+| `System` | 系统事件 |
+| `SystemKeyword` | 关键词匹配 |
+| `MemoryUpdate` | 内存更新 |
+| `ContentMatch` | 内容匹配 |
+
+### 5.4 事件流处理
+
+```mermaid
+sequenceDiagram
+    participant Source as 事件源
+    participant Bus as EventBus
+    participant Handler as 事件处理器
+    participant Agent as Agent
+    
+    Source->>Bus: 发布事件
+    Bus->>Bus: 事件路由
+    Bus->>Handler: 分发给订阅者
+    Handler->>Handler: 处理逻辑
+    Handler->>Agent: 触发操作
+```
+
 ## 5. Agent通信工具
 
 ### 5.1 spawn工具
