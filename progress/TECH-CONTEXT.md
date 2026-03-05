@@ -619,6 +619,8 @@ pub async fn handle_compact_command(
 ## 8. 错误处理
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+>
+> `CompactError` 和 `TokenError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`CompactError::Model` 携带的 `ModelError` 会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
 
 ```rust
 #[derive(Debug, Error)]

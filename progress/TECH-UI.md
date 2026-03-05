@@ -784,14 +784,8 @@ async fn control_workflow(State(state): State<AppState>, Path(workflow_id): Path
         return Err(ApiError::BadRequest("workflow_id cannot be empty".to_string()));
     }
     
-        // 验证action
-        match req.action {
-            ControlAction::Pause | ControlAction::Resume | ControlAction::Terminate => {}
-            _ => return Err(ApiError::InvalidAction),
-        }
-    
     // TODO: 解析workflow_id为SessionId
-        // TODO: 根据请求action执行相应操作
+    // TODO: 根据请求action执行相应操作
         // "pause": 暂停工作流执行
         // "resume": 恢复工作流执行  
         // "terminate": 终止工作流执行

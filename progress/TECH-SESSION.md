@@ -128,6 +128,8 @@ pub enum Error {
     MessageIdOverflow,
 }
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 /// 消息ID分配器
 pub struct MessageIdAllocator {
     counter: AtomicU64,
@@ -156,8 +158,6 @@ impl MessageIdAllocator {
     }
 }
 ```
-
-use std::sync::atomic::{AtomicU64, Ordering};
 
 ### 3.2 Agent结构
 
