@@ -271,7 +271,7 @@ pub struct Message {
 }
 
 /// 角色
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     System,
@@ -1034,6 +1034,43 @@ impl ContextBuilder {
         Ok(request)
     }
 }
+```
+
+### 7.2 上下文观测
+
+上下文观测功能提供了查看当前Agent上下文状态的能力，用于调试和分析。
+
+> 数据结构统一定义在 [TECH.md#3.6-上下文观测数据结构](TECH.md#3.6-上下文观测数据结构)
+
+#### 7.2.1 观测器接口
+
+```rust
+/// 上下文观测器接口
+#[async_trait]
+pub trait ContextObserver: Send + Sync {
+    /// 观测Agent上下文
+    async fn observe(
+        &self,
+        agent: &Agent,
+        context_window: usize,
+    ) -> ContextObservation;
+}
+```
+
+#### 7.2.2 观测流程
+
+```mermaid
+graph TD
+    A[输入: Agent] --> B[遍历消息列表]
+    B --> C[统计各角色消息数]
+    B --> D[计算每条消息token]
+    B --> E[生成消息摘要]
+    C --> F[计算总token数]
+    D --> F
+    E --> G[按角色分组]
+    F --> H[计算使用率]
+    G --> I[输出ContextObservation]
+    H --> I
 ```
 
 ## 8. 错误处理

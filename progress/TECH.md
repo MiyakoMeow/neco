@@ -74,7 +74,7 @@ graph TB
 | `neco-session` | Session管理 | neco-core, ulid |
 | `neco-mcp` | MCP客户端 | neco-core, rmcp (1.1.0) |
 | `neco-skill` | Skills管理 | neco-core |
-| `neco-context` | 上下文压缩 | neco-core |
+| `neco-context` | 上下文管理（压缩+观测） | neco-core |
 | `neco-agent` | Agent逻辑 | neco-core, neco-model, neco-tool |
 | `neco-workflow` | 工作流引擎 | neco-core, neco-agent |
 | `neco-tool` | 工具实现 | neco-core, neco-fs, neco-mcp |
@@ -455,6 +455,7 @@ classDiagram
         Mcp(String)
         MultiAgent(MaTool)
         Question
+        Context(ContextTool)
         Workflow(String)
     }
     
@@ -472,6 +473,11 @@ classDiagram
         Send
     }
     
+    class ContextTool {
+        <<enumeration>>
+        Observe
+    }
+    
     class ToolCall {
         +String id
         +ToolId tool
@@ -486,8 +492,111 @@ classDiagram
     Tool --> ToolId
     ToolId --> FsTool
     ToolId --> MaTool
+    ToolId --> ContextTool
     ToolCall --> ToolId
 ```
+
+### 3.6 上下文观测数据结构
+
+```rust
+/// 消息摘要信息
+#[derive(Debug, Clone, Serialize)]
+pub struct MessageSummary {
+    /// 消息ID
+    pub id: u64,
+    /// 消息角色
+    pub role: Role,
+    /// 消息内容预览（最多100字符）
+    pub preview: String,
+    /// 字符数
+    pub char_count: usize,
+    /// 预估token数
+    pub estimated_tokens: usize,
+    /// 时间戳
+    pub timestamp: DateTime<Utc>,
+    /// 是否包含工具调用
+    pub has_tool_calls: bool,
+    /// 工具调用数量
+    pub tool_calls_count: usize,
+}
+
+/// 上下文统计信息
+#[derive(Debug, Clone, Serialize)]
+pub struct ContextStatistics {
+    /// 总消息数量
+    pub total_messages: usize,
+    /// 各角色消息数量
+    pub messages_by_role: HashMap<Role, usize>,
+    /// 总字符数
+    pub total_chars: usize,
+    /// 总预估token数
+    pub total_tokens: usize,
+    /// 上下文使用率（相对于模型窗口）
+    pub usage_percentage: f64,
+    /// 模型上下文窗口大小
+    pub context_window: usize,
+}
+
+/// 上下文观测结果
+#[derive(Debug, Clone, Serialize)]
+pub struct ContextObservation {
+    /// Agent ULID
+    pub agent_ulid: AgentUlid,
+    /// 统计信息
+    pub statistics: ContextStatistics,
+    /// 消息摘要列表
+    pub messages: Vec<MessageSummary>,
+    /// 按角色分组的消息ID
+    pub messages_by_role: HashMap<Role, Vec<u64>>,
+    /// 观测时间
+    pub observed_at: DateTime<Utc>,
+}
+
+/// 上下文过滤选项
+#[derive(Debug, Clone, Default)]
+pub struct ContextFilter {
+    /// 只包含指定角色的消息
+    pub roles: Option<Vec<Role>>,
+    /// 最小消息ID
+    pub min_id: Option<u64>,
+    /// 最大消息ID
+    pub max_id: Option<u64>,
+    /// 是否包含工具调用
+    pub with_tool_calls: Option<bool>,
+}
+
+/// 上下文排序选项
+#[derive(Debug, Clone, Copy)]
+pub enum ContextSortOrder {
+    /// 按ID升序
+    IdAsc,
+    /// 按ID降序
+    IdDesc,
+    /// 按大小升序
+    SizeAsc,
+    /// 按大小降序
+    SizeDesc,
+    /// 按时间升序
+    TimeAsc,
+    /// 按时间降序
+    TimeDesc,
+}
+```
+
+**上下文观测工具说明**：
+
+- **context::observe**: 查看当前上下文的详细信息
+  - 参数：
+    - `roles`: 可选，过滤特定角色的消息
+    - `min_id`/`max_id`: 可选，按ID范围过滤
+    - `with_tool_calls`: 可选，只显示包含工具调用的消息
+    - `sort`: 可选，排序方式（id_asc/id_desc/size_asc/size_desc/time_asc/time_desc）
+    - `format`: 可选，输出格式（table/json/summary）
+  - 返回：
+    - 统计信息（消息数、token数、使用率等）
+    - 消息列表（ID、角色、大小、预览等）
+    - 按角色分组的信息
+
 
 ## 4. 数据流向
 

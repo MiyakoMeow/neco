@@ -1,10 +1,12 @@
-# TECH-CONTEXT: 上下文压缩模块
+# TECH-CONTEXT: 上下文管理模块
 
-本文档描述Neco项目的上下文压缩模块设计，用于在上下文过大时自动或手动压缩历史消息。
+本文档描述Neco项目的上下文管理模块设计，包括上下文压缩和上下文观测功能。
 
 ## 1. 模块概述
 
-上下文压缩模块负责监控上下文大小，当达到阈值时自动触发压缩，或响应手动压缩请求。压缩通过调用模型生成历史消息的摘要。
+上下文管理模块负责：
+1. 监控上下文大小，当达到阈值时自动触发压缩，或响应手动压缩请求
+2. 提供上下文观测功能，允许查看当前上下文的详细状态信息
 
 ## 2. 核心概念
 
@@ -49,9 +51,156 @@ pub enum CompactStrategy {
 }
 ```
 
-## 3. 数据结构设计
+## 3. 上下文观测功能
 
-### 3.1 压缩配置
+> 数据结构统一定义在 [TECH.md#3.6-上下文观测数据结构](TECH.md#3.6-上下文观测数据结构)
+
+### 3.1 上下文观测服务接口
+
+```rust
+/// 上下文观测服务
+pub struct ContextObservationService {
+    token_counter: Arc<dyn TokenCounter>,
+}
+
+/// 上下文观测服务接口
+#[async_trait]
+pub trait ContextObservationService: Send + Sync {
+    /// 创建观测服务
+    fn new(token_counter: Arc<dyn TokenCounter>) -> Self
+    where
+        Self: Sized;
+
+    /// 观测Agent上下文
+    async fn observe_context(
+        &self,
+        agent: &Agent,
+        filter: Option<ContextFilter>,
+        sort: Option<ContextSortOrder>,
+        context_window: usize,
+    ) -> Result<ContextObservation, ContextError>;
+}
+```
+
+### 3.3 观测流程
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Service as ContextObservationService
+    participant Counter as TokenCounter
+    participant Result as ContextObservation
+    
+    Agent->>Service: observe_context(agent, filter, sort)
+    Service->>Service: 应用过滤器
+    Service->>Service: 应用排序
+    Service->>Counter: 计算token数
+    Counter-->>Service: 返回估算值
+    Service->>Service: 计算统计信息
+    Service->>Service: 按角色分组
+    Service-->>Agent: 返回ContextObservation
+```
+
+### 3.4 工具接口
+
+```rust
+/// context::observe 工具
+pub struct ContextObserveTool {
+    observation_service: Arc<ContextObservationService>,
+}
+```
+
+### 3.5 工具参数Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["system", "user", "assistant", "tool"]
+      },
+      "description": "只显示指定角色的消息"
+    },
+    "min_id": {
+      "type": "integer",
+      "description": "最小消息ID"
+    },
+    "max_id": {
+      "type": "integer",
+      "description": "最大消息ID"
+    },
+    "with_tool_calls": {
+      "type": "boolean",
+      "description": "是否只显示包含工具调用的消息"
+    },
+    "sort": {
+      "type": "string",
+      "enum": ["id_asc", "id_desc", "size_asc", "size_desc", "time_asc", "time_desc"],
+      "description": "排序方式"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["table", "json", "summary"],
+      "description": "输出格式"
+    }
+  }
+}
+```
+
+### 3.6 输出格式化接口
+
+```rust
+/// 上下文观测输出格式化器
+pub struct ObservationFormatter;
+
+/// 上下文观测输出格式化器接口
+pub trait ObservationFormatter: Send + Sync {
+    /// 格式化为表格
+    fn format_table(observation: &ContextObservation) -> String;
+    
+    /// 格式化为JSON
+    fn format_json(observation: &ContextObservation) -> Result<String, ContextError>;
+    
+    /// 格式化为摘要
+    fn format_summary(observation: &ContextObservation) -> String;
+}
+```
+
+**输出格式示例：**
+
+*table格式：*
+```text
+## 上下文统计
+- 总消息数: 15
+- 总字符数: 12,458
+- 总token数: 3,245
+- 使用率: 2.5%
+
+## 消息列表
+| ID | 角色      | 大小   | Token | 预览          |
+|----|-----------|--------|-------|---------------|
+| 1  | system    | 1,245  | 320   | You are...    |
+| 2  | user      | 156    | 40    | Hello...      |
+```
+
+*summary格式：*
+```text
+# 上下文摘要
+当前上下文共有 15 条消息，总计 3,245 tokens，使用率为 2.5%
+
+## 按角色分组
+系统提示词: 2 条
+用户消息: 6 条
+助手消息: 5 条
+工具返回: 2 条
+```
+
+## 4. 上下文压缩模块
+
+### 4.1 压缩配置
 
 ```rust
 /// 上下文配置
@@ -93,7 +242,7 @@ const DEFAULT_COMPACT_PROMPT: &str = r#"
 "#;
 ```
 
-### 3.2 压缩结果
+### 4.2 压缩结果
 
 ```rust
 /// 压缩结果
@@ -131,9 +280,9 @@ pub struct TokenSavings {
 }
 ```
 
-## 4. 压缩服务
+## 5. 压缩服务
 
-### 4.1 服务结构
+### 5.1 服务结构
 
 ```rust
 /// 上下文压缩服务
@@ -222,7 +371,7 @@ impl ContextCompressionService {
 }
 ```
 
-### 4.2 消息分割
+### 5.2 消息分割
 
 ```rust
 impl ContextCompressionService {
@@ -258,7 +407,7 @@ impl ContextCompressionService {
 }
 ```
 
-### 4.3 摘要生成
+### 5.3 摘要生成
 
 ```rust
 impl ContextCompressionService {
@@ -347,9 +496,9 @@ impl ContextCompressionService {
 }
 ```
 
-## 5. Token计算
+## 6. Token计算
 
-### 5.1 Token计数器
+### 6.1 Token计数器
 
 ```rust
 /// Token计数器接口
@@ -450,9 +599,9 @@ impl TokenCounter for SimpleCounter {
 }
 ```
 
-## 6. 与Session集成
+## 7. 与Session集成
 
-### 6.1 Session扩展
+### 7.1 Session扩展
 
 ```rust
 impl Session {
@@ -547,9 +696,9 @@ impl Session {
 }
 ```
 
-## 7. UI集成
+## 8. UI集成
 
-### 7.1 压缩通知
+### 8.1 压缩通知
 
 ```rust
 /// 压缩通知
@@ -579,7 +728,7 @@ impl UiRenderer {
 }
 ```
 
-### 7.2 压缩命令
+### 8.2 压缩命令
 
 ```rust
 /// /compact 命令处理
@@ -613,7 +762,7 @@ pub async fn handle_compact_command(
 }
 ```
 
-## 8. 错误处理
+## 9. 错误处理
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 >
@@ -648,9 +797,9 @@ pub enum TokenError {
 }
 ```
 
-## 9. 性能优化
+## 10. 性能优化
 
-### 9.1 异步压缩
+### 10.1 异步压缩
 
 ```rust
 /// 后台压缩任务
@@ -680,7 +829,7 @@ impl BackgroundCompaction {
 }
 ```
 
-### 9.2 压缩缓存
+### 10.2 压缩缓存
 
 ```rust
 /// 压缩缓存（避免重复压缩相同内容）
