@@ -150,7 +150,9 @@ pub struct ContextObservationService {
 
 impl ContextObservationService {
     /// 创建观测服务
-    pub fn new(token_counter: Arc<dyn TokenCounter>) -> Self;
+    pub fn new(token_counter: Arc<dyn TokenCounter>) -> Self {
+        unimplemented!()
+    }
     
     /// 观测Agent上下文
     pub async fn observe_context(
@@ -159,7 +161,9 @@ impl ContextObservationService {
         filter: Option<ContextFilter>,
         sort: Option<ContextSortOrder>,
         context_window: usize,
-    ) -> Result<ContextObservation, ContextError>;
+    ) -> Result<ContextObservation, ContextError> {
+        unimplemented!()
+    }
 }
 ```
 
@@ -322,7 +326,7 @@ const DEFAULT_COMPACT_PROMPT: &str = r#"
 "#;
 ```
 
-### 3.2 压缩结果
+### 4.2 压缩结果
 
 ```rust
 /// 压缩结果
@@ -360,9 +364,9 @@ pub struct TokenSavings {
 }
 ```
 
-## 4. 压缩服务
+## 5. 压缩服务
 
-### 4.1 服务结构
+### 5.1 服务结构
 
 ```rust
 /// 上下文压缩服务
@@ -451,7 +455,7 @@ impl ContextCompressionService {
 }
 ```
 
-### 4.2 消息分割
+### 5.2 消息分割
 
 ```rust
 impl ContextCompressionService {
@@ -487,7 +491,7 @@ impl ContextCompressionService {
 }
 ```
 
-### 4.3 摘要生成
+### 5.3 摘要生成
 
 ```rust
 impl ContextCompressionService {
@@ -576,9 +580,9 @@ impl ContextCompressionService {
 }
 ```
 
-## 5. Token计算
+## 6. Token计算
 
-### 5.1 Token计数器
+### 6.1 Token计数器
 
 ```rust
 /// Token计数器接口
@@ -679,9 +683,9 @@ impl TokenCounter for SimpleCounter {
 }
 ```
 
-## 6. 与Session集成
+## 7. 与Session集成
 
-### 6.1 Session扩展
+### 7.1 Session扩展
 
 ```rust
 impl Session {
@@ -776,9 +780,9 @@ impl Session {
 }
 ```
 
-## 7. UI集成
+## 8. UI集成
 
-### 7.1 压缩通知
+### 8.1 压缩通知
 
 ```rust
 /// 压缩通知
@@ -808,7 +812,7 @@ impl UiRenderer {
 }
 ```
 
-### 7.2 压缩命令
+### 8.2 压缩命令
 
 ```rust
 /// /compact 命令处理
@@ -842,7 +846,7 @@ pub async fn handle_compact_command(
 }
 ```
 
-## 8. 错误处理
+## 9. 错误处理
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 >
@@ -877,9 +881,9 @@ pub enum TokenError {
 }
 ```
 
-## 9. 性能优化
+## 10. 性能优化
 
-### 9.1 异步压缩
+### 10.1 异步压缩
 
 ```rust
 /// 后台压缩任务
@@ -909,7 +913,7 @@ impl BackgroundCompaction {
 }
 ```
 
-### 9.2 压缩缓存
+### 10.2 压缩缓存
 
 ```rust
 /// 压缩缓存（避免重复压缩相同内容）

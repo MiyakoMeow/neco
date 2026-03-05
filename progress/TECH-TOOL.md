@@ -614,6 +614,13 @@ pub struct ContextObserveTool {
     observation_service: Arc<ContextObservationService>,
 }
 
+impl ContextObserveTool {
+    /// 创建观测工具
+    pub fn new(observation_service: Arc<ContextObservationService>) -> Self {
+        Self { observation_service }
+    }
+}
+
 impl ToolProvider for ContextObserveTool {
     fn name(&self) -> &str {
         "context::observe"
