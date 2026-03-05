@@ -662,37 +662,8 @@ impl ToolProvider for ContextObserveTool {
 
     async fn execute(&self, args: Value) -> Result<ToolResult, ToolError>;
 }
-```
 
-### 6.3 参数Schema
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "roles": {
-      "type": "array",
-      "items": {"type": "string", "enum": ["system", "user", "assistant", "tool"]},
-      "description": "只显示指定角色的消息"
-    },
-    "min_id": {"type": "integer", "description": "最小消息ID"},
-    "max_id": {"type": "integer", "description": "最大消息ID"},
-    "with_tool_calls": {"type": "boolean", "description": "是否只显示包含工具调用的消息"},
-    "sort": {
-      "type": "string",
-      "enum": ["id_asc", "id_desc", "size_asc", "size_desc", "time_asc", "time_desc"],
-      "description": "排序方式"
-    },
-    "format": {
-      "type": "string",
-      "enum": ["table", "json", "summary"],
-      "description": "输出格式"
-    }
-  }
-}
-```
-
-### 6.4 输出格式示例
+### 6.3 输出格式示例
 
 #### table格式（默认）
 

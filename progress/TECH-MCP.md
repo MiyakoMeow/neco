@@ -463,38 +463,7 @@ pub async fn register_mcp_tools(
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 
-```rust
-use rmcp::ErrorData as McpError;
-
-// 使用 rmcp 的 ErrorData
-// 也可以添加自定义错误
-#[derive(Debug, Error)]
-pub enum McpError {
-    #[error("配置未找到: {0}")]
-    ConfigNotFound(String),
-    
-    #[error("未连接到服务器: {0}")]
-    NotConnected(String),
-    
-    #[error("启动失败: {0}")]
-    SpawnFailed(String),
-    
-    #[error("IO错误: {0}")]
-    Io(#[from] std::io::Error),
-    
-    #[error("序列化错误: {0}")]
-    Serialization(#[from] serde_json::Error),
-    
-    #[error("无效请求")]
-    InvalidRequest,
-    
-    #[error("超时")]
-    Timeout,
-    
-    #[error("内部错误: {0}")]
-    Internal(String),
-}
-```
+MCP模块使用 `rmcp::ErrorData` 作为基础错误类型，相关错误会统一转换并汇总到 `neco-core::AppError` 中。
 
 ---
 

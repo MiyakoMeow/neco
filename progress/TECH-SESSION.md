@@ -95,7 +95,7 @@ pub struct Session {
     pub storage: Arc<dyn StorageBackend>,
 }
 
-/// Session元数据
+/// 用户自定义的Session元数据（业务层）
 pub struct SessionMetadata {
     /// 用户标识
     pub user_id: Option<String>,
@@ -107,16 +107,19 @@ pub struct SessionMetadata {
     pub custom_data: HashMap<String, Value>,
 }
 
-/// Session元数据（存储层使用）
-/// 包含Session的基本信息，用于持久化存储
+/// Session的基本信息（存储层使用）
 pub struct SessionMeta {
-    /// Session ID
-    pub session_id: SessionId,
+    /// Session类型
+    pub session_type: SessionType,
+    /// 根Agent ULID
+    pub root_agent: AgentUlid,
+    /// 下一个消息ID
+    pub next_message_id: u64,
     /// 创建时间
     pub created_at: DateTime<Utc>,
     /// 最后更新时间
     pub updated_at: DateTime<Utc>,
-    /// 元数据
+    /// 用户自定义元数据
     pub metadata: SessionMetadata,
 }
 
@@ -751,7 +754,7 @@ impl SessionManager {
         }
         
         // 2. 如果缓存不存在，从存储加载Session元数据
-        let session_meta = self.storage.load_session_meta(session_id.clone()).await?;
+        let metadata = self.storage.load_session_meta(session_id.clone()).await?;
         
         // 3. 获取Session中的所有Agent列表
         let agent_list = self.storage.list_agents(session_id.clone()).await?;
@@ -759,13 +762,13 @@ impl SessionManager {
         // 4. 创建Session实例，初始化字段
         let session = Session {
             id: session_id.clone(),
-            session_type: session_meta.session_type,
-            root_agent: session_meta.root_agent,
+            session_type: metadata.session_type,
+            root_agent: metadata.root_agent,
             agents: HashMap::new(),  // 懒加载：初始为空
-            id_allocator: MessageIdAllocator::new(session_meta.next_message_id),
-            created_at: session_meta.created_at,
-            updated_at: session_meta.updated_at,
-            metadata: session_meta.metadata,
+            id_allocator: MessageIdAllocator::new(metadata.next_message_id),
+            created_at: metadata.created_at,
+            updated_at: metadata.updated_at,
+            metadata: metadata.metadata,
         };
         
         // 5. 预加载根Agent到缓存

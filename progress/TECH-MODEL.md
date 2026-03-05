@@ -13,7 +13,7 @@
 ```mermaid
 graph TB
     subgraph "Model Service"
-        MC[ModelClient trait]
+        MC[ModelProvider trait]
         
         subgraph "Providers"
             OP[OpenAI Provider]
@@ -53,88 +53,7 @@ graph TB
 
 ## 3. 核心Trait设计
 
-### 3.1 ModelClient Trait
-
-```rust
-use async_trait::async_trait;
-use futures::Stream;
-
-/// 模型客户端抽象
-#[async_trait]
-pub trait ModelClient: Send + Sync {
-    /// 发送聊天完成请求
-    async fn chat_completion(
-        &self,
-        request: ChatRequest,
-    ) -> Result<ChatResponse, ModelError>;
-    
-    /// 发送流式聊天完成请求
-    async fn chat_completion_stream(
-        &self,
-        request: ChatRequest,
-    ) -> Result<BoxStream<Result<ChatStreamChunk, ModelError>>, ModelError>;
-    
-    /// 获取模型能力
-    fn capabilities(&self) -> ModelCapabilities;
-    
-    /// 健康检查
-    async fn health_check(&self) -> Result<(), ModelError>;
-}
-
-/// 模型能力
-pub struct ModelCapabilities {
-    /// 是否支持流式输出
-    pub streaming: bool,
-    /// 是否支持工具调用
-    pub tools: bool,
-    /// 是否支持函数调用
-    pub functions: bool,
-    /// 是否支持JSON模式
-    pub json_mode: bool,
-    /// 是否支持视觉
-    pub vision: bool,
-    /// 上下文窗口大小
-    pub context_window: usize,
-}
-```
-
-### 3.2 Provider Factory
-
-```rust
-/// 提供商工厂
-pub struct ProviderFactory;
-
-impl ProviderFactory {
-    /// 根据配置创建提供商客户端
-    pub fn create(config: &ModelProvider) -> Result<Box<dyn ModelClient>, ConfigError> {
-        // TODO: 实现提供商客户端工厂方法
-        // 根据配置中的provider_type创建对应的客户端实例
-        // 支持OpenAI、Anthropic、OpenRouter等多种提供商
-        match config.provider_type {
-            ProviderType::OpenAI => {
-                // TODO: 创建OpenAI客户端
-                // TODO: 实现代码: Ok(Box::new(OpenAiClient::new(config)?))
-                todo!()
-            }
-            ProviderType::Anthropic => {
-                // TODO: 实现Anthropic提供商支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("Anthropic".to_string()))
-                todo!()
-            }
-            ProviderType::OpenRouter => {
-                // TODO: 实现OpenRouter提供商支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("OpenRouter".to_string()))
-                todo!()
-            }
-            ProviderType::OpenAIResponses => {
-                // TODO: 实现OpenAI Responses API支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("OpenAIResponses".to_string()))
-                todo!()
-            }
-        }
-    }
-}
-```
+> Provider抽象与Factory设计见第4节。
 
 ## 4. Provider抽象与Factory
 

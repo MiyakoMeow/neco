@@ -101,16 +101,7 @@ sequenceDiagram
     Service-->>Agent: 返回ContextObservation
 ```
 
-### 3.4 工具接口
-
-```rust
-/// context::observe 工具
-pub struct ContextObserveTool {
-    observation_service: Arc<ContextObservationService>,
-}
-```
-
-### 3.5 工具参数Schema
+### 3.4 工具参数Schema
 
 ```json
 {
@@ -150,7 +141,7 @@ pub struct ContextObserveTool {
 }
 ```
 
-### 3.6 输出格式化接口
+### 3.5 输出格式化接口
 
 ```rust
 /// 上下文观测输出格式化器

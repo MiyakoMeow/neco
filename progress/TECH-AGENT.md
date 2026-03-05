@@ -470,9 +470,9 @@ graph TD
 | `Aggregator` | 聚合多个事件 |
 | `Splitter` | 拆分为多个事件 |
 
-## 5. Agent通信工具
+## 6. Agent通信工具
 
-### 5.1 spawn工具
+### 6.1 spawn工具
 
 ```rust
 /// multi-agent::spawn 工具
@@ -529,7 +529,7 @@ impl ToolProvider for SpawnAgentTool {
 }
 ```
 
-### 5.2 send工具
+### 6.2 send工具
 
 ```rust
 /// multi-agent::send 工具
@@ -583,7 +583,7 @@ impl ToolProvider for SendMessageTool {
 }
 ```
 
-### 5.3 report工具（下级向上级汇报）
+### 6.3 report工具（下级向上级汇报）
 
 ```rust
 /// 下级Agent向上级汇报
@@ -636,9 +636,9 @@ impl ToolProvider for ReportTool {
 }
 ```
 
-## 6. 消息处理流程
+## 7. 消息处理流程
 
-### 6.1 消息路由器
+### 7.1 消息路由器
 
 ```rust
 /// Agent消息路由器
@@ -689,7 +689,7 @@ impl AgentMessageRouter {
 }
 ```
 
-### 6.2 Agent消息处理
+### 7.2 Agent消息处理
 
 ```rust
 impl AgentManager {
@@ -707,9 +707,9 @@ impl AgentManager {
 }
 ```
 
-## 7. 内置提示词组件
+## 8. 内置提示词组件
 
-### 7.1 multi-agent提示词
+### 8.1 multi-agent提示词
 
 ```markdown
 # multi-agent 提示词组件
@@ -742,7 +742,7 @@ impl AgentManager {
 - 合并下级Agent的结果
 ```
 
-### 7.2 multi-agent-child提示词
+### 8.2 multi-agent-child提示词
 
 ```markdown
 # multi-agent-child 提示词组件
@@ -777,7 +777,7 @@ impl AgentManager {
 - 不要直接访问用户，所有交互通过上级转发
 ```
 
-## 8. 错误处理
+## 9. 错误处理
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
 

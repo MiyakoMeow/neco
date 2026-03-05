@@ -430,7 +430,7 @@ impl ConfigMerger {
 
 ## 6. 热重载支持
 
-### 6.1 热重载流程
+### 6.1 配置加载流程
 
 ```mermaid
 sequenceDiagram
@@ -465,7 +465,7 @@ sequenceDiagram
     end
 ```
 
-### 5.2 配置验证
+### 6.2 配置验证
 
 ```rust
 /// 配置验证器
@@ -500,9 +500,7 @@ impl ConfigValidator {
 }
 ```
 
-## 6. 热重载支持
-
-### 6.1 热重载流程
+### 6.3 热重载机制
 
 ```mermaid
 graph TB
@@ -516,7 +514,7 @@ graph TB
     end
 ```
 
-### 6.2 线程安全配置访问
+### 6.4 线程安全配置访问
 
 ```rust
 /// 线程安全的配置管理器
