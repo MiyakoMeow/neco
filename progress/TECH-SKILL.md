@@ -340,9 +340,11 @@ Neco作为基于文件系统的代理，通过`activate::skill`工具激活Skill
 
 ```rust
 /// 激活Skill时执行的命令
+/// 详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构) 配置目录优先级规则
 fn get_skill_activation_command(skill_id: &str) -> String {
-    // 读取SKILL.md文件内容
-    format!("cat ~/.config/neco/skills/{}/SKILL.md", skill_id)
+    // 按优先级遍历配置目录，查找第一个存在的SKILL.md
+    // 实际实现应调用 SkillService 的查找逻辑
+    format!("cat <config_dir>/skills/{}/SKILL.md", skill_id)
 }
 ```
 
@@ -350,9 +352,10 @@ fn get_skill_activation_command(skill_id: &str) -> String {
 
 ```rust
 /// 访问Skill资源
+/// 详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构) 配置目录优先级规则
 fn get_skill_resource_command(skill_id: &str, resource_path: &str) -> String {
     format!(
-        "cat ~/.config/neco/skills/{}/{}",
+        "cat <config_dir>/skills/{}/{}",
         skill_id,
         resource_path
     )
@@ -432,10 +435,12 @@ Agent: 请停用 rust-coding-assistant
 
 ### 7.1 市场结构
 
-Skills 存储在配置目录的 `skills/` 子目录下。查找优先级：`.neco/skills/` > `.agents/skills/` > `~/.config/neco/skills/` > `~/.agents/skills/`
+Skills 存储在配置目录的 `skills/` 子目录下。
+
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
 
 ```
-# 查找优先级（从高到低）
+# skills/ 子目录结构示例
 .neco/skills/                    # 当前项目 .neco
 .agents/skills/                  # 当前项目 .agents
 ~/.config/neco/skills/           # 全局主配置

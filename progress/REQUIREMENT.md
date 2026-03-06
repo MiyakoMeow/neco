@@ -339,8 +339,9 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 - 配置目录支持多级查找，按优先级从高到低：
   1. **当前项目配置**：`.neco/` 目录（项目根目录下）
-  2. **主配置目录**：`~/.config/neco`
-  3. **通用配置目录**：`~/.agents/`
+  2. **当前项目配置**：`.agents/` 目录（项目根目录下）
+  3. **主配置目录**：`~/.config/neco`
+  4. **通用配置目录**：`~/.agents/`
 - 本节的所有"配置路径"，都是相对于上述配置目录的路径。
 
 - 配置目录（`~/.config/neco`）和Session目录（`~/.local/neco`）分离的原因:
@@ -581,11 +582,13 @@ require = ["approve"]
    - 如果节点未定义`agent`字段，使用`id`字段的值作为Agent标识
 
 2. **Agent文件查找顺序**（按优先级从高到低）：
-   - 优先查找：`.neco/agents/<agent_id>.md`（当前项目 .neco）
+   - 最高优先级：`workflows/<workflow_id>/agents/<agent_id>.md`（工作流特定配置，覆盖所有配置目录）
+   - 次优先查找：`.neco/agents/<agent_id>.md`（当前项目 .neco）
    - 次优先查找：`.agents/agents/<agent_id>.md`（当前项目 .agents）
-   - 次优先查找：`workflows/xxx/agents/<agent_id>.md`（工作流特定配置）
    - 次后备查找：`~/.config/neco/agents/<agent_id>.md`（全局主配置）
    - 最后后备：`~/.agents/agents/<agent_id>.md`（全局通用配置）
+
+   > 注：工作流特定配置优先级最高，体现"工作流目录 > 配置目录"规则
 
 3. **命名规范**：
    - 节点`id`使用kebab-case命名法（如`write-prd`）

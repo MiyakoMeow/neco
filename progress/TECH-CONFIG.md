@@ -13,8 +13,9 @@
 Neco 支持多级配置目录，按优先级从高到低依次为：
 
 1. **当前项目配置**：项目根目录下的 `.neco` 目录
-2. **主配置目录**：`~/.config/neco/`
-3. **通用配置目录**：`~/.agents/`（支持 agents、prompts、skills 等子目录）
+2. **当前项目配置**：项目根目录下的 `.agents` 目录
+3. **主配置目录**：`~/.config/neco/`
+4. **通用配置目录**：`~/.agents/`（支持 agents、prompts、skills 等子目录）
 
 ```text
 # 优先级从高到低
@@ -27,7 +28,14 @@ Neco 支持多级配置目录，按优先级从高到低依次为：
 ├── skills/
 └── workflows/
 
-# 2. 主配置目录
+# 2. 当前项目配置
+./.agents/
+├── prompts/
+├── agents/
+├── skills/
+└── workflows/
+
+# 3. 主配置目录
 ~/.config/neco/                   # 主配置目录
 ├── neco.toml                    # 主配置文件
 ├── neco.<tag>.toml              # 带标签的配置文件
@@ -45,7 +53,7 @@ Neco 支持多级配置目录，按优先级从高到低依次为：
         └── agents/
             └── review.md        # 工作流特定Agent
 
-# 3. 通用配置目录（最低优先级）
+# 4. 通用配置目录（最低优先级）
 ~/.agents/
 ├── prompts/
 ├── agents/
@@ -60,7 +68,7 @@ Neco 支持多级配置目录，按优先级从高到低依次为：
 - **整体优先级**：当前项目配置 > 全局配置
   - 即：当前项目 `.agents/` > 全局 `~/.config/neco/`
   - 例如：`.neco/agents/reviewer.md` > `.agents/agents/reviewer.md` > `~/.config/neco/agents/reviewer.md` > `~/.agents/agents/reviewer.md`
-- **工作流特定配置**：工作流目录内的配置覆盖全局配置（见 [REQUIREMENT.md](./REQUIREMENT.md)）
+- **工作流特定配置**：工作流目录内的配置覆盖所有配置目录（见 [REQUIREMENT.md](./REQUIREMENT.md)），优先级为：工作流特定 > 当前项目配置 > 全局配置
 
 ### 2.2 配置优先级
 
