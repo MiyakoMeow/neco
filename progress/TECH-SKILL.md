@@ -448,36 +448,6 @@ Agent: 请停用 rust-coding-assistant
     └── ...
 ```
 
-### 7.2 CLI命令
-
-```bash
-# 列出Skills
-neco skill list
-
-# 搜索Skills
-neco skill search database
-
-# 激活Skill
-neco skill activate rust-coding-assistant
-
-# 停用Skill
-neco skill deactivate rust-coding-assistant
-
-# 验证Skill格式
-neco skill validate ./rust-coding-assistant
-
-# 安装来自URL的Skill（需校验来源）
-neco skill install https://example.com/skills/my-skill --checksum sha256:...
-
-# 或仅允许受信注册表
-neco skill install registry://official/rust-coding-assistant
-
-# 更新Skill
-neco skill update rust-coding-assistant
-```
-
-> **安全提示**：安装来自远程URL的Skill时，务必校验来源可信性与内容完整性。建议使用 `--checksum` 参数验证SHA256哈希，或仅从受信的官方注册表安装。脚本型Skill默认需要用户显式确认后方可激活。
-
 ## 8. 安全考量
 
 ```rust
