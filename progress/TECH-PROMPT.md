@@ -75,47 +75,7 @@ prompts = ["base", "multi-agent"]
 
 ## 4. Agent提示词加载实现
 
-> 详细实现代码见 [TECH-AGENT.md#42-agent提示词加载](TECH-AGENT.md#42-agent提示词加载)
-
-```rust
-impl AgentManager {
-    /// 加载Agent提示词
-    async fn load_agent_prompts(
-        &self,
-        session: &mut Session,
-        ulid: &AgentUlid,
-    ) -> Result<(), AgentError> {
-        // TODO: 实现加载Agent提示词的逻辑
-        // 1. 获取Agent配置
-        // 2. 加载每个提示词组件
-        // 3. 合并为系统消息
-        // 4. 添加为第一条消息
-    }
-    
-    /// 加载提示词组件
-    async fn load_prompt_component(
-        &self,
-        name: &str,
-    ) -> Result<String, AgentError> {
-        // TODO: 实现加载提示词组件的逻辑
-        // 1. 检查内置提示词
-        // 2. 从文件加载自定义提示词
-        // 3. 返回提示词内容或错误
-    }
-    
-    /// 为子Agent添加child提示词
-    async fn add_child_prompt(
-        &self,
-        session: &mut Session,
-        child_ulid: &AgentUlid,
-    ) -> Result<(), AgentError> {
-        // TODO: 实现为子Agent添加child提示词的逻辑
-        // 1. 检查是否为子Agent
-        // 2. 加载multi-agent-child提示词
-        // 3. 添加到Agent消息历史
-    }
-}
-```
+> 详细实现代码见 [TECH-AGENT.md#4-agent管理器](TECH-AGENT.md#4-agent管理器)
 
 ## 5. 内置提示词组件
 
