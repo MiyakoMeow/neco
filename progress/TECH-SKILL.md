@@ -143,25 +143,15 @@ pub struct SkillResources {
 }
 ```
 
-### 3.4 完整Skill示例
+### 3.4 Skill内容示例
 
 **rust-coding-assistant/SKILL.md:**
 
-```yaml
----
-name: rust-coding-assistant
-description: 提供Rust语言最佳实践、unsafe代码检查、生命周期分析等能力
-license: MIT
-compatibility:
-  - neco
-metadata:
-  author: neco-team
-  version: 1.0.0
-allowed-tools:
-  - fs::read
-  - fs::edit
----
+YAML前置元数据格式见 [3.2节 SKILL.md 格式](#32-skillmd-格式)。
 
+以下为Markdown正文部分示例：
+
+```markdown
 # Rust编码最佳实践
 
 你擅长编写高质量的Rust代码。以下是你的核心能力：
@@ -600,7 +590,9 @@ pub struct SandboxConfig {
 
 ## 10. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+>
+> `SkillError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Skill`。
 
 ```rust
 #[derive(Debug, Error)]
@@ -631,9 +623,68 @@ pub enum SkillError {
 }
 ```
 
-## 11. UI集成
+## 11. Skill生命周期管理
 
-### 11.1 Skill面板
+```mermaid
+stateDiagram-v2
+    [*] --> Discovered
+    Discovered --> Loaded: 加载索引
+    Loaded --> Activated: 激活Skill
+    Activated --> Deactivated: 停用Skill
+    Deactivated --> Activated: 重新激活
+    Deactivated --> Loaded: 卸载Skill
+    Loaded --> [*]
+```
+
+**生命周期状态：**
+
+| 状态 | 描述 |
+|------|------|
+| `Discovered` | 发现Skill但未加载 |
+| `Loaded` | 已加载索引到内存 |
+| `Activated` | Skill已激活 |
+| `Deactivated` | Skill已停用 |
+
+## 12. Skill发现与注册
+
+```mermaid
+graph TB
+    subgraph "发现阶段"
+        D1[扫描Skill目录]
+        D2[解析SKILL.md]
+        D3[构建索引]
+    end
+    
+    subgraph "注册阶段"
+        R1[验证格式]
+        R2[注册到工厂]
+        R3[发布事件]
+    end
+    
+    D1 --> D2
+    D2 --> D3
+    D3 --> R1
+    R1 --> R2
+    R2 --> R3
+```
+
+**发现配置：**
+
+```rust
+/// Skill发现配置
+pub struct SkillDiscoveryConfig {
+    /// Skill目录列表
+    pub skill_dirs: Vec<PathBuf>,
+    /// 自动加载
+    pub auto_load: bool,
+    /// 扫描深度
+    pub max_depth: usize,
+}
+```
+
+## 13. UI集成
+
+### 13.1 Skill面板
 
 ```rust
 /// 渲染Skill面板
@@ -649,25 +700,6 @@ impl TuiRenderer {
         // - 快速激活按钮
     }
 }
-```
-
-### 11.2 命令行支持
-
-```bash
-# 列出Skills
-/neco skill list
-
-# 搜索Skills
-/neco skill search database
-
-# 激活Skill
-/neco skill activate rust-coding-assistant
-
-# 停用Skill
-/neco skill deactivate rust-coding-assistant
-
-# 验证Skill
-/neco skill validate
 ```
 
 ---

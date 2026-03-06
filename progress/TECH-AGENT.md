@@ -275,9 +275,204 @@ impl AgentManager {
 }
 ```
 
-## 5. Agent通信工具
+## 5. 事件驱动架构
 
-### 5.1 spawn工具
+> 参考 OpenFang 的 EventBus + TriggerEngine 模式设计
+
+### 5.1 EventBus 架构
+
+```mermaid
+graph TB
+    subgraph "事件发布者"
+        A[Agent]
+        W[工作流]
+        S[Session]
+        M[模型]
+    end
+    
+    subgraph "事件总线 EventBus"
+        Bus[事件路由器]
+    end
+    
+    subgraph "事件消费者"
+        UI[UI更新]
+        Log[日志]
+        Metric[指标]
+        Trigger[触发器引擎]
+    end
+    
+    A -->|AgentEvent| Bus
+    W -->|WorkflowEvent| Bus
+    S -->|SessionEvent| Bus
+    M -->|ModelEvent| Bus
+    
+    Bus --> UI
+    Bus --> Log
+    Bus --> Metric
+    Bus --> Trigger
+```
+
+### 5.2 事件类型定义
+
+| 事件类型 | 描述 | 包含字段 |
+|----------|------|----------|
+| `AgentCreated` | Agent创建事件 | agent_ulid, parent_ulid |
+| `AgentStateChanged` | Agent状态变更 | agent_ulid, old_state, new_state |
+| `MessageAdded` | 消息添加 | agent_ulid, message_id, role |
+| `ToolCalled` | 工具调用 | agent_ulid, tool_name, args |
+| `ToolResult` | 工具结果 | agent_ulid, tool_name, result |
+| `WorkflowStarted` | 工作流启动 | session_id, workflow_def |
+| `WorkflowNodeStarted` | 节点启动 | session_id, node_id |
+| `WorkflowNodeCompleted` | 节点完成 | session_id, node_id, result |
+| `WorkflowTransition` | 工作流转场 | session_id, from_node, to_node |
+| `SessionCreated` | Session创建 | session_id, session_type |
+| `ContextCompact` | 上下文压缩 | agent_ulid, before_tokens, after_tokens |
+
+### 5.3 触发器模式
+
+```mermaid
+graph LR
+    subgraph "事件源"
+        A[Agent]
+        W[Workflow]
+        S[Session]
+        M[Model]
+    end
+    
+    subgraph "TriggerEngine"
+        TE[事件路由器]
+        TP[TriggerPattern]
+        TH[TriggerHandler]
+    end
+    
+    subgraph "触发动作"
+        UA[更新UI]
+        LG[记录日志]
+        MT[发送指标]
+        TR[触发器动作]
+    end
+    
+    A --> TE
+    W --> TE
+    S --> TE
+    M --> TE
+    
+    TE --> TP
+    TP --> TH
+    TH --> UA
+    TH --> LG
+    TH --> MT
+    TH --> TR
+```
+
+**TriggerPattern 数据结构：**
+
+```rust
+/// 触发模式
+pub enum TriggerPattern {
+    /// 匹配所有事件
+    All,
+    /// 生命周期事件
+    Lifecycle {
+        events: Vec<LifecycleEvent>,
+    },
+    /// Agent创建匹配
+    AgentSpawned {
+        agent_type: Option<String>,
+    },
+    /// Agent终止
+    AgentTerminated,
+    /// 系统关键词匹配
+    SystemKeyword {
+        keywords: Vec<String>,
+    },
+    /// 内存更新
+    MemoryUpdate {
+        threshold: f32,
+    },
+    /// 内容匹配
+    ContentMatch {
+        pattern: String,
+    },
+}
+```
+
+**TriggerHandler 数据结构：**
+
+```rust
+/// 触发处理器
+pub struct TriggerHandler {
+    /// 处理器ID
+    pub id: String,
+    /// 触发模式
+    pub pattern: TriggerPattern,
+    /// 动作类型
+    pub action: TriggerAction,
+    /// 是否启用
+    pub enabled: bool,
+}
+
+/// 触发动作
+pub enum TriggerAction {
+    /// 执行工具
+    ExecuteTool { tool_name: String, args: Value },
+    /// 发送消息
+    SendMessage { target: AgentUlid, content: String },
+    /// 调用回调
+    Callback { callback_id: String },
+    /// 记录日志
+    Log { level: LogLevel, message: String },
+    /// 发出事件
+    EmitEvent { event_type: String, payload: Value },
+}
+```
+
+### 5.4 事件流处理
+
+```mermaid
+sequenceDiagram
+    participant Source as 事件源
+    participant Bus as EventBus
+    participant Handler as 事件处理器
+    participant Agent as Agent
+    
+    Source->>Bus: 发布事件
+    Bus->>Bus: 事件路由
+    Bus->>Handler: 分发给订阅者
+    Handler->>Handler: 处理逻辑
+    Handler->>Agent: 触发操作
+```
+
+### 5.5 事件过滤与转换
+
+```mermaid
+graph TD
+    E[原始事件] --> F[过滤器]
+    F -->|过滤后| T[转换器]
+    T -->|处理后| D[分发器]
+    D --> H[处理器]
+```
+
+**事件过滤器：**
+
+| 过滤器类型 | 描述 |
+|-----------|------|
+| `EventFilter` | 按事件类型过滤 |
+| `AgentFilter` | 按Agent过滤 |
+| `TimeFilter` | 按时间范围过滤 |
+| `ContentFilter` | 按内容过滤 |
+
+**事件转换器：**
+
+| 转换器类型 | 描述 |
+|-----------|------|
+| `Enricher` | 添加额外上下文 |
+| `Aggregator` | 聚合多个事件 |
+| `Splitter` | 拆分为多个事件 |
+
+## 6. Agent通信工具
+
+### 6.1 spawn工具
 
 ```rust
 /// multi-agent::spawn 工具
@@ -334,7 +529,7 @@ impl ToolProvider for SpawnAgentTool {
 }
 ```
 
-### 5.2 send工具
+### 6.2 send工具
 
 ```rust
 /// multi-agent::send 工具
@@ -388,7 +583,7 @@ impl ToolProvider for SendMessageTool {
 }
 ```
 
-### 5.3 report工具（下级向上级汇报）
+### 6.3 report工具（下级向上级汇报）
 
 ```rust
 /// 下级Agent向上级汇报
@@ -441,9 +636,9 @@ impl ToolProvider for ReportTool {
 }
 ```
 
-## 6. 消息处理流程
+## 7. 消息处理流程
 
-### 6.1 消息路由器
+### 7.1 消息路由器
 
 ```rust
 /// Agent消息路由器
@@ -494,7 +689,7 @@ impl AgentMessageRouter {
 }
 ```
 
-### 6.2 Agent消息处理
+### 7.2 Agent消息处理
 
 ```rust
 impl AgentManager {
@@ -512,9 +707,9 @@ impl AgentManager {
 }
 ```
 
-## 7. 内置提示词组件
+## 8. 内置提示词组件
 
-### 7.1 multi-agent提示词
+### 8.1 multi-agent提示词
 
 ```markdown
 # multi-agent 提示词组件
@@ -547,7 +742,7 @@ impl AgentManager {
 - 合并下级Agent的结果
 ```
 
-### 7.2 multi-agent-child提示词
+### 8.2 multi-agent-child提示词
 
 ```markdown
 # multi-agent-child 提示词组件
@@ -582,9 +777,11 @@ impl AgentManager {
 - 不要直接访问用户，所有交互通过上级转发
 ```
 
-## 8. 错误处理
+## 9. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+>
+> `AgentError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Agent`。
 
 ```rust
 #[derive(Debug, Error)]

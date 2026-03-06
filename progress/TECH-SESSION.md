@@ -40,7 +40,56 @@ classDiagram
 | AgentUlid | Agent实例化时 | 归属于SessionId | 标识Agent实例 |
 | NodeSessionId | 工作流节点启动时 | 归属Workflow Session | 标识工作流节点 |
 
-### 2.2 Session类型
+### 2.2 依赖反转接口（SessionContainer）
+
+> 为解决 `session → agent → context → session` 的循环依赖问题，在 `neco-core` 中定义抽象接口：
+
+```mermaid
+graph LR
+    subgraph "依赖关系"
+        Context[neco-context] -->|依赖| SessionContainer[SessionContainer trait]
+        Session[neco-session] -->|实现| SessionContainer
+    end
+```
+
+**SessionContainer 接口定义：**
+
+```rust
+/// Session容器接口 - 用于依赖反转
+/// 
+/// neco-context 依赖此 trait，neco-session 实现此 trait
+/// 运行时通过依赖注入传递具体实现
+#[async_trait]
+pub trait SessionContainer: Send + Sync {
+    /// 获取Session ID
+    fn session_id(&self) -> &SessionId;
+    
+    /// 获取根Agent ID
+    fn root_agent_id(&self) -> Option<&AgentUlid>;
+    
+    /// 获取Agent数量
+    fn agent_count(&self) -> usize;
+    
+    /// 获取消息数量
+    fn message_count(&self) -> usize;
+    
+    /// 获取所有消息
+    fn get_messages(&self) -> Vec<Message>;
+    
+    /// 获取指定Agent
+    fn get_agent(&self, ulid: &AgentUlid) -> Option<Agent>;
+    
+    /// 添加消息
+    async fn add_message(&self, message: Message) -> Result<MessageId, SessionError>;
+}
+```
+
+**依赖反转说明：**
+- `neco-context` 依赖 `neco-core::SessionContainer` trait
+- `neco-session` 实现 `SessionContainer` trait
+- 运行时通过依赖注入传递具体实现
+
+### 2.3 Session类型
 
 ```rust
 /// Session类型
@@ -95,7 +144,7 @@ pub struct Session {
     pub storage: Arc<dyn StorageBackend>,
 }
 
-/// Session元数据
+/// 用户自定义的Session元数据（业务层）
 pub struct SessionMetadata {
     /// 用户标识
     pub user_id: Option<String>,
@@ -107,29 +156,23 @@ pub struct SessionMetadata {
     pub custom_data: HashMap<String, Value>,
 }
 
-/// Session元数据（存储层使用）
-/// 包含Session的基本信息，用于持久化存储
+/// Session的基本信息（存储层使用）
 pub struct SessionMeta {
-    /// Session ID
-    pub session_id: SessionId,
+    /// Session类型
+    pub session_type: SessionType,
+    /// 根Agent ULID
+    pub root_agent: AgentUlid,
+    /// 下一个消息ID
+    pub next_message_id: u64,
     /// 创建时间
     pub created_at: DateTime<Utc>,
     /// 最后更新时间
     pub updated_at: DateTime<Utc>,
-    /// 元数据
+    /// 用户自定义元数据
     pub metadata: SessionMetadata,
 }
 
-
-```rust
 use std::sync::atomic::{AtomicU64, Ordering};
-
-/// 消息ID分配器错误
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("消息ID已溢出")]
-    MessageIdOverflow,
-}
 
 /// 消息ID分配器
 pub struct MessageIdAllocator {
@@ -146,16 +189,17 @@ impl MessageIdAllocator {
     /// 获取下一个消息ID
     /// 
     /// 使用 fetch_update 实现原子检查+递增，避免 TOCTOU 并发漏洞
-    pub fn next_id(&self) -> Result<u64, Error> {
+    /// 返回 None 表示 ID 已溢出
+    pub fn next_id(&self) -> Option<u64> {
         self.counter
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
-                if current >= u64::MAX - 1 {
-                    None // 返回None表示不更新，fetch_update会返回Err
+                if current >= u64::MAX {
+                    None
                 } else {
                     Some(current + 1)
                 }
             })
-            .map_err(|_| Error::MessageIdOverflow)
+            .ok()
     }
 }
 ```
@@ -751,7 +795,7 @@ impl SessionManager {
         }
         
         // 2. 如果缓存不存在，从存储加载Session元数据
-        let session_meta = self.storage.load_session_meta(session_id.clone()).await?;
+        let metadata = self.storage.load_session_meta(session_id.clone()).await?;
         
         // 3. 获取Session中的所有Agent列表
         let agent_list = self.storage.list_agents(session_id.clone()).await?;
@@ -759,13 +803,14 @@ impl SessionManager {
         // 4. 创建Session实例，初始化字段
         let session = Session {
             id: session_id.clone(),
-            session_type: session_meta.session_type,
-            root_agent: session_meta.root_agent,
+            session_type: metadata.session_type,
+            root_agent: metadata.root_agent,
             agents: HashMap::new(),  // 懒加载：初始为空
-            id_allocator: MessageIdAllocator::new(session_meta.next_message_id),
-            created_at: session_meta.created_at,
-            updated_at: session_meta.updated_at,
-            metadata: session_meta.metadata,
+            id_allocator: MessageIdAllocator::new(metadata.next_message_id),
+            created_at: metadata.created_at,
+            updated_at: metadata.updated_at,
+            metadata: metadata.metadata,
+            storage: Arc::clone(&self.storage),  // 复用SessionManager的存储后端
         };
         
         // 5. 预加载根Agent到缓存
@@ -829,7 +874,7 @@ impl Session {
         
         // 2. 生成下一个消息ID
         let message_id = self.id_allocator.next_id()
-            .map_err(|e| SessionError::MessageIdOverflow(e.to_string()))?;
+            .ok_or_else(|| SessionError::MessageIdOverflow("Message ID allocator overflow".to_string()))?;
         
         // 3. 创建Message实例
         let message = Message {
@@ -893,12 +938,9 @@ impl Session {
 
 ### 7.1 上下文组装
 
-```rust
-/// Token计数器trait
-pub trait TokenCounter: Send + Sync {
-    fn count_tokens(&self, text: &str) -> usize;
-}
+> Token计数器接口定义见 [TECH-CONTEXT.md#61-token计数器](TECH-CONTEXT.md#61-token计数器)
 
+```rust
 /// Token截断错误
 #[derive(Debug, Error)]
 pub enum ContextError {
@@ -998,7 +1040,7 @@ impl ContextBuilder {
                 // 从最新的消息开始，保留在token限制内的消息
                 for msg in messages.iter().rev() {
                     let msg_text = msg.content();
-                    let msg_tokens = counter.count_tokens(msg_text);
+                    let msg_tokens = counter.estimate_string_tokens(msg_text);
                     
                     if total_tokens + msg_tokens > max_tokens {
                         break;
@@ -1075,7 +1117,7 @@ graph TD
 
 ## 8. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
 > 
 > `SessionError` 和 `StorageError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。
 
@@ -1125,6 +1167,110 @@ pub enum StorageError {
     Transaction(String),
 }
 ```
+
+---
+
+## 9. Memory抽象层
+
+> 参考 ZeroClaw 的 Memory 抽象设计
+
+### 9.1 Memory Trait 定义
+
+```rust
+/// Memory后端接口
+#[async_trait]
+pub trait Memory: Send + Sync {
+    /// 存储记忆
+    async fn store(&self, entry: MemoryEntry) -> Result<(), MemoryError>;
+    
+    /// 检索记忆
+    async fn recall(&self, query: &str, limit: usize) -> Result<Vec<MemoryEntry>, MemoryError>;
+    
+    /// 获取指定记忆
+    async fn get(&self, key: &str) -> Result<Option<MemoryEntry>, MemoryError>;
+    
+    /// 删除记忆
+    async fn delete(&self, key: &str) -> Result<(), MemoryError>;
+    
+    /// 清空记忆
+    async fn clear(&self) -> Result<(), MemoryError>;
+}
+
+/// 记忆条目
+pub struct MemoryEntry {
+    /// 唯一键
+    pub key: String,
+    /// 内容
+    pub content: String,
+    /// 分类
+    pub category: MemoryCategory,
+    /// 重要性
+    pub importance: f32,
+    /// 创建时间
+    pub created_at: DateTime<Utc>,
+}
+
+/// 记忆分类
+#[derive(Debug, Clone)]
+pub enum MemoryCategory {
+    /// 全局记忆
+    Global,
+    /// 目录记忆
+    Directory(PathBuf),
+    /// 会话记忆
+    Session(SessionId),
+}
+
+/// Memory错误类型
+#[derive(Debug, Error)]
+pub enum MemoryError {
+    #[error("存储失败: {0}")]
+    StoreFailed(String),
+    
+    #[error("检索失败: {0}")]
+    RecallFailed(String),
+    
+    #[error("记忆未找到: {0}")]
+    NotFound(String),
+    
+    #[error("删除失败: {0}")]
+    DeleteFailed(String),
+    
+    #[error("清空失败: {0}")]
+    ClearFailed(String),
+    
+    #[error("序列化错误: {0}")]
+    Serialization(String),
+    
+    #[error("IO错误: {0}")]
+    Io(#[from] std::io::Error),
+}
+```
+
+### 9.2 Memory后端实现
+
+| 后端 | 描述 | 适用场景 |
+|------|------|---------|
+| `MemoryBackend::File` | 文件系统存储 | 本地开发 |
+| `MemoryBackend::Sqlite` | SQLite持久化 | 单机部署 |
+| `MemoryBackend::Postgres` | PostgreSQL存储 | 生产部署 |
+| `MemoryBackend::None` | 禁用 | 调试 |
+
+### 9.3 记忆加载策略
+
+```mermaid
+graph TB
+    subgraph "加载阶段"
+        L1[阶段1: 加载标题+摘要]
+        L2[阶段2: 按需加载完整内容]
+    end
+    
+    L1 -->|模型决策| L2
+```
+
+**两层加载模式：**
+- 第一层（始终加载）：标题 + 摘要
+- 第二层（按需加载）：完整内容
 
 ---
 

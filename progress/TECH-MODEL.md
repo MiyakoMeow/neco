@@ -6,6 +6,13 @@
 
 模型服务模块负责与各种LLM提供商交互，提供统一的调用接口，支持故障转移、重试和流式输出。
 
+### 1.1 交叉引用说明
+
+本文档涉及以下其他文档定义的类型：
+- **Role, Message**: 见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)
+- **Tool, ToolCall, ResponseFormat**: 见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)
+- **AppError**: 见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)
+
 ## 2. 架构设计
 
 ### 2.1 模块结构
@@ -13,7 +20,7 @@
 ```mermaid
 graph TB
     subgraph "Model Service"
-        MC[ModelClient trait]
+        MC[ModelProvider trait]
         
         subgraph "Providers"
             OP[OpenAI Provider]
@@ -51,15 +58,50 @@ graph TB
     CH --> MSG
 ```
 
-## 3. 核心Trait设计
+## 3. Provider抽象与Factory
 
-### 3.1 ModelClient Trait
+> 参考 ZeroClaw 的 Provider 抽象设计
+
+### 3.1 Provider Trait 扩展
 
 ```rust
-use async_trait::async_trait;
-use futures::Stream;
+/// 模型提供者接口
+#[async_trait]
+pub trait ModelProvider: Send + Sync {
+    /// 发送聊天完成请求
+    async fn chat_completion(&self, request: ChatRequest) -> Result<ChatResponse, ProviderError>;
+    
+    /// 发送流式聊天完成请求
+    async fn chat_completion_stream(&self, request: ChatRequest) -> Result<BoxStream<Result<ChatChunk, ProviderError>>, ProviderError>;
+    
+    /// 获取模型能力
+    fn capabilities(&self) -> ModelCapabilities;
+    
+    /// 健康检查
+    async fn health_check(&self) -> Result<(), ProviderError>;
+    
+    /// 提供商名称
+    fn name(&self) -> &str;
+}
 
-/// 模型客户端抽象
+/// 模型能力
+#[derive(Debug, Clone)]
+pub struct ModelCapabilities {
+    /// 是否支持流式输出
+    pub streaming: bool,
+    /// 是否支持工具调用
+    pub tools: bool,
+    /// 是否支持函数调用
+    pub functions: bool,
+    /// 是否支持JSON模式
+    pub json_mode: bool,
+    /// 是否支持视觉输入
+    pub vision: bool,
+    /// 上下文窗口大小
+    pub context_window: usize,
+}
+
+/// 模型客户端接口（与Provider平级的抽象）
 #[async_trait]
 pub trait ModelClient: Send + Sync {
     /// 发送聊天完成请求
@@ -80,59 +122,60 @@ pub trait ModelClient: Send + Sync {
     /// 健康检查
     async fn health_check(&self) -> Result<(), ModelError>;
 }
-
-/// 模型能力
-pub struct ModelCapabilities {
-    /// 是否支持流式输出
-    pub streaming: bool,
-    /// 是否支持工具调用
-    pub tools: bool,
-    /// 是否支持函数调用
-    pub functions: bool,
-    /// 是否支持JSON模式
-    pub json_mode: bool,
-    /// 是否支持视觉
-    pub vision: bool,
-    /// 上下文窗口大小
-    pub context_window: usize,
-}
 ```
 
-### 3.2 Provider Factory
+### 3.2 ProviderFactory 注册机制
+
+```mermaid
+graph TB
+    subgraph "配置"
+        C[Config]
+    end
+    
+    subgraph "Factory注册"
+        PF[ProviderFactory]
+        R[注册表]
+    end
+    
+    subgraph "Providers"
+        P1[OpenAI]
+        P2[Anthropic]
+        P3[OpenRouter]
+        P4[自定义]
+    end
+    
+    C --> PF
+    PF --> R
+    R --> P1
+    R --> P2
+    R --> P3
+    R --> P4
+```
+
+### 3.3 已支持Provider
+
+| Provider | 类型 | 特性 |
+|----------|------|------|
+| OpenAI | 官方 | GPT-4o, GPT-4o-mini, 完整支持 |
+| Anthropic | 官方 | Claude 3.5, Claude 3, 预留 |
+| OpenRouter | 兼容 | 50+模型, 自动路由 |
+| 自定义 | 兼容 | OpenAI兼容API |
+
+### 3.4 可靠性机制
 
 ```rust
-/// 提供商工厂
-pub struct ProviderFactory;
+/// 可靠Provider包装器（支持故障转移和重试）
+pub struct ReliableProvider {
+    primary: Box<dyn ModelProvider>,
+    fallbacks: Vec<Box<dyn ModelProvider>>,
+    retry_policy: RetryPolicy,
+}
 
-impl ProviderFactory {
-    /// 根据配置创建提供商客户端
-    pub fn create(config: &ModelProvider) -> Result<Box<dyn ModelClient>, ConfigError> {
-        // TODO: 实现提供商客户端工厂方法
-        // 根据配置中的provider_type创建对应的客户端实例
-        // 支持OpenAI、Anthropic、OpenRouter等多种提供商
-        match config.provider_type {
-            ProviderType::OpenAI => {
-                // TODO: 创建OpenAI客户端
-                // TODO: 实现代码: Ok(Box::new(OpenAiClient::new(config)?))
-                todo!()
-            }
-            ProviderType::Anthropic => {
-                // TODO: 实现Anthropic提供商支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("Anthropic".to_string()))
-                todo!()
-            }
-            ProviderType::OpenRouter => {
-                // TODO: 实现OpenRouter提供商支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("OpenRouter".to_string()))
-                todo!()
-            }
-            ProviderType::OpenAIResponses => {
-                // TODO: 实现OpenAI Responses API支持
-                // TODO: 实现代码: Err(ConfigError::ProviderNotImplemented("OpenAIResponses".to_string()))
-                todo!()
-            }
-        }
-    }
+/// 模型路由器（根据复杂度选择合适的模型）
+pub struct RouterProvider {
+    routes: HashMap<String, Box<dyn ModelProvider>>,
+    default: Box<dyn ModelProvider>,
+    complexity_scorer: ComplexityScorer,
 }
 ```
 
@@ -140,8 +183,7 @@ impl ProviderFactory {
 
 ### 4.1 请求数据结构
 
-> **注意**: `Role` 类型定义见 [TECH-SESSION.md](TECH-SESSION.md#33-消息结构)。
-> 模型层请求使用 `ModelMessage`（不含 `id`），与 Session 层 `Message`（含 `id`）分离。
+> **设计说明**: 模型层请求使用 `ModelMessage`（不含 `id`），与 Session 层 `Message`（含 `id`）分离，实现层次职责隔离。
 
 ```rust
 /// 模型层消息（不含Session管理的id字段）
@@ -166,7 +208,7 @@ pub struct ChatRequest {
     pub tools: Option<Vec<Tool>>,
     /// 工具选择策略
     pub tool_choice: Option<ToolChoice>,
-    /// 响应格式（定义见 TECH-TOOL.md）
+    /// 响应格式
     pub response_format: Option<ResponseFormat>,
     
     /// 停止序列
@@ -198,27 +240,9 @@ impl ModelGroupClient {
     pub fn new(
         name: String,
         models: Vec<ModelRef>,
-        providers: &HashMap<String, ModelProvider>,
+        clients: HashMap<String, Arc<dyn ModelClient>>,
     ) -> Result<Self, ConfigError> {
-        // TODO: 实现模型组客户端初始化
-        // 遍历模型列表，为每个模型创建对应的客户端实例
-        // 建立客户端缓存，支持故障转移和重试
-        // TODO: 实现代码:
-        // let mut clients = HashMap::new();
-        // for model in &models {
-        //     let provider = providers.get(&model.provider_id)
-        //         .ok_or_else(|| ConfigError::ProviderNotFound {
-        //             group: name.clone(),
-        //             provider: model.provider_id.clone(),
-        //         })?;
-        //     let client = ProviderFactory::create(provider)?;
-        //     clients.insert(
-        //         format!("{}/{}", model.provider_id, model.model_name),
-        //         Arc::from(client),
-        //     );
-        // }
-        // Ok(Self { name, models, clients, retry_config: RetryConfig::default() })
-        todo!()
+        Ok(Self { name, models, clients, retry_config: RetryConfig::default() })
     }
     
     /// 发送请求（带故障转移）
@@ -312,27 +336,32 @@ use async_openai::{
         CreateChatCompletionRequest,
     },
 };
+use secrecy::Secret;
+use url::Url;
+
+/// OpenAI客户端配置
+#[derive(Debug, Clone)]
+pub struct OpenAiClientConfig {
+    /// API密钥
+    pub api_key: Secret<String>,
+    /// 基础URL
+    pub base_url: Url,
+}
 
 /// OpenAI兼容API客户端
 pub struct OpenAiClient {
     inner: Client<OpenAIConfig>,
-    config: ModelProvider,
+    config: Arc<OpenAiClientConfig>,
 }
 
 impl OpenAiClient {
     /// 创建新客户端
-    pub fn new(config: &ModelProvider) -> Result<Self, ConfigError> {
-        // TODO: 实现OpenAI客户端初始化
-        // 验证配置并创建async-openai客户端实例
-        // TODO: 实现代码:
-        // let api_key = config.api_key.get_key()
-        //     .map_err(|_| ConfigError::NoEnvVarFound)?;
-        // let openai_config = OpenAIConfig::new()
-        //     .with_api_key(api_key.expose_secret())
-        //     .with_api_base(config.base_url.to_string());
-        // let client = Client::with_config(openai_config);
-        // Ok(Self { inner: client, config: config.clone() })
-        todo!()
+    pub fn new(config: OpenAiClientConfig) -> Result<Self, ConfigError> {
+        let openai_config = OpenAIConfig::new()
+            .with_api_key(config.api_key.expose_secret().clone())
+            .with_api_base(config.base_url.to_string());
+        let client = Client::with_config(openai_config);
+        Ok(Self { inner: client, config: Arc::new(config) })
     }
     
     /// 转换消息格式
@@ -474,8 +503,7 @@ impl StreamHandler {
 
 ## 7. 工具调用支持
 
-> **注意**: 核心的 `ToolCall` 类型定义见 [TECH-TOOL.md](TECH-TOOL.md#3-核心trait设计)。
-> `ToolCallRequest` 和 `ToolCallResult` 是模型层用于处理工具调用的辅助类型。
+> **设计说明**: `ToolCallRequest` 和 `ToolCallResult` 是模型层用于处理工具调用的辅助类型，与核心的 `ToolCall` 类型（定义见 TECH-TOOL.md）分离。
 
 ### 7.1 工具调用处理
 
@@ -561,9 +589,7 @@ pub async fn execute_tool_calls_parallel(
 
 ## 8. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
-> 
-> `ModelError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`ModelError::OpenAi` 携带的原生错误会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
+> **设计说明**: `ModelError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`ModelError::OpenAi` 携带的原生错误会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
 
 ```rust
 use thiserror::Error;

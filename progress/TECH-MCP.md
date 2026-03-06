@@ -45,46 +45,18 @@ graph TB
 
 ### 3.1 MCP服务器配置
 
-配置与 TOML 文件格式对应，用于定义 MCP 服务器连接参数。
+> 配置与 TOML 文件格式对应，用于定义 MCP 服务器连接参数。传输配置定义见 [TECH-CONFIG.md#3.4-MCP服务器配置](./TECH-CONFIG.md#34-mcp服务器配置)。
 
 ```rust
 /// MCP服务器配置
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerConfig {
-    /// 传输类型
-    #[serde(flatten)]
-    pub transport: McpTransportConfig,
+    /// 传输类型（引用自 neco_mcp::McpTransportConfig）
+    pub transport: crate::mcp::McpTransportConfig,
     
     /// 环境变量
     #[serde(default)]
     pub env: HashMap<String, String>,
-}
-
-/// MCP传输方式配置
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type")]
-pub enum McpTransportConfig {
-    /// 本地stdio传输
-    #[serde(rename = "stdio")]
-    Stdio {
-        /// 命令
-        command: String,
-        /// 参数
-        #[serde(default)]
-        args: Vec<String>,
-    },
-    
-    /// HTTP传输
-    #[serde(rename = "http")]
-    Http {
-        /// 服务器URL
-        url: Url,
-        /// Bearer Token环境变量名
-        bearer_token_env: Option<String>,
-        /// 额外HTTP头
-        #[serde(default)]
-        headers: HashMap<String, String>,
-    },
 }
 
 /// MCP服务器状态
@@ -96,26 +68,11 @@ pub enum McpServerStatus {
     Connecting,
     /// 已连接
     Connected,
+    /// 重连中（用于自动重连场景）
+    Reconnecting,
     /// 错误
     Error,
 }
-```
-
-### 3.2 rmcp 类型
-
-使用 rmcp 提供的类型，不再需要自定义：
-
-```rust
-// rmcp 提供的类型：
-// - rmcp::model::McpTool (工具定义)
-// - rmcp::model::CallToolResult (工具调用结果)
-// - rmcp::model::ToolContent (工具返回内容)
-// - rmcp::service::Peer (MCP 连接接口)
-
-// 示例：使用 rmcp 类型
-use rmcp::model::{McpTool, CallToolResult, ToolContent};
-
-// TODO: 根据需要定义包装类型
 ```
 
 ## 4. 传输层实现
@@ -184,48 +141,45 @@ impl ClientHandler for RmcpClient {
 }
 ```
 
-### 4.2 Stdio 传输
+### 4.2 传输层连接
 
 ```rust
+/// 连接辅助函数（统一连接逻辑）
+async fn connect_with_transport<T>(
+    transport: T,
+) -> Result<Peer, McpError>
+where
+    T: rmcp::transport::Transport + Unpin + 'static,
+{
+    let client = RmcpClient;
+    client.serve(transport).await
+}
+
 /// 连接到 MCP 服务器 (stdio 模式)
 pub async fn connect_stdio(
     command: String,
     args: Vec<String>,
 ) -> Result<Peer, McpError> {
-    let client = RmcpClient;
+    let transport = TokioChildProcess::new(
+        Command::new(command).configure(|cmd| {
+            for arg in args {
+                cmd.arg(arg);
+            }
+        })?
+    )?;
     
-    // 使用 rmcp 的 TokioChildProcess
-    let peer = client
-        .serve(TokioChildProcess::new(
-            Command::new(command).configure(|cmd| {
-                for arg in args {
-                    cmd.arg(arg);
-                }
-            })?
-        )?)
-        .await?;
-    
-    Ok(peer)
+    connect_with_transport(transport).await
 }
 
 // TODO: 补充环境变量处理
-// 提示：使用 Command::env() 设置环境变量
-```
+// 提示：使用 Command::envs() 设置环境变量
 
-### 4.3 HTTP 传输
-
-```rust
 /// 连接到 MCP 服务器 (HTTP 模式)
 pub async fn connect_http(
     url: &str,
 ) -> Result<Peer, McpError> {
-    let client = RmcpClient;
-    
-    let peer = client
-        .serve(StreamableHttpClientTransport::new(url))
-        .await?;
-    
-    Ok(peer)
+    let transport = StreamableHttpClientTransport::new(url);
+    connect_with_transport(transport).await
 }
 
 // TODO: 补充认证头处理
@@ -261,7 +215,9 @@ pub struct McpManager {
     config: HashMap<String, McpServerConfig>,
 }
 
-/// MCP连接
+/// MCP连接（基础连接信息）
+/// 
+/// 注意：连接池和高级生命周期管理见 5.2 和 5.4 节
 pub struct McpConnection {
     pub name: String,
     pub config: McpServerConfig,
@@ -313,6 +269,85 @@ impl McpManager {
         // TODO: 关闭连接
         todo!()
     }
+}
+```
+
+### 5.2 连接管理器扩展
+
+```mermaid
+graph TB
+    subgraph "McpManager"
+        CM[连接管理器]
+        LR[生命周期管理]
+        RR[重试管理]
+    end
+    
+    subgraph "连接池"
+        CP1[连接1]
+        CP2[连接2]
+        CP3[连接N]
+    end
+    
+    CM --> LR
+    CM --> RR
+    CM --> CP1
+    CM --> CP2
+    CM --> CP3
+```
+
+### 5.3 连接状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected
+    Disconnected --> Connecting: connect()
+    Connecting --> Connected: 成功
+    Connecting --> Error: 失败
+    Connected --> Reconnecting: 心跳失败
+    Reconnecting --> Connected: 重连成功
+    Reconnecting --> Disconnected: 重连失败
+    Connected --> Disconnected: disconnect()
+    Error --> Disconnected
+    Disconnected --> [*]
+```
+
+### 5.4 连接池设计
+
+> **TODO**: 连接池功能尚未实现，当前为设计文档阶段。
+
+```rust
+/// MCP连接池配置
+pub struct McpPoolConfig {
+    /// 最大连接数
+    pub max_connections: usize,
+    /// 最小空闲连接
+    pub min_idle: usize,
+    /// 连接超时
+    pub connection_timeout: Duration,
+    /// 空闲超时
+    pub idle_timeout: Duration,
+    /// 最大生命周期
+    pub max_lifetime: Duration,
+}
+
+/// 连接池统计
+pub struct PoolStats {
+    /// 活跃连接数
+    pub active: usize,
+    /// 空闲连接数
+    pub idle: usize,
+    /// 等待连接的请求数
+    pub waiting: usize,
+    /// 总连接数
+    pub total: usize,
+}
+
+/// MCP连接池（TODO: 实现）
+pub struct McpConnectionPool {
+    // TODO: 实现连接池
+    // - 使用 channel 实现连接管理
+    // - 支持连接获取/释放
+    // - 实现健康检查和连接回收
 }
 ```
 
@@ -386,40 +421,9 @@ pub async fn register_mcp_tools(
 
 ## 7. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
-
-```rust
-use rmcp::ErrorData as McpError;
-
-// 使用 rmcp 的 ErrorData
-// 也可以添加自定义错误
-#[derive(Debug, Error)]
-pub enum McpError {
-    #[error("配置未找到: {0}")]
-    ConfigNotFound(String),
-    
-    #[error("未连接到服务器: {0}")]
-    NotConnected(String),
-    
-    #[error("启动失败: {0}")]
-    SpawnFailed(String),
-    
-    #[error("IO错误: {0}")]
-    Io(#[from] std::io::Error),
-    
-    #[error("序列化错误: {0}")]
-    Serialization(#[from] serde_json::Error),
-    
-    #[error("无效请求")]
-    InvalidRequest,
-    
-    #[error("超时")]
-    Timeout,
-    
-    #[error("内部错误: {0}")]
-    Internal(String),
-}
-```
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+>
+> MCP模块使用 `rmcp::ErrorData` 作为基础错误类型，相关错误会统一转换并汇总到 `AppError::Mcp` 中。
 
 ---
 

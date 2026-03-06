@@ -475,50 +475,7 @@ Workflow: PRD工作流 | Nodes: 2/6 | Agents: 3 运行中, 1 完成 | 14:32:05
 
 ### 5.6 命令系统
 
-```rust
-impl ReplInterface {
-    /// 处理工作流命令
-    pub async fn handle_workflow_command(&mut self, args: &[&str]) -> Result<(), UiError> {
-        match args[0] {
-            "status" => self.show_workflow_status().await?,
-            "graph" => self.export_workflow_graph().await?,
-            _ => return Err(UiError::UnknownCommand("workflow".to_string())),
-        }
-        Ok(())
-    }
-    
-    /// 处理Agent命令
-    pub async fn handle_agent_command(&mut self, args: &[&str]) -> Result<(), UiError> {
-        match args[0] {
-            "tree" => self.show_agent_tree().await?,
-            "stats" => self.show_agent_stats().await?,
-            _ => return Err(UiError::UnknownCommand("agents".to_string())),
-        }
-        Ok(())
-    }
-}
-```
-
-#### 命令输出示例
-
-```
-/workflow status
-Workflow: PRD工作流
-  write-prd        ● Success  (2次)
-  review-prd       ● Running
-  write-tech-doc   ○ Waiting
-  ...
-
-/agents tree
-Agent(01HF8...): Root [Running] 15 msgs
-├── Agent(01HG9...): research [Idle] 8 msgs
-│   └── Agent(01HJ2...): detail [Idle] 3 msgs
-└── Agent(01HK3...): writer [Completed] 4 msgs
-
-/agents stats
-总计: 4 Agents (运行中:1 完成:1 空闲:2)
-消息总数: 30 | 平均响应: 2.3s
-```
+命令由5.1节的 `handle_command` 方法统一处理，工作流和Agent相关命令分别调用 `render_workflow_status` 和 `render_agent_tree` 方法进行渲染。
 
 ### 5.7 实时更新
 
@@ -570,6 +527,47 @@ use axum::{
     response::IntoResponse,
 };
 
+/// 守护进程配置
+pub struct DaemonConfig {
+    /// 监听主机
+    pub host: String,
+    /// 监听端口
+    pub port: u16,
+    /// TLS配置
+    pub tls_config: Option<TlsConfig>,
+    /// 速率限制配置
+    pub rate_limit: Option<RateLimitConfig>,
+    /// CORS配置
+    pub cors: Option<CorsConfig>,
+}
+
+/// CORS配置
+#[derive(Debug, Clone)]
+pub struct CorsConfig {
+    /// 允许的来源列表
+    pub allowed_origins: Vec<String>,
+    /// 允许的方法
+    pub allowed_methods: Vec<String>,
+    /// 允许的头部
+    pub allowed_headers: Vec<String>,
+    /// 是否允许凭证
+    pub allow_credentials: bool,
+    /// 预检请求缓存时间（秒）
+    pub max_age: u64,
+}
+
+impl Default for CorsConfig {
+    fn default() -> Self {
+        Self {
+            allowed_origins: vec!["http://localhost".to_string(), "http://127.0.0.1".to_string()],
+            allowed_methods: vec!["GET".to_string(), "POST".to_string()],
+            allowed_headers: vec!["Content-Type".to_string()],
+            allow_credentials: false,
+            max_age: 3600,
+        }
+    }
+}
+
 /// 后台守护进程
 pub struct DaemonInterface {
     config: DaemonConfig,
@@ -577,23 +575,7 @@ pub struct DaemonInterface {
     workflow_engine: Arc<WorkflowEngine>,
 }
 
-#[derive(Debug, Clone)]
-pub struct DaemonConfig {
-    /// 监听地址
-    pub host: String,
-    /// 监听端口
-    pub port: u16,
-    /// API密钥（可选）
-    pub api_key: Option<String>,
-    /// CORS允许的源
-    pub cors_allowed_origins: Vec<String>,
-    /// 速率限制配置
-    pub rate_limit_config: Option<RateLimitConfig>,
-    /// TLS配置
-    pub tls_config: Option<TlsConfig>,
-    /// 健康检查路径
-    pub health_check_paths: Vec<String>,
-}
+
 
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -615,25 +597,21 @@ pub struct TlsConfig {
 
 impl DaemonInterface {
     pub async fn run(self) -> Result<(), UiError> {
-        // TODO: 构建Axum路由器
-        // TODO: 配置Session相关API端点（创建、获取、消息）
-        // TODO: 配置Agent相关API端点（树形结构、消息获取）
-        // TODO: 配置Workflow相关API端点（启动、状态、控制）
-        // TODO: 配置WebSocket实时事件端点
-        // TODO: 设置应用状态（session_manager、workflow_engine）
+        // 构建Axum路由器，配置Session相关API端点（创建、获取、消息）
+        // 配置Agent相关API端点（树形结构、消息获取）
+        // 配置Workflow相关API端点（启动、状态、控制）
+        // 配置WebSocket实时事件端点
+        // 设置应用状态（session_manager、workflow_engine）
         
-        // TODO: 添加CORS中间件
-        // TODO: 添加速率限制中间件
-        // TODO: 添加日志中间件
-        // TODO: 添加压缩中间件
+        // 添加CORS中间件
+        // 添加速率限制中间件
+        // 添加日志中间件
+        // 添加压缩中间件
         
-        // TODO: 如果配置了TLS，启动HTTPS服务器
-        // TODO: 否则启动普通HTTP服务器
-        
-        // TODO: 启动HTTP服务器
-        // TODO: 绑定监听地址和端口
-        // TODO: 打印服务器启动信息
-        // TODO: 启动Axum服务
+        // 启动HTTP服务器，绑定监听地址和端口
+        // 打印服务器启动信息
+        // 如果配置了TLS，启动HTTPS服务器
+        // 否则启动普通HTTP服务器
         
         Ok(())
     }
@@ -645,7 +623,6 @@ struct AppState {
     session_manager: Arc<SessionManager>,
     workflow_engine: Arc<WorkflowEngine>,
 }
-```
 
 ### 6.2 API端点
 
@@ -710,16 +687,6 @@ pub enum ControlAction {
     Pause,
     Resume,
     Terminate,
-}
-
-impl std::fmt::Display for ControlAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ControlAction::Pause => write!(f, "paused"),
-            ControlAction::Resume => write!(f, "resumed"),
-            ControlAction::Terminate => write!(f, "terminated"),
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for ControlAction {
@@ -842,9 +809,9 @@ async fn handle_socket(
 
 ## 7. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
-> 
-> `UiError` 和 `ApiError` 作为模块特定错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+>
+> `UiError` 和 `ApiError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。
 
 ```rust
 #[derive(Debug, Error)]

@@ -79,6 +79,7 @@ graph TB
 ```rust
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::RwLock;
 
 /// 工具提供者接口
 #[async_trait]
@@ -123,6 +124,9 @@ pub struct ToolResult {
 }
 
 /// 工具错误
+/// 
+/// 注: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+/// `ToolError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Tool`。
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("参数无效: {0}")]
@@ -157,45 +161,75 @@ pub enum ToolError {
 }
 ```
 
-### 3.2 工具注册表
+### 3.2 ToolRegistry Trait
 
 ```rust
-/// 工具注册表
-pub struct ToolRegistry {
-    /// 工具映射（使用Arc支持跨线程共享）
-    tools: HashMap<String, Arc<dyn ToolProvider>>,
+/// 工具注册表接口
+/// 
+/// 用于依赖反转：上层模块依赖此Trait，具体实现可注入
+#[async_trait]
+pub trait ToolRegistry: Send + Sync {
+    /// 注册工具
+    fn register(&self, tool: Arc<dyn ToolProvider>);
     
-    /// 超时配置（按工具前缀）
-    timeout_overrides: HashMap<String, Duration>,
+    /// 获取工具
+    fn get(&self, name: &str) -> Option<Arc<dyn ToolProvider>>;
+    
+    /// 获取所有工具定义
+    fn get_tool_definitions(&self) -> Vec<ToolDefinition>;
+    
+    /// 获取工具超时配置
+    fn get_timeout(&self, tool_name: &str) -> Duration;
+    
+    /// 配置超时
+    fn set_timeout(&self, prefix: &str, duration: Duration);
+    
+    /// 列出所有工具名称
+    fn list_tools(&self) -> Vec<String>;
+    
+    /// 检查工具是否存在
+    fn has_tool(&self, name: &str) -> bool {
+        self.get(name).is_some()
+    }
 }
 
-impl ToolRegistry {
+/// 工具注册表默认实现
+pub struct DefaultToolRegistry {
+    /// 工具映射（使用RwLock支持并发访问）
+    tools: RwLock<HashMap<String, Arc<dyn ToolProvider>>>,
+    
+    /// 超时配置（按工具前缀，使用RwLock支持并发访问）
+    timeout_overrides: RwLock<HashMap<String, Duration>>,
+}
+
+impl DefaultToolRegistry {
     /// 创建空注册表
     pub fn new() -> Self {
         Self {
-            tools: HashMap::new(),
-            timeout_overrides: HashMap::new(),
+            tools: RwLock::new(HashMap::new()),
+            timeout_overrides: RwLock::new(HashMap::new()),
         }
     }
-    
-    /// 注册工具
-    pub fn register(
-        &mut self,
-        tool: Arc<dyn ToolProvider>,
-    ) {
+}
+
+impl Default for DefaultToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ToolRegistry for DefaultToolRegistry {
+    fn register(&self, tool: Arc<dyn ToolProvider>) {
         let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+        self.tools.write().unwrap().insert(name, tool);
     }
     
-    /// 获取工具
-    pub fn get(&self, name: &str) -> Option<&dyn ToolProvider> {
-        self.tools.get(name).map(|t| t.as_ref())
+    fn get(&self, name: &str) -> Option<Arc<dyn ToolProvider>> {
+        self.tools.read().unwrap().get(name).cloned()
     }
     
-    /// 获取所有工具定义（用于模型）
-    pub fn get_tool_definitions(&self,
-    ) -> Vec<ToolDefinition> {
-        self.tools.values()
+    fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools.read().unwrap().values()
             .map(|t| ToolDefinition {
                 name: t.name().to_string(),
                 description: t.description().to_string(),
@@ -204,13 +238,11 @@ impl ToolRegistry {
             .collect()
     }
     
-    /// 获取工具超时（最长前缀匹配）
-    pub fn get_timeout(&self,
-        tool_name: &str,
-    ) -> Duration {
+    fn get_timeout(&self, tool_name: &str) -> Duration {
         let mut best_match: Option<(&str, Duration)> = None;
         
-        for (prefix, duration) in &self.timeout_overrides {
+        let timeout_overrides = self.timeout_overrides.read().unwrap();
+        for (prefix, duration) in &*timeout_overrides {
             if tool_name.starts_with(prefix) {
                 if best_match.map_or(true, |(best, _)| prefix.len() > best.len()) {
                     best_match = Some((prefix, *duration));
@@ -218,28 +250,28 @@ impl ToolRegistry {
             }
         }
         
-        // 如果没有配置，使用工具自身的超时
         if let Some((_, duration)) = best_match {
             return duration;
         }
+        
+        drop(timeout_overrides);
         
         if let Some(tool) = self.get(tool_name) {
             return tool.timeout();
         }
         
-        Duration::from_secs(30) // 默认30秒
+        Duration::from_secs(30)
     }
     
-    /// 配置超时
-    pub fn set_timeout(
-        &mut self,
-        prefix: &str,
-        duration: Duration,
-    ) {
-        self.timeout_overrides.insert(
+    fn set_timeout(&self, prefix: &str, duration: Duration) {
+        self.timeout_overrides.write().unwrap().insert(
             prefix.to_string(),
             duration
         );
+    }
+    
+    fn list_tools(&self) -> Vec<String> {
+        self.tools.read().unwrap().keys().cloned().collect()
     }
 }
 
@@ -249,6 +281,39 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+}
+
+/// 工具生命周期状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolLifecycleState {
+    /// 注册到工厂
+    Registered,
+    /// 初始化完成
+    Initialized,
+    /// 可执行
+    Ready,
+    /// 执行中
+    Executing,
+    /// 执行完成
+    Completed,
+    /// 执行失败
+    Failed,
+    /// 已释放
+    Disposed,
+}
+
+impl std::fmt::Display for ToolLifecycleState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToolLifecycleState::Registered => write!(f, "Registered"),
+            ToolLifecycleState::Initialized => write!(f, "Initialized"),
+            ToolLifecycleState::Ready => write!(f, "Ready"),
+            ToolLifecycleState::Executing => write!(f, "Executing"),
+            ToolLifecycleState::Completed => write!(f, "Completed"),
+            ToolLifecycleState::Failed => write!(f, "Failed"),
+            ToolLifecycleState::Disposed => write!(f, "Disposed"),
+        }
+    }
 }
 ```
 
@@ -422,11 +487,6 @@ impl ToolProvider for FileEditTool {
 /// # 替换语义
 /// - verify_line: 1-based 行号，指定要验证和替换的单行
 /// - new_content: 替换该行的内容，可以包含多行（会展开文档）
-/// 
-/// # 验证逻辑
-/// 调用 verify_line_content 获取 VerifyResult：
-/// - ExactMatch / PrefixMatch: 验证通过，执行替换
-/// - Mismatch / TooShort / EncodingError: 返回 EditError::VerifyFailed
 fn verify_and_apply_edit(
     content: &str,
     verify_line: usize,
@@ -435,12 +495,8 @@ fn verify_and_apply_edit(
 ) -> Result<String, EditError> {
     // TODO: 实现Verify验证编辑逻辑
     // 1. 按行分割内容
-    // 2. 验证指定行内容（超出范围返回 EditError::LineOutOfRange）
-    //    - 调用 verify_line_content(actual_line, verify_content) -> VerifyResult
-    //    - 根据 VerifyResult 决定下一步：
-    //      - ExactMatch / PrefixMatch: 继续执行替换
-    //      - Mismatch / TooShort / EncodingError: 返回 EditError::VerifyFailed
-    // 3. 替换该行为 new_content（new_content 可包含多行）
+    // 2. 验证指定行内容（调用 verify_line_content）
+    // 3. 替换该行为 new_content（可包含多行）
     // 4. 返回修改后的内容
     unimplemented!()
 }
@@ -606,151 +662,7 @@ impl ActivateTool {
 |------|------|------|
 | `context::observe` | 查看当前上下文的详细信息 | 5秒 |
 
-### 6.2 context::observe 接口
-
-```rust
-/// 上下文观测工具
-pub struct ContextObserveTool {
-    observation_service: Arc<ContextObservationService>,
-}
-
-impl ContextObserveTool {
-    /// 创建观测工具
-    pub fn new(observation_service: Arc<ContextObservationService>) -> Self {
-        Self { observation_service }
-    }
-}
-
-impl ToolProvider for ContextObserveTool {
-    fn name(&self) -> &str {
-        "context::observe"
-    }
-    
-    fn description(&self) -> &str {
-        "查看当前上下文的详细信息，包括消息列表、统计信息和内容分组"
-    }
-    
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "roles": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": ["system", "user", "assistant", "tool"]},
-                    "description": "只显示指定角色的消息"
-                },
-                "min_id": {"type": "integer", "description": "最小消息ID"},
-                "max_id": {"type": "integer", "description": "最大消息ID"},
-                "with_tool_calls": {"type": "boolean", "description": "是否只显示包含工具调用的消息"},
-                "sort": {
-                    "type": "string",
-                    "enum": ["id_asc", "id_desc", "size_asc", "size_desc", "time_asc", "time_desc"],
-                    "description": "排序方式"
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["table", "json", "summary"],
-                    "description": "输出格式"
-                }
-            }
-        })
-    }
-    
-    fn timeout(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn execute(&self, args: Value) -> Result<ToolResult, ToolError>;
-}
-```
-
-### 6.3 参数Schema
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "roles": {
-      "type": "array",
-      "items": {"type": "string", "enum": ["system", "user", "assistant", "tool"]},
-      "description": "只显示指定角色的消息"
-    },
-    "min_id": {"type": "integer", "description": "最小消息ID"},
-    "max_id": {"type": "integer", "description": "最大消息ID"},
-    "with_tool_calls": {"type": "boolean", "description": "是否只显示包含工具调用的消息"},
-    "sort": {
-      "type": "string",
-      "enum": ["id_asc", "id_desc", "size_asc", "size_desc", "time_asc", "time_desc"],
-      "description": "排序方式"
-    },
-    "format": {
-      "type": "string",
-      "enum": ["table", "json", "summary"],
-      "description": "输出格式"
-    }
-  }
-}
-```
-
-### 6.4 输出格式示例
-
-#### table格式（默认）
-
-```text
-## 上下文统计
-
-- 总消息数: 15
-- 总字符数: 12,458
-- 总token数: 3,245
-- 使用率: 2.5%
-
-## 消息列表
-
-| ID | 角色      | 大小   | Token | 预览                          |
-|----|-----------|--------|-------|-------------------------------|
-| 1  | system    | 1,245  | 320   | You are a helpful AI...      |
-| 2  | user      | 156    | 40    | Hello, how are you?          |
-| 3  | assistant | 892    | 230   | I'm doing well, thank you... |
-| 4  | user      | 234    | 60    | What can you help me with?   |
-```
-
-#### summary格式
-
-```text
-# 上下文摘要
-
-当前上下文共有 15 条消息，总计 3,245 tokens，使用率为 2.5%
-
-## 按角色分组
-
-系统提示词: 2 条
-用户消息: 6 条
-助手消息: 5 条
-工具返回: 2 条
-```
-
-#### json格式
-
-```json
-{
-  "agent_ulid": "01HF8X5JQC8",
-  "statistics": {
-    "total_messages": 15,
-    "total_chars": 12458,
-    "total_tokens": 3245,
-    "usage_percentage": 2.5
-  },
-  "messages": [
-    {
-      "id": 1,
-      "role": "system",
-      "char_count": 1245,
-      "estimated_tokens": 320,
-      "timestamp": "2026-03-06T10:00:00Z"
-    }
-  ]
-}
-```
+> context::observe 详细定义见 [TECH-CONTEXT.md#3-上下文观测功能](./TECH-CONTEXT.md#3-上下文观测功能)
 
 ## 7. question工具
 
@@ -840,6 +752,100 @@ impl ToolExecutor {
     }
 }
 ```
+
+---
+
+## 9. 工具Factory注册中心
+
+> 参考 ZeroClaw 的 Factory 模式设计
+
+### 9.1 Factory Trait 定义
+
+```rust
+/// 工具工厂
+pub trait ToolFactory: Send + Sync {
+    /// 创建工具实例
+    fn create(&self, config: ToolConfig) -> Result<Arc<dyn ToolProvider>, ToolError>;
+    
+    /// 列出所有可用工具
+    fn list_tools(&self) -> Vec<ToolInfo>;
+    
+    /// 获取工具能力
+    fn capabilities(&self, name: &str) -> Option<ToolCapabilities>;
+}
+
+/// 工具能力
+pub struct ToolCapabilities {
+    /// 是否支持流式
+    pub streaming: bool,
+    /// 是否需要网络
+    pub requires_network: bool,
+    /// 资源消耗级别
+    pub resource_level: ResourceLevel,
+    /// 并发支持
+    pub concurrent: bool,
+}
+
+pub enum ResourceLevel {
+    Low,
+    Medium,
+    High,
+}
+```
+
+### 9.2 内置工具注册
+
+```mermaid
+graph LR
+    subgraph "注册阶段"
+        R1[fs工具注册]
+        R2[activate工具注册]
+        R3[multi-agent工具注册]
+        R4[context工具注册]
+    end
+    
+    subgraph "工厂中心"
+        F[ToolFactoryRegistry]
+    end
+    
+    R1 --> F
+    R2 --> F
+    R3 --> F
+    R4 --> F
+```
+
+### 9.3 动态工具发现
+
+```rust
+/// 动态工具发现配置
+pub struct ToolDiscoveryConfig {
+    /// 工具目录
+    pub tool_dirs: Vec<PathBuf>,
+    /// 自动加载
+    pub auto_load: bool,
+    /// 工具前缀
+    pub prefix: String,
+}
+
+/// 工具发现结果
+pub struct DiscoveredTool {
+    pub name: String,
+    pub path: PathBuf,
+    pub metadata: ToolMetadata,
+}
+```
+
+### 9.4 工具生命周期
+
+| 阶段 | 描述 |
+|------|------|
+| `Registered` | 注册到工厂 |
+| `Initialized` | 初始化完成 |
+| `Ready` | 可执行 |
+| `Executing` | 执行中 |
+| `Completed` | 执行完成 |
+| `Failed` | 执行失败 |
+| `Disposed` | 已释放 |
 
 ---
 

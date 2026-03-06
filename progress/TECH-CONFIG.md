@@ -101,10 +101,6 @@ impl FromStr for ModelRef {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO: 实现 ModelRef 的解析逻辑
         // 解析格式: "provider/model?temperature=0.1&reasoning_effort=high"
-        // 1. 分割查询字符串和路径部分
-        // 2. 分割提供商ID和模型名称
-        // 3. 解析查询参数到 HashMap
-        // 4. 返回 ModelRef 实例
         unimplemented!()
     }
 }
@@ -163,9 +159,6 @@ impl ApiKeyConfig {
     /// 获取API密钥
     pub fn get_key(&self) -> Result<SecretString, ConfigError> {
         // TODO: 实现API密钥获取逻辑
-        // 1. 根据配置类型（单环境变量、环境变量列表、直接值）
-        // 2. 尝试获取环境变量或使用直接值
-        // 3. 返回 SecretString 或错误
         match self {
             ApiKeyConfig::Env(var) => {
                 // TODO: 从环境变量获取密钥
@@ -194,7 +187,6 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
-        // TODO: 设置合理的重试默认值
         Self {
             max_retries: 3,
             initial_backoff: Duration::from_secs(1),
@@ -207,7 +199,7 @@ impl Default for RetryConfig {
 
 ### 3.4 MCP服务器配置
 
-> 注意: MCP传输配置定义在 [TECH-MCP.md](./TECH-MCP.md) 的 `McpTransportConfig` 中
+> 注意: MCP传输配置定义在 [TECH-MCP.md#31-mcp服务器配置](./TECH-MCP.md#31-mcp服务器配置) 的 `McpTransportConfig` 中
 
 ```rust
 /// MCP服务器配置
@@ -228,16 +220,12 @@ impl McpServer {
     /// 判断是否使用stdio模式
     pub fn is_stdio(&self) -> bool {
         // TODO: 检查传输类型是否为 Stdio
-        // 使用模式匹配判断 transport 类型
         unimplemented!()
     }
     
     /// 获取bearer token（HTTP模式）
     pub fn get_bearer_token(&self) -> Option<String> {
         // TODO: 获取HTTP模式的bearer token
-        // 1. 检查传输类型是否为Http
-        // 2. 如果有bearer_token_env环境变量，尝试获取其值
-        // 3. 返回token或None
         unimplemented!()
     }
 }
@@ -289,9 +277,6 @@ impl ToolsConfig {
     /// 获取工具超时（最长前缀匹配）
     pub fn get_timeout(&self, tool_id: &str) -> Duration {
         // TODO: 实现工具超时获取逻辑
-        // 1. 遍历所有timeout前缀配置
-        // 2. 找到与tool_id匹配的最长前缀
-        // 3. 返回对应的超时时间，若无匹配则返回默认超时
         unimplemented!()
     }
 }
@@ -309,9 +294,80 @@ pub enum RunMode {
 }
 ```
 
-## 4. 配置合并策略
+## 4. Channel抽象配置
 
-### 4.1 合并规则
+> 参考 ZeroClaw 的 Channel 抽象设计
+
+### 4.1 Channel Trait 定义
+
+```rust
+/// 消息通道接口
+#[async_trait]
+pub trait Channel: Send + Sync {
+    /// 发送消息
+    async fn send(&self, message: OutgoingMessage) -> Result<(), ChannelError>;
+    
+    /// 接收消息
+    async fn receive(&self) -> Result<IncomingMessage, ChannelError>;
+    
+    /// 通道名称
+    fn name(&self) -> &str;
+    
+    /// 健康检查
+    async fn health_check(&self) -> bool;
+}
+
+/// Channel错误类型
+#[derive(Debug, Error)]
+pub enum ChannelError {
+    #[error("发送失败: {0}")]
+    SendFailed(String),
+    
+    #[error("接收失败: {0}")]
+    ReceiveFailed(String),
+    
+    #[error("通道已关闭")]
+    ChannelClosed,
+    
+    #[error("连接错误: {0}")]
+    ConnectionError(String),
+    
+    #[error("超时: {0}")]
+    Timeout(String),
+    
+    #[error("IO错误: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// 发送消息
+pub struct OutgoingMessage {
+    pub content: String,
+    pub recipient: String,
+    pub subject: Option<String>,
+}
+
+/// 接收消息
+pub struct IncomingMessage {
+    pub id: String,
+    pub sender: String,
+    pub content: String,
+    pub channel: String,
+    pub timestamp: DateTime<Utc>,
+}
+```
+
+### 4.2 已支持Channel
+
+| Channel | 描述 | 模式 |
+|---------|------|------|
+| StdIO | 标准输入输出 | 本地 |
+| HTTP | HTTP Webhook | 远程 |
+| WebSocket | WebSocket | 双向 |
+| MCP | MCP协议 | 扩展 |
+
+## 5. 配置合并策略
+
+### 5.1 合并规则
 
 ```mermaid
 graph TD
@@ -331,7 +387,7 @@ graph TD
 | 数组追加 | 特殊语法 `+` | `models = ["+c", "+d"]` 追加元素 |
 | 对象 | 递归深度合并 | 字段级合并，子对象递归 |
 
-### 4.2 合并实现
+### 5.2 合并实现
 
 ```rust
 /// 配置合并器
@@ -341,17 +397,14 @@ impl ConfigMerger {
     /// 合并两个配置值
     pub fn merge(base: &mut Value, override_: Value) {
         // TODO: 实现配置合并逻辑
-        // 1. 处理对象类型的递归合并
-        // 2. 处理数组类型的特殊追加语法（+前缀）
-        // 3. 处理标量类型的直接替换
         unimplemented!()
     }
 }
 ```
 
-## 5. 配置加载流程
+## 6. 热重载支持
 
-### 5.1 加载时序
+### 6.1 配置加载流程
 
 ```mermaid
 sequenceDiagram
@@ -386,7 +439,7 @@ sequenceDiagram
     end
 ```
 
-### 5.2 配置验证
+### 6.2 配置验证
 
 ```rust
 /// 配置验证器
@@ -396,34 +449,22 @@ impl ConfigValidator {
     /// 验证完整配置
     pub fn validate(config: &NecoConfig) -> Result<(), ConfigError> {
         // TODO: 实现配置验证逻辑
-        // 1. 验证模型组引用有效性
-        // 2. 验证提供商配置
-        // 3. 验证MCP服务器配置
-        // 4. 验证目录存在性
         unimplemented!()
     }
     
     fn validate_model_groups(config: &NecoConfig) -> Result<(), ConfigError> {
         // TODO: 实现模型组验证逻辑
-        // 1. 遍历所有模型组
-        // 2. 验证每个模型引用的格式和有效性
-        // 3. 检查引用的提供商是否存在
         unimplemented!()
     }
     
     fn validate_providers(config: &NecoConfig) -> Result<(), ConfigError> {
         // TODO: 实现提供商验证逻辑
-        // 1. 遍历所有模型提供商
-        // 2. 验证API密钥可访问性
-        // 3. 记录警告而非错误（非阻塞）
         unimplemented!()
     }
 }
 ```
 
-## 6. 热重载支持
-
-### 6.1 热重载流程
+### 6.3 热重载机制
 
 ```mermaid
 graph TB
@@ -437,7 +478,7 @@ graph TB
     end
 ```
 
-### 6.2 线程安全配置访问
+### 6.4 线程安全配置访问
 
 ```rust
 /// 线程安全的配置管理器
@@ -452,26 +493,18 @@ impl ConfigManager {
     /// 获取当前配置（只读）
     pub fn get_config(&self) -> Arc<NecoConfig> {
         // TODO: 实现线程安全的配置获取
-        // 1. 获取读锁
-        // 2. 克隆配置
-        // 3. 释放锁并返回
         unimplemented!()
     }
     
     /// 更新配置（热重载）
     pub fn update_config(&self, new_config: NecoConfig) -> Result<(), ConfigError> {
         // TODO: 实现配置热重载逻辑
-        // 1. 验证新配置
-        // 2. 计算配置差异
-        // 3. 更新内部配置
-        // 4. 通知订阅者变更
         unimplemented!()
     }
     
     /// 订阅配置变更
     pub fn subscribe_changes(&self) -> broadcast::Receiver<ConfigChange> {
         // TODO: 实现配置变更订阅功能
-        // 返回变更通知的广播接收器
         unimplemented!()
     }
 }
@@ -557,19 +590,14 @@ default_timeout = 30
 ```rust
 use neco_config::{ConfigLoader, ConfigManager};
 
-// TODO: 实现配置加载和使用逻辑
-// 1. 创建配置加载器并指定配置目录
-// 2. 加载配置文件并处理错误
-// 3. 访问模型组、提供商等配置项
-// 4. 解析模型引用并获取提供商信息
-// 5. 获取API密钥和工具超时等运行时配置
-
 // TODO: 代码示例实现
 ```
 
 ## 8. 错误类型
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
+>
+> `ConfigError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Config`。
 
 ```rust
 #[derive(Debug, Error)]
@@ -581,17 +609,10 @@ pub enum ConfigError {
     ParseError(#[from] toml::de::Error),
     
     #[error("无效的模型引用 '{model}' 在组 '{group}'")]
-    InvalidModelRef {
-        group: String,
-        model: String,
-        source: ParseError,
-    },
+    InvalidModelRef { group: String, model: String, source: toml::de::Error },
     
     #[error("提供商未找到: {provider} (在组 {group} 中引用)")]
-    ProviderNotFound {
-        group: String,
-        provider: String,
-    },
+    ProviderNotFound { group: String, provider: String },
     
     #[error("环境变量未找到: {0}")]
     EnvVarNotFound(String),

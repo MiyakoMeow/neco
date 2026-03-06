@@ -53,16 +53,9 @@ pub enum CompactStrategy {
 
 ## 3. 上下文观测功能
 
-> 数据结构统一定义在 [TECH.md#3.6-上下文观测数据结构](TECH.md#3.6-上下文观测数据结构)
-
 ### 3.1 上下文观测服务接口
 
 ```rust
-/// 上下文观测服务
-pub struct ContextObservationService {
-    token_counter: Arc<dyn TokenCounter>,
-}
-
 /// 上下文观测服务接口
 #[async_trait]
 pub trait ContextObservationService: Send + Sync {
@@ -101,16 +94,7 @@ sequenceDiagram
     Service-->>Agent: 返回ContextObservation
 ```
 
-### 3.4 工具接口
-
-```rust
-/// context::observe 工具
-pub struct ContextObserveTool {
-    observation_service: Arc<ContextObservationService>,
-}
-```
-
-### 3.5 工具参数Schema
+### 3.4 工具参数Schema
 
 ```json
 {
@@ -150,12 +134,9 @@ pub struct ContextObserveTool {
 }
 ```
 
-### 3.6 输出格式化接口
+### 3.5 输出格式化接口
 
 ```rust
-/// 上下文观测输出格式化器
-pub struct ObservationFormatter;
-
 /// 上下文观测输出格式化器接口
 pub trait ObservationFormatter: Send + Sync {
     /// 格式化为表格
@@ -202,8 +183,10 @@ pub trait ObservationFormatter: Send + Sync {
 
 ### 4.1 压缩配置
 
+> 通用系统配置定义见 [TECH-CONFIG.md#3.5-系统配置](./TECH-CONFIG.md#35-系统配置)。
+
 ```rust
-/// 上下文配置
+/// 上下文压缩配置（模块内部使用）
 pub struct ContextConfig {
     /// 是否启用自动压缩
     pub auto_compact_enabled: bool,
@@ -503,6 +486,9 @@ impl ContextCompressionService {
 ```rust
 /// Token计数器接口
 pub trait TokenCounter: Send + Sync {
+    /// 估算字符串的token数
+    fn estimate_string_tokens(&self, text: &str) -> usize;
+    
     /// 估算消息列表的token数
     fn estimate_tokens(&self,
         messages: &[Message]
@@ -530,6 +516,12 @@ impl TiktokenCounter {
 }
 
 impl TokenCounter for TiktokenCounter {
+    fn estimate_string_tokens(&self, text: &str) -> usize {
+        // TODO: 实现基于tiktoken的字符串token估算
+        // self.bpe.encode_with_special_tokens(text).len()
+        todo!()
+    }
+    
     fn estimate_tokens(
         &self,
         messages: &[Message]
@@ -572,6 +564,11 @@ impl TokenCounter for TiktokenCounter {
 pub struct SimpleCounter;
 
 impl TokenCounter for SimpleCounter {
+    fn estimate_string_tokens(&self, text: &str) -> usize {
+        // 粗略估算：平均每个token 4个字符
+        text.len() / 4 + 4
+    }
+    
     fn estimate_tokens(
         &self,
         messages: &[Message]
@@ -764,7 +761,7 @@ pub async fn handle_compact_command(
 
 ## 9. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#53-统一错误类型设计](TECH.md#53-统一错误类型设计)。
+> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
 >
 > `CompactError` 和 `TokenError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError`。例如，`CompactError::Model` 携带的 `ModelError` 会通过 `#[source]` 属性传播到上层的 `AppError::Model`。
 
