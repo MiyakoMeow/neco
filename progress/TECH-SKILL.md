@@ -68,6 +68,9 @@ description: 提供Rust语言最佳实践、unsafe代码检查、生命周期分
 license: MIT                    # 许可证
 compatibility:                  # 兼容性说明
   - neco
+tags:                            # 标签（用于搜索和分类）
+  - rust
+  - security
 metadata:                       # 自定义元数据
   author: neco-team
   version: 1.0.0
@@ -185,6 +188,8 @@ YAML前置元数据格式见 [3.2节 SKILL.md 格式](#32-skillmd-格式)。
 
 ## 4. Skill服务
 
+> **说明**：以下代码为设计文档阶段的伪代码/占位符实现，用于记录架构设计意图。具体实现将根据实际需求在后续迭代中完成。
+
 ### 4.1 服务结构
 
 ```rust
@@ -230,14 +235,19 @@ pub struct SkillInfo {
 impl SkillService {
     /// 加载Skill索引（发现阶段）
     pub async fn load_index(&self) -> Result<SkillIndex, SkillError> {
-        // TODO: 扫描skills目录，构建索引
-        // 每个Skill只加载name和description
+        // 扫描skills目录，构建索引
+        // 1. 遍历 config_dir.join("skills") 下所有子目录
+        // 2. 读取每个子目录中的 SKILL.md
+        // 3. 解析YAML前置元数据，提取name和description
+        // 4. 返回 SkillIndex（包含 id、name、description、license、compatibility、tags）
+        //    其中 tags 从 SKILL.md 元数据中的 metadata.tags 字段提取，若无则为空数组
     }
     
     /// 获取发现阶段上下文
     pub fn get_discovery_context(&self) -> String {
-        // TODO: 生成用于发现阶段的简短上下文
+        // 生成用于发现阶段的简短上下文
         // 格式: "可用Skills: skill1 - 描述1; skill2 - 描述2; ..."
+        // 每个Skill约50-100 tokens
     }
     
     /// 加载完整Skill（激活阶段）
@@ -245,7 +255,11 @@ impl SkillService {
         &self,
         skill_id: &SkillId,
     ) -> Result<Skill, SkillError> {
-        // TODO: 加载完整SKILL.md内容
+        // 加载完整SKILL.md内容
+        // 1. 验证skill_id合法性
+        // 2. 读取 SKILL.md 完整内容
+        // 3. 解析YAML元数据 + Markdown正文
+        // 4. 返回完整Skill对象
     }
     
     /// 加载Skill资源（执行阶段）
@@ -254,7 +268,10 @@ impl SkillService {
         skill_id: &SkillId,
         path: &Path,
     ) -> Result<String, SkillError> {
-        // TODO: 按需加载scripts/references/assets中的文件
+        // 1. 拒绝绝对路径和包含 ParentDir 的路径组件
+        // 2. 将 path 与当前 skill 根目录拼接后规范化（canonicalize）
+        // 3. 校验规范化结果仍位于该 skill 根目录之下
+        // 4. 仅在校验通过后读取文件内容并返回
     }
     
     /// 激活Skill
@@ -263,7 +280,12 @@ impl SkillService {
         session_id: SessionId,
         skill_id: &SkillId,
     ) -> Result<ActivatedSkill, SkillError> {
-        // TODO: 加载完整Skill，添加到激活列表
+        // 加载完整Skill，添加到激活列表
+        // 1. 调用load_skill()获取完整内容
+        // 2. 根据 SkillSecurityConfig 校验脚本权限/确认要求
+        // 3. 若命中高风险能力，先请求用户显式确认
+        // 4. 创建ActivatedSkill实例
+        // 5. 添加到session的active_skills集合
     }
     
     /// 停用Skill
@@ -272,17 +294,21 @@ impl SkillService {
         session_id: SessionId,
         skill_id: &SkillId,
     ) -> Result<(), SkillError> {
-        // TODO: 从激活列表移除
+        // 从激活列表移除
+        // 1. 从session的active_skills集合中移除
+        // 2. 清理相关缓存
     }
     
     /// 列出所有Skills
     pub fn list_skills(&self) -> Vec<SkillInfo> {
-        // TODO: 返回Skill索引
+        // 返回Skill索引
+        // 从index中读取所有SkillInfo
     }
     
     /// 搜索Skills
     pub fn search_skills(&self, query: &str) -> Vec<SkillInfo> {
-        // TODO: 基于名称/描述搜索
+        // 基于名称/描述搜索
+        // 模糊匹配query关键词
     }
 }
 ```
@@ -402,116 +428,9 @@ Agent: 请查看安全检查清单
 Agent: 请停用 rust-coding-assistant
 ```
 
-## 7. 内置Skills
+## 7. Skill市场
 
-### 7.1 base
-
-```yaml
----
-name: base
-description: Agent的基础能力，包含通用提示和工具使用说明
----
-
-# 基础能力
-
-你是Neco，一个原生支持多智能体协作的AI助手。
-
-## 可用工具
-
-你可以通过工具与外部系统交互：
-- activate: 激活额外能力（skills、prompts、mcp）
-- fs: 文件系统操作（read、write、edit、delete）
-- mcp: MCP服务器工具
-- multi-agent: 多智能体协作（spawn、send、report）
-- question: 向用户提问
-- workflow: 工作流控制（仅工作流模式）
-
-## 如何加载内容
-
-当需要额外能力时，使用 activate 工具：
-- activate::skill <skill_id>: 激活Skill
-- activate::mcp <server_name>: 连接MCP服务器
-- activate::prompt <prompt_name>: 加载提示词组件
-
-## 注意事项
-
-- 谨慎使用文件写入操作
-- 遇到错误时先尝试理解原因再重试
-- 及时向用户汇报重要进展
-```
-
-### 7.2 multi-agent
-
-```yaml
----
-name: multi-agent
-description: 生成和管理下级Agent的能力
----
-
-# 多智能体协作
-
-你是Neco，一个支持多智能体协作的AI助手。
-
-## 创建下级Agent
-
-当你发现任务可以拆分时，使用 multi-agent::spawn 创建下级Agent：
-- agent_id: Agent定义标识
-- task: 明确的任务描述
-- model_group: 可选的模型覆盖
-- prompts: 可选的提示词覆盖
-
-## 与下级Agent通信
-
-- multi-agent::send: 向指定Agent发送消息
-- multi-agent::report: 下级向上级汇报
-
-## 最佳实践
-
-1. 保持对整体进度的掌控
-2. 适时要求下级汇报进展
-3. 合并下级结果
-4. 避免过度拆分导致开销过大
-```
-
-### 7.3 multi-agent-child
-
-```yaml
----
-name: multi-agent-child
-description: 下级Agent的行为规范
----
-
-# 下级Agent规范
-
-你是被创建的下级Agent，专注于执行分配的任务。
-
-## 职责
-
-1. 专注执行：专注于被分配的任务
-2. 主动汇报：定期向上级汇报进度
-3. 寻求帮助：遇到困难时及时询问
-
-## 可用工具
-
-- multi-agent::report: 向上级汇报
-
-## 工作流程
-
-1. 理解任务要求
-2. 制定执行计划
-3. 执行并汇报进展
-4. 完成后提交结果
-
-## 限制
-
-- 不能创建下级Agent
-- 只能通过report与上级通信
-- 所有交互通过上级转发
-```
-
-## 8. Skill市场
-
-### 8.1 市场结构
+### 7.1 市场结构
 
 ```
 ~/.config/neco/skills/
@@ -529,7 +448,7 @@ description: 下级Agent的行为规范
     └── ...
 ```
 
-### 8.2 CLI命令
+### 7.2 CLI命令
 
 ```bash
 # 列出Skills
@@ -547,14 +466,19 @@ neco skill deactivate rust-coding-assistant
 # 验证Skill格式
 neco skill validate ./rust-coding-assistant
 
-# 安装来自URL的Skill
-neco skill install https://example.com/skills/my-skill
+# 安装来自URL的Skill（需校验来源）
+neco skill install https://example.com/skills/my-skill --checksum sha256:...
+
+# 或仅允许受信注册表
+neco skill install registry://official/rust-coding-assistant
 
 # 更新Skill
 neco skill update rust-coding-assistant
 ```
 
-## 9. 安全考量
+> **安全提示**：安装来自远程URL的Skill时，务必校验来源可信性与内容完整性。建议使用 `--checksum` 参数验证SHA256哈希，或仅从受信的官方注册表安装。脚本型Skill默认需要用户显式确认后方可激活。
+
+## 8. 安全考量
 
 ```rust
 /// Skill执行安全配置
@@ -588,103 +512,58 @@ pub struct SandboxConfig {
 - 在执行潜在危险操作前请求用户确认
 - 记录所有脚本执行以供审计
 
-## 10. 错误处理
+## 9. 错误处理
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
->
-> `SkillError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Skill`。
+> 详细错误类型定义见 [TECH-ERROR.md](TECH-ERROR.md)
 
 ```rust
 #[derive(Debug, Error)]
 pub enum SkillError {
     #[error("Skill未找到: {0}")]
-    SkillNotFound(SkillId),
+    NotFound(SkillId),
     
-    #[error("Skill已激活: {0}")]
-    SkillAlreadyActivated(SkillId),
+    #[error("Skill加载失败: {0}")]
+    LoadFailed(String),
     
-    #[error("Skill未激活: {0}")]
-    SkillNotActivated(SkillId),
+    #[error("激活失败: {0}")]
+    ActivationFailed(String),
     
-    #[error("无效的Skill格式: {0}")]
-    InvalidFormat(String),
-    
-    #[error("验证失败: {0}")]
-    ValidationFailed(String),
-    
-    #[error("脚本执行失败: {0}")]
-    ScriptExecutionFailed(String),
-    
-    #[error("资源未找到: {0}")]
-    ResourceNotFound(String),
-    
-    #[error("权限不足: {0}")]
-    PermissionDenied(String),
+    #[error("执行失败: {0}")]
+    ExecutionFailed(String),
 }
 ```
 
-## 11. Skill生命周期管理
+## 10. Skill生命周期管理
 
-```mermaid
-stateDiagram-v2
-    [*] --> Discovered
-    Discovered --> Loaded: 加载索引
-    Loaded --> Activated: 激活Skill
-    Activated --> Deactivated: 停用Skill
-    Deactivated --> Activated: 重新激活
-    Deactivated --> Loaded: 卸载Skill
-    Loaded --> [*]
-```
-
-**生命周期状态：**
+Skill具有以下生命周期状态：
 
 | 状态 | 描述 |
 |------|------|
-| `Discovered` | 发现Skill但未加载 |
-| `Loaded` | 已加载索引到内存 |
-| `Activated` | Skill已激活 |
-| `Deactivated` | Skill已停用 |
+| `Discovered` | 已被索引但未激活 |
+| `Activating` | 正在激活中 |
+| `Active` | 已激活，可使用 |
+| `Deactivating` | 正在停用中 |
+| `Inactive` | 已停用 |
 
-## 12. Skill发现与注册
+状态转换：`Discovered` → `Activating` → `Active` → `Deactivating` → `Inactive` → (可重新激活) → `Activating`
 
-```mermaid
-graph TB
-    subgraph "发现阶段"
-        D1[扫描Skill目录]
-        D2[解析SKILL.md]
-        D3[构建索引]
-    end
-    
-    subgraph "注册阶段"
-        R1[验证格式]
-        R2[注册到工厂]
-        R3[发布事件]
-    end
-    
-    D1 --> D2
-    D2 --> D3
-    D3 --> R1
-    R1 --> R2
-    R2 --> R3
-```
+## 11. Skill发现与注册
 
-**发现配置：**
+### 11.1 发现流程
 
-```rust
-/// Skill发现配置
-pub struct SkillDiscoveryConfig {
-    /// Skill目录列表
-    pub skill_dirs: Vec<PathBuf>,
-    /// 自动加载
-    pub auto_load: bool,
-    /// 扫描深度
-    pub max_depth: usize,
-}
-```
+1. 扫描 `config_dir.join("skills")` 目录
+2. 解析每个Skill的 `SKILL.md` 元数据
+3. 构建Skill索引（包含id、name、description、license、compatibility、tags）
+4. 提供给Agent发现阶段使用
 
-## 13. UI集成
+### 11.2 注册机制
 
-### 13.1 Skill面板
+- 首次启动时自动扫描并注册
+- 支持热重载：配置文件变更后自动更新索引
+
+## 12. UI集成
+
+### 12.1 Skill面板
 
 ```rust
 /// 渲染Skill面板

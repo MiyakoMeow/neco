@@ -4,22 +4,11 @@
 
 ## 1. 模块概述
 
-提示词组件是用于组合Agent提示词的静态片段，可以在Agent初始化时按需加载。与Skills不同，提示词组件是轻量级的提示词片段，不包含工具依赖、激活条件等复杂结构。
+提示词组件是用于组合Agent提示词的静态片段，在Agent初始化时加载。它是纯Markdown格式的轻量级提示词片段，不包含工具依赖、激活条件等复杂结构。
 
 ## 2. 核心概念
 
-### 2.1 提示词组件 vs Skills
-
-| 特性 | 提示词组件 (Prompt Component) | Skills |
-|------|-------------------------------|--------|
-| **定位** | 静态提示词片段 | 完整的可复用能力单元 |
-| **结构** | 纯Markdown内容 | 包含YAML元数据、指令、脚本、资源 |
-| **加载方式** | Agent初始化时加载 | 按需激活（发现→激活→执行） |
-| **依赖** | 无 | 可包含工具依赖 |
-| **激活条件** | Agent配置决定 | 任务匹配时激活 |
-| **上下文消耗** | 完整加载 | 渐进式披露 |
-
-### 2.2 提示词组件定义
+### 2.1 提示词组件定义
 
 提示词组件存储在配置目录的 `prompts/` 子目录下：
 
@@ -107,28 +96,11 @@ graph TB
 
 > 详细数据结构定义见 [TECH-SESSION.md#32-agent结构](TECH-SESSION.md#32-agent结构)
 
-```rust
-/// Agent配置
-pub struct AgentConfig {
-    /// 使用的模型组
-    pub model_group: String,
-    /// 激活的提示词组件
-    pub prompts: Vec<String>,
-    /// Agent定义来源
-    pub agent_def: Option<PathBuf>,
-}
-```
+Agent配置中的 `prompts` 字段用于指定激活的提示词组件列表。
 
 ### 3.2 提示词组件存储格式
 
-Agent消息文件中的提示词配置：
-
-```toml
-# Agent配置
-[config]
-model_group = "smart"
-prompts = ["base", "multi-agent"]
-```
+> 详细配置格式见 [6.2 节](#62-agent定义中的提示词组件)
 
 ## 4. Agent提示词加载实现
 
@@ -148,7 +120,7 @@ prompts = ["base", "multi-agent"]
 ## 可用工具
 
 你可以通过工具与外部系统交互：
-- activate: 激活额外能力（skills、prompts、mcp）
+- activate: 激活额外能力（skills、mcp）
 - fs: 文件系统操作（read、write、edit、delete）
 - mcp: MCP服务器工具
 - multi-agent: 多智能体协作（spawn、send、report）
@@ -157,10 +129,7 @@ prompts = ["base", "multi-agent"]
 
 ## 如何加载内容
 
-当需要额外能力时，使用 activate 工具：
-- activate::skill <skill_id>: 激活Skill
-- activate::mcp <server_name>: 连接MCP服务器
-- activate::prompt <prompt_name>: 加载提示词组件
+> 提示词组件在 Agent 初始化时加载，无需运行时激活。
 
 ## 注意事项
 
@@ -245,14 +214,12 @@ prompts = ["base", "multi-agent"]
 
 ### 6.1 配置目录结构
 
-> 详细配置说明见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)
+提示词组件存储在配置目录的 `prompts/` 子目录下。详细配置说明见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)。
 
 ```text
-~/.config/neco/                    # 主配置目录
-├── neco.toml                     # 主配置文件
-├── prompts/
-│   ├── base.md                   # 基础提示词组件
-│   └── multi-agent.md            # 多智能体提示词
+~/.config/neco/prompts/
+├── base.md                   # 基础提示词组件
+└── multi-agent.md            # 多智能体提示词
 ```
 
 ### 6.2 Agent定义中的提示词组件
@@ -287,46 +254,10 @@ pub enum AgentError {
 
 ---
 
-## 附录：提示词组件与Skills对比
-
-### A.1 概念对比
-
-| 维度 | 提示词组件 | Skills |
-|------|-----------|--------|
-| **本质** | 静态Markdown文本片段 | 完整的能力单元 |
-| **复杂度** | 低（仅提示词） | 高（含元数据、工具、脚本） |
-| **复用性** | 组件复用 | 完整能力复用 |
-| **加载时机** | Agent初始化 | 按需激活 |
-| **卸载能力** | 不支持 | 支持停用 |
-| **渐进披露** | 不支持 | 支持 |
-
-### A.2 使用场景
-
-**提示词组件适用场景**：
-- 简单的行为规范提示
-- 通用能力扩展
-- 与Agent配置紧耦合的能力
-
-**Skills适用场景**：
-- 复杂领域知识
-- 需要脚本执行的能力
-- 可独立发布的扩展包
-
-### A.3 技术差异
-
-| 差异点 | 提示词组件 | Skills |
-|--------|-----------|--------|
-| **文件格式** | 纯Markdown | YAML前置元数据 + Markdown |
-| **目录结构** | 扁平（prompts/*.md） | 目录级（skill_name/SKILL.md） |
-| **资源支持** | 无 | scripts/, references/, assets/ |
-| **发现机制** | 文件扫描 | 目录扫描 + 索引构建 |
-| **激活机制** | 配置决定 | 显式激活/停用 |
-
 ---
 
 *关联文档：*
 - [TECH.md](TECH.md) - 总体架构文档
 - [TECH-AGENT.md](TECH-AGENT.md) - 多智能体协作模块
-- [TECH-SKILL.md](TECH-SKILL.md) - Skills模块
 - [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块
 - [TECH-CONFIG.md](TECH-CONFIG.md) - 配置管理模块

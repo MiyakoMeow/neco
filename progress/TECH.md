@@ -439,12 +439,14 @@ sequenceDiagram
 
 **事件类型说明：**
 
-| 事件类型 | 定义位置 | 描述 |
-|----------|---------|------|
-| `AgentEvent` | TECH-AGENT.md | Agent相关事件 |
-| `WorkflowEvent` | TECH-AGENT.md | 工作流相关事件 |
-| `TriggerPattern` | TECH-AGENT.md | 触发器匹配模式 |
-| `TriggerHandler` | TECH-AGENT.md | 触发处理器定义 |
+| 事件类型 | 描述 |
+|----------|------|
+| `AgentEvent` | Agent相关事件（创建、状态变更、消息、工具调用） |
+| `WorkflowEvent` | 工作流相关事件（启动、节点执行、转场） |
+| `TriggerPattern` | 触发器匹配模式 |
+| `TriggerHandler` | 触发处理器定义 |
+
+详细设计见 [TECH-AGENT.md#5-事件驱动架构](TECH-AGENT.md#5-事件驱动架构)。
 
 ### 5.3 统一错误类型设计
 
@@ -499,7 +501,7 @@ pub enum AppError {
 | Config | `ConfigError` | [TECH-CONFIG.md](TECH-CONFIG.md#8-错误类型) |
 | Context | `CompactError`, `TokenError` | [TECH-CONTEXT.md](TECH-CONTEXT.md#9-错误处理) |
 | MCP | `McpError` | [TECH-MCP.md](TECH-MCP.md#7-错误处理) |
-| Skill | `SkillError` | [TECH-SKILL.md](TECH-SKILL.md#10-错误处理) |
+| Skill | `SkillError` | [TECH-SKILL.md](TECH-SKILL.md#9-错误处理) |
 | UI | `UiError`, `ApiError` | [TECH-UI.md](TECH-UI.md#7-错误处理) |
 
 ## 6. 存储设计
@@ -508,10 +510,13 @@ pub enum AppError {
 
 ### 6.1 文件系统布局
 
+配置目录与数据目录分离：
+
 ```text
 ~/.config/neco/           # 配置目录
 ├── neco.toml            # 主配置
 ├── prompts/
+├── skills/
 ├── agents/
 └── workflows/
 
@@ -520,6 +525,8 @@ pub enum AppError {
     ├── session.toml     # Session元数据
     └── {agent_ulid}.toml  # Agent消息
 ```
+
+> 详细目录结构定义见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)
 
 ## 7. 错误处理策略
 
@@ -832,9 +839,60 @@ graph TB
 | `context_manager(&self) -> &dyn ContextManager` | 获取上下文管理器 |
 | `security_policy(&self) -> &dyn SecurityPolicy` | 获取安全策略 |
 
-## 11. 性能设计
+## 11. 提示词组件与Skills
 
-### 11.1 性能目标
+Neco提供两种扩展Agent能力的机制：**提示词组件(Prompt Components)** 和 **Skills**。它们是独立的系统，没有内置关联。
+
+### 11.1 概念对比
+
+| 维度 | 提示词组件 (Prompt Component) | Skills |
+|------|-------------------------------|--------|
+| **本质** | 静态Markdown文本片段 | 完整的能力单元 |
+| **文件格式** | 纯Markdown | YAML前置元数据 + Markdown |
+| **目录结构** | 扁平（`prompts/*.md`） | 目录级（`skill_name/SKILL.md`） |
+| **资源支持** | 无 | scripts/, references/, assets/ |
+| **复用性** | 组件复用 | 完整能力复用 |
+| **加载时机** | Agent初始化时加载 | 按需激活 |
+| **渐进披露** | 不支持 | 支持 |
+| **发现机制** | 文件扫描 | 目录扫描 + 索引构建 |
+
+### 11.2 设计差异
+
+**提示词组件**：
+- 轻量级纯Markdown片段
+- 存储于 `~/.config/neco/prompts/`
+- Agent初始化时按配置加载
+- 适合简单的行为规范提示
+
+**Skills**：
+- 完整的可复用能力单元
+- 存储于 `~/.config/neco/skills/`
+- 按需激活使用（发现→激活→执行）
+- 包含元数据、脚本、参考资料
+- 适合复杂领域知识
+
+### 11.3 详细文档
+
+- [TECH-PROMPT.md](TECH-PROMPT.md) - 提示词组件模块
+- [TECH-SKILL.md](TECH-SKILL.md) - Skills模块
+
+### 11.4 选择指南
+
+**使用提示词组件的场景**：
+- 简单的行为规范或指令
+- Agent启动时就需要的核心提示
+- 不需要额外资源文件
+- 示例：base、multi-agent
+
+**使用Skills的场景**：
+- 复杂的领域知识
+- 需要脚本或参考资料
+- 按需加载以节省上下文
+- 示例：rust-coding-assistant、web-security
+
+## 12. 性能设计
+
+### 12.1 性能目标
 
 | 指标 | 目标值 | 参考 |
 |------|--------|------|
@@ -844,7 +902,7 @@ graph TB
 | 工具超时 | 默认30s | 可配置 |
 | 上下文上限 | 模型限制 | - |
 
-### 11.2 优化策略
+### 12.2 优化策略
 
 | 优化点 | 策略 |
 |-------|------|
@@ -853,13 +911,13 @@ graph TB
 | 存储 | 异步IO、批量写入 |
 | 内存 | Session缓存LRU、消息分页 |
 
-### 11.3 资源限制
+### 12.3 资源限制
 
 - 工具超时：默认30s（可配置）
 - 上下文上限：模型限制
 - 并发Agent数：由运行时配置决定
 
-### 11.4 编译优化配置
+### 12.4 编译优化配置
 
 ```toml
 [profile.release]
@@ -869,9 +927,9 @@ codegen-units = 1
 strip = true
 ```
 
-## 12. 参考项目
+## 13. 参考项目
 
-### 12.1 ZeroClaw
+### 13.1 ZeroClaw
 
 | 维度 | ZeroClaw | Neco |
 |------|----------|------|
@@ -889,7 +947,7 @@ strip = true
 - 分层安全模型（OTP + E-Stop + 沙箱）
 - 极致性能优化（opt-level = "z", lto = "fat"）
 
-### 12.2 OpenFang
+### 13.2 OpenFang
 
 | 维度 | OpenFang | Neco |
 |------|----------|------|
@@ -907,7 +965,7 @@ strip = true
 - Capability 能力驱动安全模型
 - 防御深度（Defense in Depth）安全理念
 
-### 12.3 架构对比总结
+### 13.3 架构对比总结
 
 ```mermaid
 graph TB
@@ -941,5 +999,5 @@ graph TB
 
 ---
 
-*文档版本：0.2.0*
+*文档版本：0.3.0*
 *最后更新：2026-03-06*
