@@ -23,7 +23,7 @@
 
 提示词组件存储在配置目录的 `prompts/` 子目录下：
 
-```
+```text
 ~/.config/neco/
 ├── prompts/
 │   ├── base.md                   # 基础提示词组件
@@ -71,7 +71,7 @@ graph TB
 
 文件组件是用户自定义的提示词片段，存储在配置目录的 `prompts/` 子目录下：
 
-```
+```text
 ~/.config/neco/
 ├── prompts/
 │   ├── base.md                   # 自定义基础提示词（可覆盖内置 base）
@@ -87,7 +87,7 @@ graph TB
 
 当组件名称冲突时，**文件组件优先于内置组件**：
 
-```
+```text
 加载优先级（从高到低）：
 1. 文件组件（~/.config/neco/prompts/*.md）
 2. 内置组件（代码中的硬编码常量）
