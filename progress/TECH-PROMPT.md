@@ -61,7 +61,7 @@ graph TB
 
 | 组件名称 | 说明 | 加载条件 |
 |---------|------|---------|
-| `base` | 基础提示词组件 | 任何时候都加载 |
+| `base` | 基础提示词组件 | 默认加载（当未显式配置 prompts 时） |
 | `multi-agent` | 多智能体提示词组件 | Agent 可以生成下级Agent时 |
 | `multi-agent-child` | 子Agent提示词组件 | Agent 作为子Agent运行时 |
 
@@ -138,7 +138,7 @@ prompts = ["base", "multi-agent"]
 
 ### 5.1 base
 
-基础提示词组件，任何时候都加载。
+基础提示词组件，默认加载（当未显式配置 prompts 时）。
 
 ```markdown
 # base 提示词组件
@@ -262,7 +262,8 @@ prompts = ["base", "multi-agent"]
 ```yaml
 # Agent头部信息
 # （可选）激活的提示词组件。按顺序激活。
-# 如果未定义此字段，默认只加载`base`组件
+# 如果未定义此字段，默认只加载 `base` 组件；
+# 如果已定义，则仅按该列表加载（不额外强制注入 `base`）。
 prompts:
   - base
   - multi-agent
