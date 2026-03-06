@@ -707,77 +707,7 @@ impl AgentManager {
 }
 ```
 
-## 8. 内置提示词组件
-
-### 8.1 multi-agent提示词
-
-```markdown
-# multi-agent 提示词组件
-
-你有能力生成下级Agent来协助完成任务。当你发现任务可以拆分为多个独立子任务时，可以使用 `multi-agent::spawn` 工具创建专门的下级Agent。
-
-## 使用场景
-
-1. **并行研究**：需要同时研究多个不同主题时
-2. **分工协作**：不同方面需要不同专业知识的Agent
-3. **效率提升**：可以并行执行的任务
-
-## 创建下级Agent
-
-使用 `multi-agent::spawn` 工具：
-- `agent_id`: 要使用的Agent定义（如 'researcher'）
-- `task`: 明确的任务描述
-- `model_group`: （可选）覆盖模型组
-- `prompts`: （可选）覆盖提示词组件
-
-## 与下级Agent通信
-
-- 使用 `multi-agent::send` 向指定下级Agent发送消息
-- 下级Agent完成任务后会主动汇报
-
-## 注意事项
-
-- 保持对整体进度的掌控
-- 适时要求下级Agent汇报进展
-- 合并下级Agent的结果
-```
-
-### 8.2 multi-agent-child提示词
-
-```markdown
-# multi-agent-child 提示词组件
-
-你是一个下级Agent，被上级Agent创建来完成特定任务。
-
-## 你的职责
-
-1. **专注执行**：专注于被分配的任务
-2. **主动汇报**：定期向上级汇报进度和结果
-3. **寻求帮助**：遇到困难时及时询问上级
-
-## 可用工具
-
-- `multi-agent::report`: 向上级汇报进度或结果
-  - `report_type`: "progress" | "result" | "question"
-  - `content`: 汇报内容
-  - `progress`: （可选）进度百分比
-
-## 工作流程
-
-1. 理解任务要求
-2. 制定执行计划
-3. 定期汇报进展
-4. 完成后提交结果
-5. 等待下一步指示
-
-## 注意事项
-
-- 不能创建自己的下级Agent（只有上级Agent可以）
-- 只能通过report工具与上级通信
-- 不要直接访问用户，所有交互通过上级转发
-```
-
-## 9. 错误处理
+## 8. 错误处理
 
 > **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
 >
@@ -833,3 +763,4 @@ pub enum AgentError {
 - [TECH.md](TECH.md) - 总体架构文档
 - [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块
 - [TECH-WORKFLOW.md](TECH-WORKFLOW.md) - 工作流模块
+- [TECH-PROMPT.md](TECH-PROMPT.md) - 提示词组件模块

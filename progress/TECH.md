@@ -235,6 +235,8 @@ graph TD
 > - [TECH-CONFIG.md](TECH-CONFIG.md) - 配置数据结构
 > - [TECH-TOOL.md](TECH-TOOL.md) - 工具、ToolCall定义
 > - [TECH-CONTEXT.md](TECH-CONTEXT.md) - 上下文观测结构
+> - [TECH-PROMPT.md](TECH-PROMPT.md) - 提示词组件
+> - [TECH-SKILL.md](TECH-SKILL.md) - Skills技能
 
 ### 3.1 标识符系统
 
@@ -429,6 +431,7 @@ sequenceDiagram
 | `TokenCounter` | TECH-CONTEXT.md | Token计数器接口 |
 | `Channel` | TECH-CONFIG.md | 消息通道接口 |
 | `SessionContainer` | TECH-SESSION.md | Session容器接口 |
+| `SkillProvider` | TECH-SKILL.md | Skills技能提供者接口 |
 
 ### 5.2 事件系统
 
@@ -753,6 +756,7 @@ graph TB
 | `StorageBackend` | TECH-SESSION.md | 存储后端接口 |
 | `Channel` | TECH-CONFIG.md | 消息通道接口 |
 | `Memory` | TECH-SESSION.md | 记忆抽象接口 |
+| `SkillProvider` | TECH-SKILL.md | Skills技能提供者接口 |
 
 ### 10.3 Factory 注册机制
 
