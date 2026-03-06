@@ -402,52 +402,9 @@ Agent: 请查看安全检查清单
 Agent: 请停用 rust-coding-assistant
 ```
 
-## 7. 内置Skills
+## 7. Skill市场
 
-> 提示词组件是轻量级片段，Skill是完整的能力单元。内置Skills共享内置提示词组件的基础内容，并添加Skill特有的元数据和扩展能力。
-
-### 7.1 base
-
-```yaml
----
-name: base
-description: Agent的基础能力，包含通用提示和工具使用说明
----
-
-# 基础能力
-
-> 详细提示词内容见 [TECH-PROMPT.md#5.1-base](TECH-PROMPT.md#51-base)
-```
-
-### 7.2 multi-agent
-
-```yaml
----
-name: multi-agent
-description: 生成和管理下级Agent的能力
----
-
-# 多智能体协作
-
-> 详细提示词内容见 [TECH-PROMPT.md#52-multi-agent](TECH-PROMPT.md#52-multi-agent)
-```
-
-### 7.3 multi-agent-child
-
-```yaml
----
-name: multi-agent-child
-description: 下级Agent的行为规范
----
-
-# 下级Agent规范
-
-> 详细提示词内容见 [TECH-PROMPT.md#53-multi-agent-child](TECH-PROMPT.md#53-multi-agent-child)
-```
-
-## 8. Skill市场
-
-### 8.1 市场结构
+### 7.1 市场结构
 
 ```
 ~/.config/neco/skills/
@@ -465,7 +422,7 @@ description: 下级Agent的行为规范
     └── ...
 ```
 
-### 8.2 CLI命令
+### 7.2 CLI命令
 
 ```bash
 # 列出Skills
@@ -490,7 +447,7 @@ neco skill install https://example.com/skills/my-skill
 neco skill update rust-coding-assistant
 ```
 
-## 9. 安全考量
+## 8. 安全考量
 
 ```rust
 /// Skill执行安全配置
@@ -524,103 +481,12 @@ pub struct SandboxConfig {
 - 在执行潜在危险操作前请求用户确认
 - 记录所有脚本执行以供审计
 
-## 10. 错误处理
+## 9. 错误处理
+## 10. Skill生命周期管理
+## 11. Skill发现与注册
+## 12. UI集成
 
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
->
-> `SkillError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Skill`。
-
-```rust
-#[derive(Debug, Error)]
-pub enum SkillError {
-    #[error("Skill未找到: {0}")]
-    SkillNotFound(SkillId),
-    
-    #[error("Skill已激活: {0}")]
-    SkillAlreadyActivated(SkillId),
-    
-    #[error("Skill未激活: {0}")]
-    SkillNotActivated(SkillId),
-    
-    #[error("无效的Skill格式: {0}")]
-    InvalidFormat(String),
-    
-    #[error("验证失败: {0}")]
-    ValidationFailed(String),
-    
-    #[error("脚本执行失败: {0}")]
-    ScriptExecutionFailed(String),
-    
-    #[error("资源未找到: {0}")]
-    ResourceNotFound(String),
-    
-    #[error("权限不足: {0}")]
-    PermissionDenied(String),
-}
-```
-
-## 11. Skill生命周期管理
-
-```mermaid
-stateDiagram-v2
-    [*] --> Discovered
-    Discovered --> Loaded: 加载索引
-    Loaded --> Activated: 激活Skill
-    Activated --> Deactivated: 停用Skill
-    Deactivated --> Activated: 重新激活
-    Deactivated --> Loaded: 卸载Skill
-    Loaded --> [*]
-```
-
-**生命周期状态：**
-
-| 状态 | 描述 |
-|------|------|
-| `Discovered` | 发现Skill但未加载 |
-| `Loaded` | 已加载索引到内存 |
-| `Activated` | Skill已激活 |
-| `Deactivated` | Skill已停用 |
-
-## 12. Skill发现与注册
-
-```mermaid
-graph TB
-    subgraph "发现阶段"
-        D1[扫描Skill目录]
-        D2[解析SKILL.md]
-        D3[构建索引]
-    end
-    
-    subgraph "注册阶段"
-        R1[验证格式]
-        R2[注册到工厂]
-        R3[发布事件]
-    end
-    
-    D1 --> D2
-    D2 --> D3
-    D3 --> R1
-    R1 --> R2
-    R2 --> R3
-```
-
-**发现配置：**
-
-```rust
-/// Skill发现配置
-pub struct SkillDiscoveryConfig {
-    /// Skill目录列表
-    pub skill_dirs: Vec<PathBuf>,
-    /// 自动加载
-    pub auto_load: bool,
-    /// 扫描深度
-    pub max_depth: usize,
-}
-```
-
-## 13. UI集成
-
-### 13.1 Skill面板
+### 12.1 Skill面板
 
 ```rust
 /// 渲染Skill面板
