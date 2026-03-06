@@ -236,13 +236,13 @@ impl SkillService {
     /// 加载Skill索引（发现阶段）
     pub async fn load_index(&self) -> Result<SkillIndex, SkillError> {
         // 扫描skills目录，构建索引
-        // 1. 按优先级遍历四个配置根下的 skills/ 子目录：
-        //    .neco/skills/ -> .agents/skills/ -> ~/.config/neco/skills/ -> ~/.agents/skills/
+        // 1. 按优先级从低到高遍历四个配置根下的 skills/ 子目录：
+        //    ~/.agents/skills/ -> ~/.config/neco/skills/ -> .agents/skills/ -> .neco/skills/
         // 2. 读取每个子目录中的 SKILL.md
         // 3. 解析YAML前置元数据，提取name和description
         // 4. 返回 SkillIndex（包含 id、name、description、license、compatibility、tags）
-        //    其中 tags 从 SKILL.md 元数据中的 metadata.tags 字段提取，若无则为空数组
-        // 5. 同名 Skill 按优先级高到低覆盖
+        //    其中 tags 从 SKILL.md 顶层 tags 字段提取，若无则为空数组
+        // 5. 同名 Skill 由后遍历到的高优先级项覆盖
     }
     
     /// 获取发现阶段上下文
@@ -536,14 +536,14 @@ Skill具有以下生命周期状态：
 
 > 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
 
-1. 按优先级扫描四个配置根下的 `skills/` 子目录：
-   - `.neco/skills/`（项目级主配置）
-   - `.agents/skills/`（项目级通用配置）
-   - `~/.config/neco/skills/`（全局主配置）
+1. 按优先级从低到高扫描四个配置根下的 `skills/` 子目录：
    - `~/.agents/skills/`（全局通用配置）
+   - `~/.config/neco/skills/`（全局主配置）
+   - `.agents/skills/`（项目级通用配置）
+   - `.neco/skills/`（项目级主配置）
 2. 解析每个Skill的 `SKILL.md` 元数据
 3. 构建Skill索引（包含id、name、description、license、compatibility、tags）
-4. 同名 Skill 按优先级高到低覆盖
+4. 同名 Skill 由后遍历到的高优先级项覆盖
 5. 提供给Agent发现阶段使用
 
 ### 11.2 注册机制
