@@ -10,13 +10,18 @@
 
 ### 2.1 提示词组件定义
 
-提示词组件存储在配置目录的 `prompts/` 子目录下：
+提示词组件存储在配置目录的 `prompts/` 子目录下。
+
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
 
 ```text
-~/.config/neco/
-├── prompts/
-│   ├── base.md                   # 基础提示词组件
-│   └── multi-agent.md            # 多智能体提示词
+# prompts/ 子目录结构示例
+.neco/prompts/                    # 当前项目 .neco
+.agents/prompts/                  # 当前项目 .agents
+~/.config/neco/prompts/           # 全局主配置
+~/.agents/prompts/               # 全局通用配置
+    ├── base.md                   # 基础提示词组件
+    └── multi-agent.md            # 多智能体提示词
 ```
 
 单个Markdown文件即为一个提示词组件，该Markdown文件的内容即为该组件的提示词内容，无头部信息。文件名（不含扩展名）即为提示词组件的标识名称。
@@ -42,7 +47,7 @@ graph TB
 | 来源类型 | 定义方式 | 存储位置 | 优先级 |
 |---------|---------|---------|-------|
 | **内置组件** | 代码中硬编码的常量 | 程序内部 | 高 |
-| **文件组件** | 用户自定义的 Markdown 文件 | `~/.config/neco/prompts/*.md` | 低 |
+| **文件组件** | 用户自定义的 Markdown 文件 | 配置目录的 `prompts/` 子目录 | 低 |
 
 #### 2.4.2 内置组件
 
@@ -58,14 +63,19 @@ graph TB
 
 #### 2.4.3 文件组件
 
-文件组件是用户自定义的提示词片段，存储在配置目录的 `prompts/` 子目录下：
+文件组件是用户自定义的提示词片段，存储在配置目录的 `prompts/` 子目录下。
+
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
 
 ```text
-~/.config/neco/
-├── prompts/
-│   ├── base.md                   # 自定义基础提示词（可覆盖内置 base）
-│   ├── multi-agent.md            # 自定义多智能体提示词
-│   └── custom-component.md       # 自定义提示词组件
+# prompts/ 子目录结构示例
+.neco/prompts/                    # 当前项目 .neco
+.agents/prompts/                  # 当前项目 .agents
+~/.config/neco/prompts/           # 全局主配置
+~/.agents/prompts/               # 全局通用配置
+    ├── base.md                   # 自定义基础提示词（可覆盖内置 base）
+    ├── multi-agent.md            # 自定义多智能体提示词
+    └── custom-component.md       # 自定义提示词组件
 ```
 
 文件组件的命名规则：
@@ -74,20 +84,16 @@ graph TB
 
 #### 2.4.4 加载优先级与覆盖机制
 
-当组件名称冲突时，**文件组件优先于内置组件**：
+当组件名称冲突时，**文件组件优先于内置组件**。
 
-```text
-加载优先级（从高到低）：
-1. 文件组件（~/.config/neco/prompts/*.md）
-2. 内置组件（代码中的硬编码常量）
-```
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
 
 **覆盖示例**：
-- 如果用户创建了 `~/.config/neco/prompts/base.md`，系统会加载该文件内容而非内置的 `base` 组件
+- 如果用户在任意高优先级目录创建了同名提示词组件（如 `base.md`），系统会优先加载该文件内容而非内置的 `base` 组件
 - 这允许用户自定义基础提示词的行为
 
 **使用场景**：
-- 覆盖内置组件：创建同名文件（如 `base.md`）来替换默认行为
+- 覆盖内置组件：在任意优先级目录创建同名文件（如 `base.md`）来替换默认行为
 - 扩展组件：创建新文件（如 `custom-component.md`）来添加自定义提示词
 
 ## 3. 数据结构设计
@@ -214,12 +220,18 @@ Agent配置中的 `prompts` 字段用于指定激活的提示词组件列表。
 
 ### 6.1 配置目录结构
 
-提示词组件存储在配置目录的 `prompts/` 子目录下。详细配置说明见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)。
+提示词组件存储在配置目录的 `prompts/` 子目录下。
+
+> 配置目录优先级规则详见 [TECH-CONFIG.md#2.1 配置目录结构](TECH-CONFIG.md#21-配置目录结构)
 
 ```text
-~/.config/neco/prompts/
-├── base.md                   # 基础提示词组件
-└── multi-agent.md            # 多智能体提示词
+# prompts/ 子目录结构示例
+.neco/prompts/                 # 当前项目 .neco
+.agents/prompts/               # 当前项目 .agents
+~/.config/neco/prompts/        # 全局主配置
+~/.agents/prompts/             # 全局通用配置
+    ├── base.md                # 基础提示词组件
+    └── multi-agent.md         # 多智能体提示词
 ```
 
 ### 6.2 Agent定义中的提示词组件

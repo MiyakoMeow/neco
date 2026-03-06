@@ -236,11 +236,14 @@ impl SkillService {
     /// 加载Skill索引（发现阶段）
     pub async fn load_index(&self) -> Result<SkillIndex, SkillError> {
         // 扫描skills目录，构建索引
-        // 1. 遍历 config_dir.join("skills") 下所有子目录
+        // 1. 按优先级从低到高遍历四个配置根下的 skills/ 子目录：
+        //    ~/.agents/skills/ -> ~/.config/neco/skills/ -> .agents/skills/ -> .neco/skills/
+        //    (注: <workflow_dir>/skills/ 在 Agent 运行时由调用方传入)
         // 2. 读取每个子目录中的 SKILL.md
-        // 3. 解析YAML前置元数据，提取name和description
+        // 3. 解析YAML前置元数据，提取name、description、tags等
         // 4. 返回 SkillIndex（包含 id、name、description、license、compatibility、tags）
-        //    其中 tags 从 SKILL.md 元数据中的 metadata.tags 字段提取，若无则为空数组
+        //    其中 tags 从 SKILL.md 顶层元数据中的 tags 字段提取，若无则为空数组
+        // 5. 同名 Skill 由后遍历到的高优先级项覆盖（workflow 级最高）
     }
     
     /// 获取发现阶段上下文
@@ -340,9 +343,11 @@ Neco作为基于文件系统的代理，通过`activate::skill`工具激活Skill
 
 ```rust
 /// 激活Skill时执行的命令
+/// 详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构) 配置目录优先级规则
 fn get_skill_activation_command(skill_id: &str) -> String {
-    // 读取SKILL.md文件内容
-    format!("cat ~/.config/neco/skills/{}/SKILL.md", skill_id)
+    // 实际实现应调用 SkillService::load_skill()，
+    // 由服务层完成多根优先级查找与覆盖解析。
+    format!("SkillService::load_skill({})", skill_id)
 }
 ```
 
@@ -350,12 +355,11 @@ fn get_skill_activation_command(skill_id: &str) -> String {
 
 ```rust
 /// 访问Skill资源
+/// 详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构) 配置目录优先级规则
 fn get_skill_resource_command(skill_id: &str, resource_path: &str) -> String {
-    format!(
-        "cat ~/.config/neco/skills/{}/{}",
-        skill_id,
-        resource_path
-    )
+    // 实际实现应调用 SkillService::load_resource()，
+    // 由服务层完成优先级解析、canonicalize 和越界校验。
+    format!("SkillService::load_resource({}, {})", skill_id, resource_path)
 }
 ```
 
@@ -432,8 +436,17 @@ Agent: 请停用 rust-coding-assistant
 
 ### 7.1 市场结构
 
-```
-~/.config/neco/skills/
+Skills 存储在配置目录的 `skills/` 子目录下。
+
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
+
+```text
+# skills/ 子目录结构示例
+~/.agents/skills/                   # 全局通用配置（最低优先级）
+~/.config/neco/skills/              # 全局主配置
+.agents/skills/                     # 项目级通用配置
+.neco/skills/                       # 项目级主配置
+<workflow_dir>/skills/              # 工作流级配置（最高优先级）
 ├── rust-coding-assistant/
 │   ├── SKILL.md
 │   ├── scripts/
@@ -521,10 +534,18 @@ Skill具有以下生命周期状态：
 
 ### 11.1 发现流程
 
-1. 扫描 `config_dir.join("skills")` 目录
+> 配置目录优先级规则详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)
+
+1. 按优先级从低到高扫描五个配置根下的 `skills/` 子目录：
+   - `~/.agents/skills/`（全局通用配置）
+   - `~/.config/neco/skills/`（全局主配置）
+   - `.agents/skills/`（项目级通用配置）
+   - `.neco/skills/`（项目级主配置）
+   - `<workflow_dir>/skills/`（工作流级配置，最高优先级）
 2. 解析每个Skill的 `SKILL.md` 元数据
 3. 构建Skill索引（包含id、name、description、license、compatibility、tags）
-4. 提供给Agent发现阶段使用
+4. 同名 Skill 由后遍历到的高优先级项覆盖（workflow 级最高）
+5. 提供给Agent发现阶段使用
 
 ### 11.2 注册机制
 
