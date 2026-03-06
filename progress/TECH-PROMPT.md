@@ -120,7 +120,7 @@ Agent配置中的 `prompts` 字段用于指定激活的提示词组件列表。
 ## 可用工具
 
 你可以通过工具与外部系统交互：
-- activate: 激活额外能力（skills、prompts、mcp）
+- activate: 激活额外能力（skills、mcp）
 - fs: 文件系统操作（read、write、edit、delete）
 - mcp: MCP服务器工具
 - multi-agent: 多智能体协作（spawn、send、report）

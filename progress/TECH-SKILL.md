@@ -68,6 +68,9 @@ description: 提供Rust语言最佳实践、unsafe代码检查、生命周期分
 license: MIT                    # 许可证
 compatibility:                  # 兼容性说明
   - neco
+tags:                            # 标签（用于搜索和分类）
+  - rust
+  - security
 metadata:                       # 自定义元数据
   author: neco-team
   version: 1.0.0
@@ -233,10 +236,11 @@ impl SkillService {
     /// 加载Skill索引（发现阶段）
     pub async fn load_index(&self) -> Result<SkillIndex, SkillError> {
         // 扫描skills目录，构建索引
-        // 1. 遍历 ~/.config/neco/skills/ 下所有子目录
+        // 1. 遍历 config_dir.join("skills") 下所有子目录
         // 2. 读取每个子目录中的 SKILL.md
         // 3. 解析YAML前置元数据，提取name和description
         // 4. 返回 SkillIndex（包含 id、name、description、license、compatibility、tags）
+        //    其中 tags 从 SKILL.md 元数据中的 metadata.tags 字段提取，若无则为空数组
     }
     
     /// 获取发现阶段上下文
@@ -278,8 +282,10 @@ impl SkillService {
     ) -> Result<ActivatedSkill, SkillError> {
         // 加载完整Skill，添加到激活列表
         // 1. 调用load_skill()获取完整内容
-        // 2. 创建ActivatedSkill实例
-        // 3. 添加到session的active_skills集合
+        // 2. 根据 SkillSecurityConfig 校验脚本权限/确认要求
+        // 3. 若命中高风险能力，先请求用户显式确认
+        // 4. 创建ActivatedSkill实例
+        // 5. 添加到session的active_skills集合
     }
     
     /// 停用Skill
@@ -539,13 +545,13 @@ Skill具有以下生命周期状态：
 | `Deactivating` | 正在停用中 |
 | `Inactive` | 已停用 |
 
-状态转换：`Discovered` → `Activating` → `Active` → `Deactivating` → `Inactive`
+状态转换：`Discovered` → `Activating` → `Active` → `Deactivating` → `Inactive` → (可重新激活) → `Activating`
 
 ## 11. Skill发现与注册
 
 ### 11.1 发现流程
 
-1. 扫描 `~/.config/neco/skills/` 目录
+1. 扫描 `config_dir.join("skills")` 目录
 2. 解析每个Skill的 `SKILL.md` 元数据
 3. 构建Skill索引（包含id、name、description、license、compatibility、tags）
 4. 提供给Agent发现阶段使用
