@@ -501,7 +501,7 @@ pub enum AppError {
 | Config | `ConfigError` | [TECH-CONFIG.md](TECH-CONFIG.md#8-错误类型) |
 | Context | `CompactError`, `TokenError` | [TECH-CONTEXT.md](TECH-CONTEXT.md#9-错误处理) |
 | MCP | `McpError` | [TECH-MCP.md](TECH-MCP.md#7-错误处理) |
-| Skill | `SkillError` | [TECH-SKILL.md](TECH-SKILL.md#10-错误处理) |
+| Skill | `SkillError` | [TECH-SKILL.md](TECH-SKILL.md#9-错误处理) |
 | UI | `UiError`, `ApiError` | [TECH-UI.md](TECH-UI.md#7-错误处理) |
 
 ## 6. 存储设计

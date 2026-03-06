@@ -214,7 +214,7 @@ Agent配置中的 `prompts` 字段用于指定激活的提示词组件列表。
 
 ### 6.1 配置目录结构
 
-提示词组件存储在配置目录的 `prompts/` 子目录下。
+提示词组件存储在配置目录的 `prompts/` 子目录下。详细配置说明见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)。
 
 ```text
 ~/.config/neco/prompts/

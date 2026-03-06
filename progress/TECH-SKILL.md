@@ -236,7 +236,7 @@ impl SkillService {
         // 1. 遍历 ~/.config/neco/skills/ 下所有子目录
         // 2. 读取每个子目录中的 SKILL.md
         // 3. 解析YAML前置元数据，提取name和description
-        // 4. 返回 SkillIndex (仅包含轻量级信息)
+        // 4. 返回 SkillIndex（包含 id、name、description、license、compatibility、tags）
     }
     
     /// 获取发现阶段上下文
@@ -264,10 +264,10 @@ impl SkillService {
         skill_id: &SkillId,
         path: &Path,
     ) -> Result<String, SkillError> {
-        // 按需加载scripts/references/assets中的文件
-        // 1. 验证path不包含路径穿越(..)
-        // 2. 读取对应文件内容
-        // 3. 返回文件内容字符串
+        // 1. 拒绝绝对路径和包含 ParentDir 的路径组件
+        // 2. 将 path 与当前 skill 根目录拼接后规范化（canonicalize）
+        // 3. 校验规范化结果仍位于该 skill 根目录之下
+        // 4. 仅在校验通过后读取文件内容并返回
     }
     
     /// 激活Skill
@@ -547,7 +547,7 @@ Skill具有以下生命周期状态：
 
 1. 扫描 `~/.config/neco/skills/` 目录
 2. 解析每个Skill的 `SKILL.md` 元数据
-3. 构建Skill索引（仅包含name和description）
+3. 构建Skill索引（包含id、name、description、license、compatibility、tags）
 4. 提供给Agent发现阶段使用
 
 ### 11.2 注册机制
