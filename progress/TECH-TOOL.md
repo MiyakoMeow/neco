@@ -79,6 +79,7 @@ graph TB
 ```rust
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::RwLock;
 
 /// 工具提供者接口
 #[async_trait]
@@ -194,19 +195,19 @@ pub trait ToolRegistry: Send + Sync {
 
 /// 工具注册表默认实现
 pub struct DefaultToolRegistry {
-    /// 工具映射（使用Arc支持跨线程共享）
-    tools: HashMap<String, Arc<dyn ToolProvider>>,
+    /// 工具映射（使用RwLock支持并发访问）
+    tools: RwLock<HashMap<String, Arc<dyn ToolProvider>>>,
     
-    /// 超时配置（按工具前缀）
-    timeout_overrides: HashMap<String, Duration>,
+    /// 超时配置（按工具前缀，使用RwLock支持并发访问）
+    timeout_overrides: RwLock<HashMap<String, Duration>>,
 }
 
 impl DefaultToolRegistry {
     /// 创建空注册表
     pub fn new() -> Self {
         Self {
-            tools: HashMap::new(),
-            timeout_overrides: HashMap::new(),
+            tools: RwLock::new(HashMap::new()),
+            timeout_overrides: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -220,15 +221,15 @@ impl Default for DefaultToolRegistry {
 impl ToolRegistry for DefaultToolRegistry {
     fn register(&self, tool: Arc<dyn ToolProvider>) {
         let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+        self.tools.write().unwrap().insert(name, tool);
     }
     
     fn get(&self, name: &str) -> Option<Arc<dyn ToolProvider>> {
-        self.tools.get(name).cloned()
+        self.tools.read().unwrap().get(name).cloned()
     }
     
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values()
+        self.tools.read().unwrap().values()
             .map(|t| ToolDefinition {
                 name: t.name().to_string(),
                 description: t.description().to_string(),
@@ -240,7 +241,8 @@ impl ToolRegistry for DefaultToolRegistry {
     fn get_timeout(&self, tool_name: &str) -> Duration {
         let mut best_match: Option<(&str, Duration)> = None;
         
-        for (prefix, duration) in &self.timeout_overrides {
+        let timeout_overrides = self.timeout_overrides.read().unwrap();
+        for (prefix, duration) in &*timeout_overrides {
             if tool_name.starts_with(prefix) {
                 if best_match.map_or(true, |(best, _)| prefix.len() > best.len()) {
                     best_match = Some((prefix, *duration));
@@ -252,6 +254,8 @@ impl ToolRegistry for DefaultToolRegistry {
             return duration;
         }
         
+        drop(timeout_overrides);
+        
         if let Some(tool) = self.get(tool_name) {
             return tool.timeout();
         }
@@ -260,14 +264,14 @@ impl ToolRegistry for DefaultToolRegistry {
     }
     
     fn set_timeout(&self, prefix: &str, duration: Duration) {
-        self.timeout_overrides.insert(
+        self.timeout_overrides.write().unwrap().insert(
             prefix.to_string(),
             duration
         );
     }
     
     fn list_tools(&self) -> Vec<String> {
-        self.tools.keys().cloned().collect()
+        self.tools.read().unwrap().keys().cloned().collect()
     }
 }
 

@@ -100,6 +100,28 @@ pub struct ModelCapabilities {
     /// 上下文窗口大小
     pub context_window: usize,
 }
+
+/// 模型客户端接口（与Provider平级的抽象）
+#[async_trait]
+pub trait ModelClient: Send + Sync {
+    /// 发送聊天完成请求
+    async fn chat_completion(
+        &self,
+        request: ChatRequest,
+    ) -> Result<ChatResponse, ModelError>;
+    
+    /// 发送流式聊天完成请求
+    async fn chat_completion_stream(
+        &self,
+        request: ChatRequest,
+    ) -> Result<BoxStream<Result<ChatStreamChunk, ModelError>>, ModelError>;
+    
+    /// 获取模型能力
+    fn capabilities(&self) -> ModelCapabilities;
+    
+    /// 健康检查
+    async fn health_check(&self) -> Result<(), ModelError>;
+}
 ```
 
 ### 3.2 ProviderFactory 注册机制
@@ -218,27 +240,9 @@ impl ModelGroupClient {
     pub fn new(
         name: String,
         models: Vec<ModelRef>,
-        providers: &HashMap<String, Arc<dyn ModelProvider>>,
+        clients: HashMap<String, Arc<dyn ModelClient>>,
     ) -> Result<Self, ConfigError> {
-        // TODO: 实现模型组客户端初始化
-        // 遍历模型列表，为每个模型创建对应的客户端实例
-        // 建立客户端缓存，支持故障转移和重试
-        // TODO: 实现代码:
-        // let mut clients = HashMap::new();
-        // for model in &models {
-        //     let provider = providers.get(&model.provider_id)
-        //         .ok_or_else(|| ConfigError::ProviderNotFound {
-        //             group: name.clone(),
-        //             provider: model.provider_id.clone(),
-        //         })?;
-        //     let client = provider.as_ref().clone();
-        //     clients.insert(
-        //         format!("{}/{}", model.provider_id, model.model_name),
-        //         client,
-        //     );
-        // }
-        // Ok(Self { name, models, clients, retry_config: RetryConfig::default() })
-        todo!()
+        Ok(Self { name, models, clients, retry_config: RetryConfig::default() })
     }
     
     /// 发送请求（带故障转移）
@@ -332,27 +336,32 @@ use async_openai::{
         CreateChatCompletionRequest,
     },
 };
+use secrecy::Secret;
+use url::Url;
+
+/// OpenAI客户端配置
+#[derive(Debug, Clone)]
+pub struct OpenAiClientConfig {
+    /// API密钥
+    pub api_key: Secret<String>,
+    /// 基础URL
+    pub base_url: Url,
+}
 
 /// OpenAI兼容API客户端
 pub struct OpenAiClient {
     inner: Client<OpenAIConfig>,
-    config: Arc<dyn ModelProvider>,
+    config: Arc<OpenAiClientConfig>,
 }
 
 impl OpenAiClient {
     /// 创建新客户端
-    pub fn new(config: Arc<dyn ModelProvider>) -> Result<Self, ConfigError> {
-        // TODO: 实现OpenAI客户端初始化
-        // 验证配置并创建async-openai客户端实例
-        // TODO: 实现代码:
-        // let api_key = config.api_key.get_key()
-        //     .map_err(|_| ConfigError::NoEnvVarFound)?;
-        // let openai_config = OpenAIConfig::new()
-        //     .with_api_key(api_key.expose_secret())
-        //     .with_api_base(config.base_url.to_string());
-        // let client = Client::with_config(openai_config);
-        // Ok(Self { inner: client, config: config.clone() })
-        todo!()
+    pub fn new(config: OpenAiClientConfig) -> Result<Self, ConfigError> {
+        let openai_config = OpenAIConfig::new()
+            .with_api_key(config.api_key.expose_secret().clone())
+            .with_api_base(config.base_url.to_string());
+        let client = Client::with_config(openai_config);
+        Ok(Self { inner: client, config: Arc::new(config) })
     }
     
     /// 转换消息格式

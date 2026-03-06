@@ -143,11 +143,13 @@ pub struct SkillResources {
 }
 ```
 
-### 3.4 完整Skill示例
+### 3.4 Skill内容示例
 
 **rust-coding-assistant/SKILL.md:**
 
 YAML前置元数据格式见 [3.2节 SKILL.md 格式](#32-skillmd-格式)。
+
+以下为Markdown正文部分示例：
 
 ```markdown
 # Rust编码最佳实践
