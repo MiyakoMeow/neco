@@ -510,11 +510,36 @@ pub enum AppError {
 
 ### 6.1 文件系统布局
 
-配置目录与数据目录分离：
+配置目录与数据目录分离。配置目录支持多级查找，按优先级从高到低依次为：
+
+1. `.neco/`（当前项目）
+2. `.agents/`（当前项目）
+3. `~/.config/neco/`（全局主配置）
+4. `~/.agents/`（全局通用配置）
 
 ```text
-~/.config/neco/           # 配置目录
+# 配置目录（按优先级从高到低）
+.neco/                    # 当前项目 .neco（最高）
+├── neco.toml
+├── prompts/
+├── skills/
+├── agents/
+└── workflows/
+
+.agents/                  # 当前项目 .agents
+├── prompts/
+├── skills/
+├── agents/
+└── workflows/
+
+~/.config/neco/           # 全局主配置
 ├── neco.toml            # 主配置
+├── prompts/
+├── skills/
+├── agents/
+└── workflows/
+
+~/.agents/               # 全局通用配置（最低）
 ├── prompts/
 ├── skills/
 ├── agents/
@@ -860,13 +885,13 @@ Neco提供两种扩展Agent能力的机制：**提示词组件(Prompt Components
 
 **提示词组件**：
 - 轻量级纯Markdown片段
-- 存储于 `~/.config/neco/prompts/`
+- 存储于配置目录的 `prompts/` 子目录下（查找优先级：`.neco/prompts/` > `.agents/prompts/` > `~/.config/neco/prompts/` > `~/.agents/prompts/`）
 - Agent初始化时按配置加载
 - 适合简单的行为规范提示
 
 **Skills**：
 - 完整的可复用能力单元
-- 存储于 `~/.config/neco/skills/`
+- 存储于配置目录的 `skills/` 子目录下（查找优先级：`.neco/skills/` > `.agents/skills/` > `~/.config/neco/skills/` > `~/.agents/skills/`）
 - 按需激活使用（发现→激活→执行）
 - 包含元数据、脚本、参考资料
 - 适合复杂领域知识

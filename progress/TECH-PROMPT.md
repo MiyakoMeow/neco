@@ -10,13 +10,21 @@
 
 ### 2.1 提示词组件定义
 
-提示词组件存储在配置目录的 `prompts/` 子目录下：
+提示词组件存储在配置目录的 `prompts/` 子目录下。配置目录按优先级从高到低依次为：
+
+1. `.neco/prompts/`（当前项目）
+2. `.agents/prompts/`（当前项目）
+3. `~/.config/neco/prompts/`（全局主配置）
+4. `~/.agents/prompts/`（全局通用配置）
 
 ```text
-~/.config/neco/
-├── prompts/
-│   ├── base.md                   # 基础提示词组件
-│   └── multi-agent.md            # 多智能体提示词
+# 优先级从高到低
+.neco/prompts/                    # 当前项目 .neco（最高）
+.agents/prompts/                  # 当前项目 .agents
+~/.config/neco/prompts/           # 全局主配置
+~/.agents/prompts/               # 全局通用配置（最低）
+    ├── base.md                   # 基础提示词组件
+    └── multi-agent.md            # 多智能体提示词
 ```
 
 单个Markdown文件即为一个提示词组件，该Markdown文件的内容即为该组件的提示词内容，无头部信息。文件名（不含扩展名）即为提示词组件的标识名称。
@@ -58,14 +66,17 @@ graph TB
 
 #### 2.4.3 文件组件
 
-文件组件是用户自定义的提示词片段，存储在配置目录的 `prompts/` 子目录下：
+文件组件是用户自定义的提示词片段，存储在配置目录的 `prompts/` 子目录下。查找优先级：`.neco/prompts/` > `.agents/prompts/` > `~/.config/neco/prompts/` > `~/.agents/prompts/`
 
 ```text
-~/.config/neco/
-├── prompts/
-│   ├── base.md                   # 自定义基础提示词（可覆盖内置 base）
-│   ├── multi-agent.md            # 自定义多智能体提示词
-│   └── custom-component.md       # 自定义提示词组件
+# 按优先级从高到低查找
+.neco/prompts/                    # 当前项目 .neco
+.agents/prompts/                  # 当前项目 .agents
+~/.config/neco/prompts/           # 全局主配置
+~/.agents/prompts/               # 全局通用配置
+    ├── base.md                   # 自定义基础提示词（可覆盖内置 base）
+    ├── multi-agent.md            # 自定义多智能体提示词
+    └── custom-component.md       # 自定义提示词组件
 ```
 
 文件组件的命名规则：
@@ -217,9 +228,13 @@ Agent配置中的 `prompts` 字段用于指定激活的提示词组件列表。
 提示词组件存储在配置目录的 `prompts/` 子目录下。详细配置说明见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)。
 
 ```text
-~/.config/neco/prompts/
-├── base.md                   # 基础提示词组件
-└── multi-agent.md            # 多智能体提示词
+# 查找优先级（从高到低）
+.neco/prompts/                 # 当前项目 .neco
+.agents/prompts/               # 当前项目 .agents
+~/.config/neco/prompts/        # 全局主配置
+~/.agents/prompts/             # 全局通用配置
+    ├── base.md                # 基础提示词组件
+    └── multi-agent.md         # 多智能体提示词
 ```
 
 ### 6.2 Agent定义中的提示词组件

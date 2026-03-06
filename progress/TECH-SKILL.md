@@ -432,8 +432,14 @@ Agent: 请停用 rust-coding-assistant
 
 ### 7.1 市场结构
 
+Skills 存储在配置目录的 `skills/` 子目录下。查找优先级：`.neco/skills/` > `.agents/skills/` > `~/.config/neco/skills/` > `~/.agents/skills/`
+
 ```
-~/.config/neco/skills/
+# 查找优先级（从高到低）
+.neco/skills/                    # 当前项目 .neco
+.agents/skills/                  # 当前项目 .agents
+~/.config/neco/skills/           # 全局主配置
+~/.agents/skills/               # 全局通用配置
 ├── rust-coding-assistant/
 │   ├── SKILL.md
 │   ├── scripts/
