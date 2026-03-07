@@ -78,7 +78,7 @@ pub trait ContextManager: Send + Sync {
     ) -> Result<Vec<ModelMessage>, ContextError>;
     
     /// 检查是否需要压缩
-    fn should_compact(&self, agent_id: &AgentId) -> bool;
+    async fn should_compact(&self, agent_id: &AgentId) -> bool;
     
     /// 执行压缩
     async fn compact(
@@ -118,8 +118,11 @@ impl ContextManager for ContextManagerImpl {
         unimplemented!()
     }
     
-    fn should_compact(&self, agent_id: &AgentId) -> bool {
+    async fn should_compact(&self, agent_id: &AgentId) -> bool {
         // TODO: 实现压缩检查
+        // 1. 从MessageRepository获取消息
+        // 2. 计算token数量
+        // 3. 判断是否超过阈值
         unimplemented!()
     }
     

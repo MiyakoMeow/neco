@@ -195,12 +195,12 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
-        // [TODO] 实现要点说明
-        // 1. 设置默认重试次数为3次
-        // 2. 初始延迟1000ms
-        // 3. 最大延迟30000ms
-        // 4. 退避倍数为2.0
-        unimplemented!()
+        Self {
+            max_retries: 3,
+            initial_delay_ms: 1000,
+            max_delay_ms: 30000,
+            backoff_multiplier: 2.0,
+        }
     }
 }
 ```
@@ -293,6 +293,7 @@ pub struct OpenAiClient {
 pub struct OpenAiClientConfig {
     pub api_key: Secret<String>,
     pub base_url: Url,
+    pub model: String,
 }
 
 impl OpenAiClient {
@@ -333,16 +334,169 @@ impl ModelClient for OpenAiClient {
     }
     
     fn capabilities(&self) -> ModelCapabilities {
-        ModelCapabilities {
-            streaming: true,
-            tools: true,
-            functions: true,
-            json_mode: true,
-            vision: false,
-            context_window: 128_000,
+        // 根据模型名称返回不同的能力
+        match self.config.model.as_str() {
+            // GPT-4 Vision 系列
+            "gpt-4-vision-preview" | "gpt-4o" | "gpt-4o-mini" => ModelCapabilities {
+                streaming: true,
+                tools: true,
+                functions: true,
+                json_mode: true,
+                vision: true,
+                context_window: 128_000,
+            },
+            // GPT-4 Turbo
+            "gpt-4-turbo" | "gpt-4-turbo-preview" => ModelCapabilities {
+                streaming: true,
+                tools: true,
+                functions: true,
+                json_mode: true,
+                vision: false,
+                context_window: 128_000,
+            },
+            // GPT-4 标准版
+            "gpt-4" | "gpt-4-32k" => ModelCapabilities {
+                streaming: true,
+                tools: true,
+                functions: true,
+                json_mode: true,
+                vision: false,
+                context_window: 8192,
+            },
+            // GPT-3.5 系列
+            "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" => ModelCapabilities {
+                streaming: true,
+                tools: true,
+                functions: true,
+                json_mode: true,
+                vision: false,
+                context_window: 16_385,
+            },
+            // 默认能力（用于未知模型）
+            _ => ModelCapabilities {
+                streaming: true,
+                tools: false,
+                functions: false,
+                json_mode: false,
+                vision: false,
+                context_window: 4096,
+            },
         }
     }
 }
+```
+
+### 7.2 更灵活的方案：能力注册表
+
+对于生产环境，建议使用能力注册表模式，将模型能力配置外部化：
+
+```rust
+use std::collections::HashMap;
+use std::sync::Arc;
+use once_cell::sync::Lazy;
+
+/// 全局模型能力注册表
+static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    
+    // GPT-4 Vision 系列
+    m.insert("gpt-4-vision-preview", ModelCapabilities {
+        streaming: true,
+        tools: true,
+        functions: true,
+        json_mode: true,
+        vision: true,
+        context_window: 128_000,
+    });
+    m.insert("gpt-4o", ModelCapabilities {
+        streaming: true,
+        tools: true,
+        functions: true,
+        json_mode: true,
+        vision: true,
+        context_window: 128_000,
+    });
+    
+    // GPT-4 Turbo
+    m.insert("gpt-4-turbo", ModelCapabilities {
+        streaming: true,
+        tools: true,
+        functions: true,
+        json_mode: true,
+        vision: false,
+        context_window: 128_000,
+    });
+    
+    // GPT-3.5 系列
+    m.insert("gpt-3.5-turbo", ModelCapabilities {
+        streaming: true,
+        tools: true,
+        functions: true,
+        json_mode: true,
+        vision: false,
+        context_window: 16_385,
+    });
+    
+    m
+});
+
+impl OpenAiClient {
+    /// 从注册表获取模型能力
+    fn get_capabilities_for_model(&self, model: &str) -> ModelCapabilities {
+        MODEL_CAPABILITIES
+            .get(model)
+            .cloned()
+            .unwrap_or_else(|| ModelCapabilities {
+                // 未知模型的默认能力
+                streaming: true,
+                tools: false,
+                functions: false,
+                json_mode: false,
+                vision: false,
+                context_window: 4096,
+            })
+    }
+    
+    /// 动态查询API获取模型能力（可选）
+    async fn fetch_capabilities_from_api(&self, model: &str) -> Result<ModelCapabilities, ModelError> {
+        // 调用OpenAI的模型列表API获取最新信息
+        // https://api.openai.com/v1/models
+        // 这可以自动发现新模型和更新后的能力
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl ModelClient for OpenAiClient {
+    fn capabilities(&self) -> ModelCapabilities {
+        self.get_capabilities_for_model(&self.config.model)
+    }
+}
+```
+
+**优势：**
+1. 集中管理所有模型能力，易于维护
+2. 支持动态添加新模型，无需修改代码
+3. 可以从配置文件或API加载能力信息
+4. 避免硬编码，提高灵活性
+
+**配置文件示例（TOML）：**
+```toml
+[model_capabilities.gpt-4o]
+streaming = true
+tools = true
+functions = true
+json_mode = true
+vision = true
+context_window = 128000
+
+[model_capabilities.gpt-4-turbo]
+streaming = true
+tools = true
+functions = true
+json_mode = true
+vision = false
+context_window = 128000
 ```
 
 ## 8. 流式输出处理

@@ -165,8 +165,57 @@ pub struct DaemonInterface {
 }
 
 pub struct DaemonConfig {
+    // 服务器绑定地址
     pub host: String,
     pub port: u16,
+    
+    // TLS配置
+    pub tls: Option<TlsConfig>,
+    
+    // 认证配置
+    pub auth: AuthConfig,
+    
+    // 速率限制
+    pub rate_limit: RateLimitConfig,
+    
+    // CORS配置
+    pub cors: CorsConfig,
+    
+    // 服务器配置
+    pub server: ServerConfig,
+}
+
+pub struct TlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
+    pub client_ca_path: Option<String>, // 客户端证书验证（mTLS）
+}
+
+pub struct AuthConfig {
+    pub api_keys: Vec<String>,
+    pub jwt_secret: Option<String>,
+    pub jwt_expiration_sec: Option<u64>,
+}
+
+pub struct RateLimitConfig {
+    pub enabled: bool,
+    pub requests_per_minute: u32,
+    pub burst_size: u32,
+}
+
+pub struct CorsConfig {
+    pub allowed_origins: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_headers: Vec<String>,
+    pub allow_credentials: bool,
+    pub max_age_sec: u64,
+}
+
+pub struct ServerConfig {
+    pub max_connections: usize,
+    pub request_timeout_sec: u64,
+    pub shutdown_timeout_sec: u64,
+    pub worker_threads: Option<usize>,
 }
 
 impl DaemonInterface {
@@ -185,12 +234,102 @@ impl DaemonInterface {
 
 ### 5.2 REST API
 
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/api/v1/sessions` | POST | 创建Session |
-| `/api/v1/sessions/{id}` | GET | 获取Session |
-| `/api/v1/workflows/{id}/status` | GET | 工作流状态 |
-| `/api/v1/workflows/{id}/control` | POST | 控制工作流 |
+#### 5.2.1 创建会话
+
+**请求：**
+```json
+POST /api/v1/sessions
+Content-Type: application/json
+
+{
+    "session_id": "session_001",
+    "config": {
+        "model": "gpt-4",
+        "temperature": 0.7
+    }
+}
+```
+
+**响应：**
+```json
+{
+    "status": "success",
+    "session_id": "session_001",
+    "created_at": "2026-03-07T10:00:00Z"
+}
+```
+
+#### 5.2.2 发送消息
+
+**请求：**
+```json
+POST /api/v1/sessions/{session_id}/messages
+Content-Type: application/json
+
+{
+    "content": "帮我分析这段代码",
+    "type": "text"
+}
+```
+
+**响应：**
+```json
+{
+    "status": "success",
+    "message_id": "msg_001",
+    "output": {
+        "content": "分析结果...",
+        "type": "text"
+    },
+    "timestamp": "2026-03-07T10:01:00Z"
+}
+```
+
+#### 5.2.3 获取会话状态
+
+**请求：**
+```json
+GET /api/v1/sessions/{session_id}/status
+```
+
+**响应：**
+```json
+{
+    "status": "active",
+    "session_id": "session_001",
+    "message_count": 5,
+    "last_activity": "2026-03-07T10:01:00Z"
+}
+```
+
+#### 5.2.4 终止会话
+
+**请求：**
+```json
+DELETE /api/v1/sessions/{session_id}
+```
+
+**响应：**
+```json
+{
+    "status": "success",
+    "session_id": "session_001",
+    "terminated_at": "2026-03-07T10:05:00Z"
+}
+```
+
+#### 5.2.5 错误响应格式
+
+```json
+{
+    "status": "error",
+    "error": {
+        "code": "SESSION_NOT_FOUND",
+        "message": "会话不存在",
+        "details": {}
+    }
+}
+```
 
 ## 6. 错误处理
 
@@ -212,14 +351,50 @@ pub enum UiError {
 
 #[derive(Debug, Error)]
 pub enum ApiError {
+    // 4xx 客户端错误
     #[error("Session未找到")]
     SessionNotFound,
+    
+    #[error("未授权访问: {0}")]
+    Unauthorized(String),
     
     #[error("无效请求: {0}")]
     BadRequest(String),
     
+    #[error("冲突: {0}")]
+    Conflict(String),
+    
+    #[error("资源不存在: {0}")]
+    NotFound(String),
+    
+    #[error("请求超时")]
+    RequestTimeout,
+    
+    // 5xx 服务器错误
     #[error("内部错误: {0}")]
     Internal(String),
+    
+    #[error("服务不可用: {0}")]
+    ServiceUnavailable(String),
+    
+    #[error("网关错误: {0}")]
+    BadGateway(String),
+}
+
+impl ApiError {
+    pub fn status_code(&self) -> u16 {
+        match self {
+            ApiError::SessionNotFound => 404,
+            ApiError::Unauthorized(_) => 401,
+            ApiError::BadRequest(_) => 400,
+            ApiError::Conflict(_) => 409,
+            ApiError::NotFound(_) => 404,
+            ApiError::RequestTimeout => 408,
+            ApiError::Internal(_) => 500,
+            ApiError::ServiceUnavailable(_) => 503,
+            ApiError::BadGateway(_) => 502,
+        }
+    }
 }
 ```
 

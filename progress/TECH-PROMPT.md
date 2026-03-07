@@ -130,25 +130,50 @@ pub trait PromptBuilder {
 **返回值定义：**
 - `Result<String, PromptError>` - 成功返回组合后的完整提示词，失败返回错误
 
-### 5.3 SessionManager 接口
+### 5.3 会话管理接口
 
-会话管理器负责管理用户会话和消息路由。
+#### 5.3.1 SessionRepository（数据访问层）
+
+会话仓储负责会话的持久化和检索。
 
 ```rust
-pub trait SessionManager {
+pub trait SessionRepository {
     async fn get_or_create(&self, session_id: &str) -> Result<Session, SessionError>;
-    async fn route_message(&self, session: &Session, message: &str) -> Result<AgentOutput, RouteError>;
+    async fn save(&self, session: &Session) -> Result<(), SessionError>;
+    async fn find_by_id(&self, session_id: &str) -> Result<Option<Session>, SessionError>;
 }
 ```
 
 **参数说明：**
 - `session_id: &str` - 会话唯一标识符
+- `session: &Session` - 会话实例
+
+**返回值定义：**
+- `Result<Session, SessionError>` - 成功返回会话实例（get_or_create）
+- `Result<(), SessionError>` - 保存操作结果（save）
+- `Result<Option<Session>, SessionError>` - 查询结果（find_by_id）
+
+#### 5.3.2 MessageRoutingService（领域服务层）
+
+消息路由服务负责消息路由的业务逻辑。
+
+```rust
+pub trait MessageRoutingService {
+    async fn route_message(&self, session: &Session, message: &str) -> Result<AgentOutput, RouteError>;
+}
+```
+
+**参数说明：**
 - `session: &Session` - 会话实例引用
 - `message: &str` - 用户消息内容
 
 **返回值定义：**
-- `Result<Session, SessionError>` - 成功返回会话实例
 - `Result<AgentOutput, RouteError>` - 成功返回Agent输出
+
+**设计说明：**
+- SessionRepository 只负责数据访问（CRUD）
+- MessageRoutingService 只负责业务逻辑（路由规则）
+- 两者通过依赖注入组合使用，确保职责单一且抽象层级一致
 
 ### 5.4 AgentEngine 接口
 
@@ -167,110 +192,7 @@ pub trait AgentEngine {
 **返回值定义：**
 - `Result<AgentOutput, AgentError>` - 成功返回Agent输出结果
 
-## 6. Daemon API
 
-### 6.1 概述
-
-Daemon API 提供后台服务接口，支持与外部系统集成。
-
-### 6.2 请求/响应格式
-
-#### 6.2.1 创建会话
-
-**请求：**
-```json
-POST /api/v1/sessions
-Content-Type: application/json
-
-{
-    "session_id": "session_001",
-    "config": {
-        "model": "gpt-4",
-        "temperature": 0.7
-    }
-}
-```
-
-**响应：**
-```json
-{
-    "status": "success",
-    "session_id": "session_001",
-    "created_at": "2026-03-07T10:00:00Z"
-}
-```
-
-#### 6.2.2 发送消息
-
-**请求：**
-```json
-POST /api/v1/sessions/{session_id}/messages
-Content-Type: application/json
-
-{
-    "content": "帮我分析这段代码",
-    "type": "text"
-}
-```
-
-**响应：**
-```json
-{
-    "status": "success",
-    "message_id": "msg_001",
-    "output": {
-        "content": "分析结果...",
-        "type": "text"
-    },
-    "timestamp": "2026-03-07T10:01:00Z"
-}
-```
-
-#### 6.2.3 获取会话状态
-
-**请求：**
-```json
-GET /api/v1/sessions/{session_id}/status
-```
-
-**响应：**
-```json
-{
-    "status": "active",
-    "session_id": "session_001",
-    "message_count": 5,
-    "last_activity": "2026-03-07T10:01:00Z"
-}
-```
-
-#### 6.2.4 终止会话
-
-**请求：**
-```json
-DELETE /api/v1/sessions/{session_id}
-```
-
-**响应：**
-```json
-{
-    "status": "success",
-    "session_id": "session_001",
-    "terminated_at": "2026-03-07T10:05:00Z"
-}
-```
-
-### 6.3 错误响应格式
-
-```json
-{
-    "status": "error",
-    "error": {
-        "code": "SESSION_NOT_FOUND",
-        "message": "会话不存在",
-        "details": {}
-    }
-}
-```
 
 ## 7. TODO 示例
 

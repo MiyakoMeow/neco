@@ -138,7 +138,7 @@ pub enum ProviderType {
 
 /// API密钥配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "source", rename_all = "lowercase")]
+#[serde(tag = "source", rename_all = "snake_case")]
 pub enum ApiKeyConfig {
     Env { name: String },
     EnvList { names: Vec<String> },
@@ -240,10 +240,16 @@ pub struct ContextConfig {
     pub auto_compact_threshold: f64,
     #[serde(default = "default_true")]
     pub auto_compact_enabled: bool,
+    #[serde(default = "default_compact_model_group")]
+    pub compact_model_group: String,
+    #[serde(default = "default_keep_recent_messages")]
+    pub keep_recent_messages: usize,
 }
 
 fn default_compact_threshold() -> f64 { 0.9 }
 fn default_true() -> bool { true }
+fn default_compact_model_group() -> String { "fast".to_string() }
+fn default_keep_recent_messages() -> usize { 10 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolsConfig {
@@ -262,6 +268,7 @@ pub struct UiConfig {
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RunMode {
     #[default]
     Direct,
@@ -480,6 +487,8 @@ compression = true
 [system.context]
 auto_compact_threshold = 0.9
 auto_compact_enabled = true
+compact_model_group = "fast"
+keep_recent_messages = 10
 
 [system.tools]
 default_timeout = { secs = 30, nanos = 0 }

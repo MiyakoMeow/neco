@@ -290,7 +290,7 @@ pub enum WorkflowEvent {
 }
 
 pub trait EventPublisher: Send + Sync {
-    fn publish(&self, event: WorkflowEvent);
+    async fn publish(&self, event: WorkflowEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 ```
 
@@ -306,6 +306,7 @@ pub trait EventPublisher: Send + Sync {
 pub struct WorkflowEngine {
     agent_engine: Arc<AgentEngine>,
     event_publisher: Arc<dyn EventPublisher>,
+    workflow_repository: Arc<dyn WorkflowRepository>,
 }
 
 impl WorkflowEngine {
@@ -427,13 +428,17 @@ select = ["reject"]  # 触发时 counters.reject += 1
 [[edges]]
 from = "write-prd"
 to = "write-tech-doc"
-require = ["approve_prd"]  # 需要 counters.approve_prd > 0
+require = [
+  { option = "approve_prd", min_count = 1 }  # 需要 counters.approve_prd > 0
+]
 
 # 支持参数引用
 [[edges]]
 from = "review-prd"
 to = "final-approve"
-require = ["@params.min_approvers"]  # 引用workflow_params
+require = [
+  { option = "@params.min_approvers", min_count = 1, param_ref = "min_approvers" }  # 引用workflow_params
+]
 ```
 
 ### 5.2 条件评估实现
@@ -579,7 +584,9 @@ select = ["reject"]
 [[edges]]
 from = "review-prd"
 to = "write-tech-doc"
-require = ["approve_prd"]
+require = [
+  { option = "approve_prd", min_count = 1 }
+]
 
 [[edges]]
 from = "write-tech-doc"
@@ -593,7 +600,9 @@ select = ["reject"]
 [[edges]]
 from = "review-tech-doc"
 to = "write-impl"
-require = ["approve_tech"]
+require = [
+  { option = "approve_tech", min_count = 1 }
+]
 
 [[edges]]
 from = "write-impl"
@@ -607,7 +616,9 @@ select = ["reject"]
 [[edges]]
 from = "review-impl"
 to = "END"
-require = ["approve"]
+require = [
+  { option = "approve", min_count = 1 }
+]
 ```
 
 ### 7.1 数据流图

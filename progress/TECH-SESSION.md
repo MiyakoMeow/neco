@@ -115,8 +115,11 @@ pub trait MessageRepository: Send + Sync {
     /// 列出Agent的所有消息
     async fn list(&self, agent_id: &AgentId) -> Result<Vec<Message>, StorageError>;
     
-    /// 截断消息（保留<=指定id的消息）
-    async fn truncate(&self, agent_id: &AgentId, up_to_id: MessageId) -> Result<(), StorageError>;
+    /// 删除前缀消息（删除before_id之前的消息，保留新消息）
+    async fn delete_prefix(&self, agent_id: &AgentId, before_id: MessageId) -> Result<(), StorageError>;
+    
+    /// 删除后缀消息（删除after_id之后的消息，保留旧消息）
+    async fn delete_suffix(&self, agent_id: &AgentId, after_id: MessageId) -> Result<(), StorageError>;
 }
 ```
 
@@ -441,9 +444,9 @@ impl<'a> ModelMessage<'a> {
         }
     }
     
-    pub fn into_owned(self) -> Message {
+    pub fn into_owned(self, id: MessageId) -> Message {
         Message {
-            id: MessageId(0),
+            id,
             role: self.role,
             content: self.content.into_owned(),
             tool_calls: self.tool_calls.map(|v| v.to_vec()),
@@ -456,6 +459,7 @@ impl<'a> ModelMessage<'a> {
 
 /// 消息构建器
 pub struct MessageBuilder {
+    id: Option<MessageId>,
     role: Role,
     content: String,
     tool_calls: Option<Vec<ToolCall>>,
@@ -465,11 +469,17 @@ pub struct MessageBuilder {
 impl MessageBuilder {
     pub fn new(role: Role) -> Self {
         Self {
+            id: None,
             role,
             content: String::new(),
             tool_calls: None,
             tool_call_id: None,
         }
+    }
+    
+    pub fn id(mut self, id: MessageId) -> Self {
+        self.id = Some(id);
+        self
     }
     
     pub fn content(mut self, content: impl Into<String>) -> Self {
@@ -489,7 +499,7 @@ impl MessageBuilder {
     
     pub fn build(self) -> Message {
         Message {
-            id: MessageId(0),
+            id: self.id.expect("MessageId must be set before build"),
             role: self.role,
             content: self.content,
             tool_calls: self.tool_calls,
@@ -596,7 +606,6 @@ definition_id = "coder"
 parent_id = null  # 根Agent无parent
 state = "running"
 
-[messages]
 [[messages]]
 id = 1
 role = "system"
@@ -810,7 +819,7 @@ impl<'a> ContextBuilder<'a> {
         // 3. 如果设置了max_tokens：
         //    a. 使用token_counter估算每条消息的token数
         //    b. 从最新消息开始逆向遍历，保留在token限制内的消息
-        //    c. 超过限制时停止，截断旧消息
+        //    c. 超过限制时停止，使用delete_prefix删除旧消息
         // 4. 创建ChatRequest并返回
         unimplemented!()
     }

@@ -589,34 +589,98 @@ pub trait EventSubscriber: Send + Sync {
 
 > **设计原则**: 所有模块错误类型统一在 `neco-core` 的 `AppError` 中定义，采用领域错误分类。
 
-**TODO**: 各领域错误详细定义见 [TECH-SESSION.md#6-错误类型设计](TECH-SESSION.md#6-错误类型设计)
+> 各领域错误的详细定义见各模块技术文档，例如 [TECH-SESSION.md#6-错误类型设计](TECH-SESSION.md#6-错误类型设计)
 
 ```rust
 /// 统一错误类型 - 应用层错误
-// TODO: 详细错误定义见各模块文档
+///
+/// 所有模块的错误类型统一在 AppError 中汇总，提供统一的错误处理接口。
+/// 使用 #[from] 属性自动实现 From trait，便于错误传播和转换。
 #[derive(Debug, Error)]
 pub enum AppError {
-    // Session(#[from] SessionError),
-    // Agent(#[from] AgentError),
-    // Workflow(#[from] WorkflowError),
-    // Model(#[from] ModelError),
-    // Tool(#[from] ToolError),
-    // Config(#[from] ConfigError),
-    // Storage(#[from] StorageError),
-    // Mcp(#[from] McpError),
-    // Context(#[from] ContextError),
-    // Skill(#[from] SkillError),
-    // Id(#[from] IdError),
+    /// Session相关错误
+    #[error("Session错误: {0}")]
+    Session(#[from] SessionError),
+    
+    /// Agent相关错误
+    #[error("Agent错误: {0}")]
+    Agent(#[from] AgentError),
+    
+    /// 工作流相关错误
+    #[error("工作流错误: {0}")]
+    Workflow(#[from] WorkflowError),
+    
+    /// 模型相关错误
+    #[error("模型错误: {0}")]
+    Model(#[from] ModelError),
+    
+    /// 工具相关错误
+    #[error("工具错误: {0}")]
+    Tool(#[from] ToolError),
+    
+    /// 配置相关错误
+    #[error("配置错误: {0}")]
+    Config(#[from] ConfigError),
+    
+    /// 存储相关错误
+    #[error("存储错误: {0}")]
+    Storage(#[from] StorageError),
+    
+    /// MCP相关错误
+    #[error("MCP错误: {0}")]
+    Mcp(#[from] McpError),
+    
+    /// 上下文相关错误
+    #[error("上下文错误: {0}")]
+    Context(#[from] ContextError),
+    
+    /// Skill相关错误
+    #[error("Skill错误: {0}")]
+    Skill(#[from] SkillError),
+    
+    /// ID相关错误
+    #[error("ID错误: {0}")]
+    Id(#[from] IdError),
 }
 
-/// 标识符错误（新增）
-// TODO: 详细错误定义见 neco-core
+/// 标识符错误
+/// 
+/// 标识符是系统的核心概念，所有实体的唯一标识都必须通过Id<T>类型系统确保类型安全。
 #[derive(Debug, Error)]
 pub enum IdError {
-    // #[error("ID格式错误: {0}")]
-    // InvalidFormat(String),
-    // #[error("ID类型不匹配: 期望 {expected}, 实际 {actual}")]
-    // TypeMismatch { expected: &'static str, actual: &'static str },
+    /// ID格式错误
+    #[error("ID格式错误: {0}")]
+    InvalidFormat(String),
+    
+    /// ID类型不匹配
+    #[error("ID类型不匹配: 期望 {expected}, 实际 {actual}")]
+    TypeMismatch { 
+        expected: &'static str, 
+        actual: &'static str 
+    },
+    
+    /// ID解析失败
+    #[error("无法解析ID: {input}, 原因: {reason}")]
+    ParseError { 
+        input: String, 
+        reason: String 
+    },
+    
+    /// ID验证失败
+    #[error("ID验证失败: {0}")]
+    ValidationFailed(String),
+    
+    /// ID为空
+    #[error("ID不能为空")]
+    Empty,
+    
+    /// ID不存在
+    #[error("ID不存在: {0}")]
+    NotFound(String),
+    
+    /// ID生成失败
+    #[error("ID生成失败: {0}")]
+    GenerationFailed(String),
 }
 ```
 

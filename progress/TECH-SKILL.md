@@ -109,7 +109,7 @@ pub struct ActivatedSkill {
     pub instruction: String,
     pub metadata: SkillMetadata,
     pub resources: SkillResources,
-    pub tools: Vec<ToolDescriptor>,
+    pub tools: Vec<ToolDefinition>,
 }
 
 pub struct SkillMetadata {

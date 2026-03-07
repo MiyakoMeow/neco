@@ -379,6 +379,52 @@ pub fn verify_line_content(
 }
 ```
 
+### 4.5 fs::delete 实现
+
+```rust
+pub struct FileDeleteTool;
+    
+#[async_trait]
+impl ToolExecutor for FileDeleteTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("fs::delete".into()),
+            description: "删除文件".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要删除的文件路径"
+                    }
+                },
+                "required": ["path"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(5),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现文件删除逻辑
+        // 1. 从args解析path为String
+        // 2. 验证路径安全性：
+        //    a. 使用std::fs::canonicalize规范化路径，解析所有符号链接和相对路径
+        //    b. 确保规范化后的绝对路径以context.working_dir的规范化路径为前缀
+        //    c. 防止路径遍历攻击（../）、符号链接逃逸、硬链接逃逸
+        // 3. 检查文件是否存在
+        // 4. 调用std::fs::remove_file删除文件
+        // 5. 返回删除成功的结果
+        unimplemented!()
+    }
+}
+```
+
 ## 5. 工具数据流
 
 ```mermaid
