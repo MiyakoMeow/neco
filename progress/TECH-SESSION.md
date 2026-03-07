@@ -150,14 +150,14 @@ pub struct SessionMetadata {
 
 /// Session领域模型（不含storage字段）
 pub struct Session {
-    pub id: SessionId,
-    pub session_type: SessionType,
-    pub root_agent_id: AgentId,
-    pub hierarchy: AgentHierarchy,
-    pub id_allocator: MessageIdAllocator,
-    pub metadata: SessionMetadata,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    id: SessionId,
+    session_type: SessionType,
+    root_agent_id: AgentId,
+    hierarchy: AgentHierarchy,
+    id_allocator: MessageIdAllocator,
+    metadata: SessionMetadata,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl Session {
@@ -179,6 +179,17 @@ impl Session {
             updated_at: Utc::now(),
         }
     }
+    
+    pub fn id(&self) -> &SessionId { &self.id }
+    pub fn session_type(&self) -> &SessionType { &self.session_type }
+    pub fn root_agent_id(&self) -> &AgentId { &self.root_agent_id }
+    pub fn hierarchy(&self) -> &AgentHierarchy { &self.hierarchy }
+    pub fn id_allocator(&self) -> &MessageIdAllocator { &self.id_allocator }
+    pub fn metadata(&self) -> &SessionMetadata { &self.metadata }
+    pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
+    pub fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
+    
+    pub fn hierarchy_mut(&mut self) -> &mut AgentHierarchy { &mut self.hierarchy }
     
     pub fn spawn_agent(
         &mut self,

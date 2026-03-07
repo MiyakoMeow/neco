@@ -247,6 +247,9 @@ pub struct ModelRef {
 
 ```rust
 /// 重试配置
+/// 
+/// 注意：此类型应与 TECH-CONFIG.md 中的 RetryConfig 保持一致
+/// 实际实现应从 config 模块导入，避免重复定义
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_retries: u32,

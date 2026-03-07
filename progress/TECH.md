@@ -660,6 +660,26 @@ pub enum AppError {
     Id(#[from] IdError),
 }
 
+impl AppError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            AppError::Model(e) => e.is_retryable(),
+            AppError::Mcp(e) => e.is_retryable(),
+            AppError::Session(e) => matches!(e, SessionError::Storage(_)),
+            AppError::Agent(e) => e.is_recoverable(),
+            _ => false,
+        }
+    }
+    
+    pub fn is_user_facing(&self) -> bool {
+        match self {
+            AppError::Session(_) | AppError::Agent(_) | AppError::Workflow(_) => true,
+            AppError::Config(_) | AppError::Id(_) => true,
+            AppError::Model(_) | AppError::Tool(_) | AppError::Storage(_) | AppError::Mcp(_) | AppError::Context(_) | AppError::Skill(_) => false,
+        }
+    }
+}
+
 /// 标识符错误
 /// 
 /// 标识符是系统的核心概念，所有实体的唯一标识都必须通过Id<T>类型系统确保类型安全。
