@@ -69,6 +69,16 @@ pub enum McpServerStatus {
 }
 ```
 
+**状态与peer关系：**
+
+| `status` | `peer` | 说明 |
+|----------|--------|------|
+| `Disconnected` | `None` | 未连接，无peer实例 |
+| `Connecting` | `None` | 连接中，peer尚未创建 |
+| `Connected` | `Some(Peer)` | 已连接，peer可用 |
+| `Reconnecting` | `None` | 重连中，旧peer已丢弃 |
+| `Error` | `None` | 错误状态，peer已清理 |
+
 ### 3.2 工具包装
 
 ```rust
@@ -125,6 +135,12 @@ pub async fn register_mcp_tools(
     // 5. 为每个工具创建 McpToolWrapper
     // 6. 将工具包装器注册到 ToolRegistry
     // 7. 返回注册的工具数量
+
+    // 错误处理策略：
+    // - 连接失败：立即返回错误，不注册任何工具
+    // - 部分工具注册失败：记录失败工具，继续注册其他工具
+    // - 返回成功注册的工具数量（可能为0）
+    // - 所有工具都失败：返回错误，包含失败详情
     unimplemented!()
 }
 ```
@@ -248,6 +264,28 @@ stateDiagram-v2
 - **心跳**: 每30秒发送ping请求，超时10秒视为连接断开
 - **重连**: 断开后自动重连，最多尝试3次，间隔递增（1s, 2s, 4s）
 - **健康检查**: 连接建立后立即进行tools/list调用验证可用性
+
+**可配置的重连策略：**
+
+```rust
+pub struct ReconnectConfig {
+    pub max_attempts: u32,      // 最大重连次数，默认3
+    pub initial_delay_ms: u64,  // 初始延迟，默认1000ms
+    pub max_delay_ms: u64,      // 最大延迟，默认4000ms
+    pub backoff_multiplier: f64, // 退避倍数，默认2.0
+}
+
+impl Default for ReconnectConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_delay_ms: 1000,
+            max_delay_ms: 4000,
+            backoff_multiplier: 2.0,
+        }
+    }
+}
+```
 
 ### 7.3 生命周期事件
 

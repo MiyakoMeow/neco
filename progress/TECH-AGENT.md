@@ -113,6 +113,14 @@ pub trait MessageRepository: Send + Sync {
 }
 ```
 
+**错误场景说明：**
+
+| 方法 | 错误场景 | 返回行为 |
+|------|---------|---------|
+| `save` | 序列化失败、IO错误、存储空间不足 | 返回 `StorageError` |
+| `find_by_id` | ID不存在、文件损坏、解析失败 | 返回 `Ok(None)` 或 `Err(StorageError)` |
+| `find_children` | 父ID不存在、权限错误 | 返回空Vec或 `Err(StorageError)` |
+
 ### 3.2 领域模型定义
 
 ```rust
@@ -363,7 +371,7 @@ impl ToolExecutor for SpawnAgentTool {
                     },
                     "model_group": {
                         "type": "string",
-                        "description": "覆盖使用的模型组（可选）"
+                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值"
                     }
                 },
                 "required": ["agent_id", "task"]
@@ -561,11 +569,17 @@ pub enum WorkflowEvent {
 
 ```rust
 pub enum TriggerPattern {
+    /// 匹配所有事件
     All,
+    /// 匹配特定生命周期事件
     Lifecycle { events: Vec<LifecycleEvent> },
+    /// 匹配特定类型Agent创建
     AgentSpawned { agent_type: Option<String> },
+    /// 匹配Agent终止
     AgentTerminated,
+    /// 匹配系统关键字（精确匹配）
     SystemKeyword { keywords: Vec<String> },
+    /// 匹配消息内容（正则表达式）
     ContentMatch { pattern: String },
 }
 
@@ -577,13 +591,29 @@ pub struct TriggerHandler {
 }
 
 pub enum TriggerAction {
+    /// 执行指定工具
     ExecuteTool { tool_name: String, args: Value },
+    /// 向指定Agent发送消息
     SendMessage { target: AgentId, content: String },
+    /// 触发回调函数
     Callback { callback_id: String },
+    /// 记录日志
     Log { level: LogLevel, message: String },
+    /// 发出事件
     EmitEvent { event_type: String, payload: Value },
 }
 ```
+
+**触发器模式说明：**
+
+| 模式 | 触发条件 | 使用场景 |
+|------|---------|---------|
+| `All` | 所有事件 | 全局日志、监控 |
+| `Lifecycle` | 特定生命周期事件 | Agent状态跟踪 |
+| `AgentSpawned` | Agent创建时 | 初始化配置 |
+| `AgentTerminated` | Agent终止时 | 资源清理 |
+| `SystemKeyword` | 消息包含关键字 | 快捷命令响应 |
+| `ContentMatch` | 消息匹配正则 | 复杂内容过滤 |
 
 ## 6. Agent提示词加载
 

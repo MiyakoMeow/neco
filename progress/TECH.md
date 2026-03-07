@@ -267,7 +267,7 @@ graph TD
 | 类型 | 结构 | 校验规则 |
 |------|------|----------|
 | `SessionId` | `struct SessionId(Ulid)` | 26位Ulid字符串 |
-| `AgentId` | `struct AgentId { session: Ulid, agent: Ulid }` | 包含session和agent两个Ulid |
+| `AgentId` | `struct AgentId { session: Ulid, agent: Ulid }` | 包含session和agent两个Ulid。session字段标识所属Session，agent字段标识Agent在Session中的唯一性。格式：`{session_ulid}/{agent_ulid}` |
 | `MessageId` | `struct MessageId(u64)` | 原子自增，Session范围唯一 |
 | `NodeId` | `struct NodeId(String)` | kebab-case格式验证 |
 | `ToolId` | `struct ToolId(String)` | `namespace::name` 格式 |

@@ -55,9 +55,9 @@ pub struct ModelCapabilities {
 
 /// 聊天完成请求
 #[derive(Debug, Clone)]
-pub struct ChatRequest {
+pub struct ChatRequest<'a> {
     pub model: String,
-    pub messages: Vec<ModelMessage<'static>>,
+    pub messages: Vec<ModelMessage<'a>>,
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
@@ -570,31 +570,37 @@ impl ToolCallHandler {
 ```rust
 #[derive(Debug, Error)]
 pub enum ModelError {
-    #[error("API错误: {0}")]
-    Api(String),
-    
+    #[error("API错误: {provider} - {message}")]
+    Api { provider: String, message: String },
+
     #[error("网络错误: {0}")]
     Network(#[from] reqwest::Error),
-    
+
     #[error("速率限制: {0}")]
     RateLimit(String),
-    
+
     #[error("服务器错误: {status} - {message}")]
     ServerError { status: u16, message: String },
-    
+
     #[error("客户端未找到: {0}")]
     ClientNotFound(String),
-    
+
     #[error("模型组 {group} 中所有模型都失败")]
     AllModelsFailed { group: String },
-    
+
     #[error("配置错误: {0}")]
     Config(#[from] ConfigError),
-    
+
     #[error("超时")]
     Timeout,
 }
 ```
+
+**错误信息改进说明：**
+
+- `Api` 错误变体现在包含 `provider` 字段，明确标识是哪个提供商（如 "openai"、"anthropic"）
+- 错误消息格式：`{provider} - {message}`，例如：`"openai - Invalid API key"`
+- 便于在日志中追踪和调试特定提供商的问题
 
 ---
 

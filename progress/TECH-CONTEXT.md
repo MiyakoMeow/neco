@@ -223,8 +223,8 @@ pub trait ContextObserver: Send + Sync {
 
 pub struct ContextFilter {
     pub roles: Option<Vec<Role>>,
-    pub min_id: Option<u64>,
-    pub max_id: Option<u64>,
+    pub min_id: Option<MessageId>,
+    pub max_id: Option<MessageId>,
     pub with_tool_calls: Option<bool>,
 }
 
@@ -234,7 +234,7 @@ pub struct ContextObservation {
 }
 
 pub struct MessageSummary {
-    pub id: u64,
+    pub id: MessageId,
     pub role: Role,
     pub content_preview: String,
     pub size_chars: usize,

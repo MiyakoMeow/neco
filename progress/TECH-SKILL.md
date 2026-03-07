@@ -191,6 +191,21 @@ impl SkillService {
         // 3. 解析SKILL.md的YAML frontmatter提取元数据
         // 4. 验证必需字段（name, description）
         // 5. 缓存索引到self.index中
+
+        // 索引缓存策略：
+        // - 首次加载：全量扫描并缓存
+        // - 后续访问：直接从缓存返回，不重复扫描
+        // - 缓存失效：手动调用reload_index()或检测目录变更
+        // - 缓存结构：使用RwLock<SkillIndex>支持并发读取
+        unimplemented!()
+    }
+
+    pub async fn reload_index(&self) -> Result<SkillIndex, SkillError> {
+        // [TODO] 实现索引重新加载
+        // 1. 清空现有索引缓存
+        // 2. 重新扫描目录
+        // 3. 更新self.index
+        // 4. 返回新索引
         unimplemented!()
     }
     
@@ -218,6 +233,17 @@ impl SkillService {
         // 3. 构建SkillResources（脚本、引用、资源信息）
         // 4. 注册工具（如果有可执行脚本）
         // 5. 构建ActivatedSkill并返回
+        // 6. 记录激活状态到activated_skills集合
+        unimplemented!()
+    }
+
+    pub async fn deactivate(&self, id: &SkillId) -> Result<(), SkillError> {
+        // [TODO] 实现Skill停用
+        // 1. 从activated_skills中查找Skill
+        // 2. 遍历Skill.tools，从ToolRegistry中注销所有工具
+        // 3. 清理运行时资源（如打开的文件句柄、临时文件）
+        // 4. 从activated_skills中移除
+        // 5. 保留磁盘上的Skill文件，仅移除内存状态
         unimplemented!()
     }
 }

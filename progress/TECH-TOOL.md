@@ -87,6 +87,9 @@ pub enum ResourceLevel {
 pub struct ToolDefinition {
     pub id: ToolId,
     pub description: String,
+    /// JSON Schema 格式的参数定义
+    /// 使用 JSON Schema Draft 2020-12 规范
+    /// 参考：https://json-schema.org/draft/2020-12/release-notes
     pub schema: Value,
     pub capabilities: ToolCapabilities,
     pub timeout: Duration,
@@ -147,11 +150,31 @@ impl ToolId {
     pub fn from_parts(namespace: &str, name: &str) -> Self {
         Self(format!("{}::{}", namespace, name))
     }
-    
+
+    pub fn from_parts_validated(namespace: &str, name: &str) -> Result<Self, ToolError> {
+        // 验证namespace：只允许小写字母、数字、连字符
+        if !namespace.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+            return Err(ToolError::InvalidArgs(format!(
+                "Invalid namespace '{}': only lowercase letters, digits, and hyphens allowed",
+                namespace
+            )));
+        }
+
+        // 验证name：只允许小写字母、数字、连字符、下划线
+        if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+            return Err(ToolError::InvalidArgs(format!(
+                "Invalid name '{}': only lowercase letters, digits, hyphens, and underscores allowed",
+                name
+            )));
+        }
+
+        Ok(Self(format!("{}::{}", namespace, name)))
+    }
+
     pub fn namespace(&self) -> Option<&str> {
         self.0.split("::").next()
     }
-    
+
     pub fn name(&self) -> Option<&str> {
         self.0.split("::").nth(1)
     }
@@ -173,12 +196,16 @@ impl DefaultToolRegistry {
             tools: RwLock::new(HashMap::new()),
             timeouts: RwLock::new(HashMap::new()),
         };
-        
-        // 注册内置工具：fs::read, fs::write, fs::edit, fs::delete
-        // 注册多智能体工具：multi-agent::spawn, send, report
-        // 注册上下文工具：context::observe
-        // 注册MCP和Skill外部工具
-        
+
+        // 注册内置工具（按优先级排序）
+        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete
+        // 2. 上下文工具：context::observe
+        // 3. 多智能体工具：multi-agent::spawn, multi-agent::send, multi-agent::report
+        // 4. 激活工具：activate::skill, activate::mcp
+        // 5. 工作流工具：workflow::approve, workflow::reject
+
+        // 注意：MCP和Skill外部工具在运行时动态注册
+
         registry
     }
 }
@@ -368,16 +395,39 @@ pub enum VerifyResult {
     TooShort,
 }
 
+/// Verify验证配置
+pub struct VerifyConfig {
+    /// 前缀匹配的最小长度阈值
+    pub prefix_match_threshold: usize,
+}
+
+impl Default for VerifyConfig {
+    fn default() -> Self {
+        Self {
+            prefix_match_threshold: 20,
+        }
+    }
+}
+
 /// Verify验证
 pub fn verify_line_content(
     actual: &str,
     expected: &str,
 ) -> VerifyResult {
+    verify_line_content_with_config(actual, expected, &VerifyConfig::default())
+}
+
+/// 使用自定义配置的Verify验证
+pub fn verify_line_content_with_config(
+    actual: &str,
+    expected: &str,
+    config: &VerifyConfig,
+) -> VerifyResult {
     // TODO: 实现verify验证逻辑
     // 1. 去除actual和expected的行尾换行符
     // 2. 如果actual和expected完全相等，返回ExactMatch
-    // 3. 如果actual以expected开头且expected长度≥20，返回PrefixMatch
-    // 4. 如果actual长度不足20且非完全匹配，返回TooShort
+    // 3. 如果actual以expected开头且expected长度≥config.prefix_match_threshold，返回PrefixMatch
+    // 4. 如果actual长度不足config.prefix_match_threshold且非完全匹配，返回TooShort
     // 5. 其他情况返回Mismatch
     unimplemented!()
 }

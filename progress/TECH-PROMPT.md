@@ -114,6 +114,12 @@ pub trait PromptLoader {
 **返回值定义：**
 - `Result<String, PromptError>` - 成功返回提示词内容，失败返回错误
 
+**编码规范：**
+- 文件编码：UTF-8（带BOM或不带BOM均可）
+- 换行符：支持 `\n`（Unix）和 `\r\n`（Windows），统一转换为 `\n`
+- 空白处理：保留首尾空白行，但trim每行右侧空格
+- 特殊字符：支持Unicode字符（包括中文、emoji等）
+
 ### 5.2 PromptBuilder 接口
 
 提示词构建器负责组合多个组件生成最终提示词。
