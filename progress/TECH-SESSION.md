@@ -310,8 +310,8 @@ impl AgentHierarchy {
     
     pub fn add_child(&mut self, parent: AgentId, child: AgentId) {
         // TODO: 实现添加子节点
-        // 1. 在parent_map中插入 child -> Weak::new(parent) 的映射
-        // 2. 在children_map中为parent添加Weak::new(child)到Vec
+        // 1. 在parent_map中插入 child -> parent 的映射
+        // 2. 在children_map中为parent添加child到Vec
         // 3. 如果parent尚无children记录，创建新的Vec
         unimplemented!()
     }

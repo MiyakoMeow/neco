@@ -14,11 +14,11 @@
 ```rust
 #[async_trait]
 pub trait UserInterface: Send + Sync {
-    async fn init(&self) -> Result<(), UiError>;
-    async fn get_input(&self) -> Result<UserInput, UiError>;
-    async fn render(&self, output: &AgentOutput) -> Result<(), UiError>;
-    async fn ask(&self, question: &str, options: Option<Vec<String>>) -> Result<String, UiError>;
-    async fn shutdown(&self) -> Result<(), UiError>;
+    async fn init(&mut self) -> Result<(), UiError>;
+    async fn get_input(&mut self) -> Result<UserInput, UiError>;
+    async fn render(&mut self, output: &AgentOutput) -> Result<(), UiError>;
+    async fn ask(&mut self, question: &str, options: Option<Vec<String>>) -> Result<String, UiError>;
+    async fn shutdown(&mut self) -> Result<(), UiError>;
 }
 
 pub enum UserInput {

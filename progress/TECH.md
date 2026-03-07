@@ -1086,7 +1086,7 @@ pub trait NecoKernel: Send + Sync {
     
     fn session_manager(&self) -> Arc<SessionManager>;
     
-    fn shutdown(&self) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+    async fn shutdown(&self);
 }
 ```
 
