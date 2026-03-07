@@ -108,7 +108,152 @@ pub trait ModelClient: Send + Sync {
 }
 ```
 
-### 3.2 模型组客户端
+## 4. 类型定义
+
+### 4.1 消息类型
+
+```rust
+/// 聊天消息
+#[derive(Debug, Clone)]
+#[serde(tag = "role")]
+pub enum ModelMessage<'a> {
+    System { content: &'a str },
+    User { content: &'a str },
+    Assistant { content: &'a str, tool_calls: Option<Vec<ToolCall>> },
+    Tool { tool_call_id: &'a str, content: &'a str },
+}
+```
+
+### 4.2 工具调用
+
+```rust
+/// 工具调用
+#[derive(Debug, Clone)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: Value,
+}
+```
+
+### 4.3 工具定义
+
+```rust
+/// 工具定义
+#[derive(Debug, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: Value,
+}
+```
+
+### 4.4 流式响应块
+
+```rust
+/// 流式响应块
+#[derive(Debug, Clone)]
+pub struct ChatChunk {
+    pub id: String,
+    pub choices: Vec<ChunkChoice>,
+}
+```
+
+### 4.5 消息（响应中的消息）
+
+```rust
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+    pub tool_calls: Option<Vec<ToolCall>>,
+}
+```
+
+### 4.6 模型引用
+
+```rust
+/// 模型引用
+#[derive(Debug, Clone)]
+pub struct ModelRef {
+    pub name: String,
+    pub provider: String,
+}
+```
+
+### 4.7 重试配置
+
+```rust
+/// 重试配置
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    pub max_retries: u32,
+    pub initial_delay_ms: u64,
+    pub max_delay_ms: u64,
+    pub backoff_multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            initial_delay_ms: 1000,
+            max_delay_ms: 30000,
+            backoff_multiplier: 2.0,
+        }
+    }
+}
+```
+
+## 5. 业务流程图
+
+### 5.1 故障转移流程
+
+```mermaid
+flowchart TD
+    A[开始请求] --> B{选择模型}
+    B --> C[调用模型]
+    C --> D{成功?}
+    D -->|是| E[返回响应]
+    D -->|否| F{可重试错误?}
+    F -->|是| G[重试]
+    F -->|否| H{有下一个模型?}
+    G --> C
+    H -->|是| I[切换模型]
+    H -->|否| J[返回错误]
+    I --> C
+```
+
+### 5.2 重试流程
+
+```mermaid
+flowchart TD
+    A[首次调用] --> B{成功?}
+    B -->|是| C[返回结果]
+    B -->|否| D{次数 < max_retries?}
+    D -->|是| E[计算延迟]
+    E --> F[等待]
+    F --> G[重试调用]
+    G --> B
+    D -->|否| H[返回错误]
+```
+
+### 5.3 流式处理流程
+
+```mermaid
+flowchart TD
+    A[开始流式请求] --> B[创建流]
+    B --> C{有数据?}
+    C -->|是| D[解析Chunk]
+    D --> E[回调处理]
+    E --> C
+    C -->|否| F{完成?}
+    F -->|是| G[返回完整响应]
+    F -->|否| H[等待更多数据]
+    H --> C
+```
+
+## 6. 模型组客户端
 
 ```rust
 pub struct ModelGroupClient {
@@ -132,9 +277,9 @@ impl ModelGroupClient {
 }
 ```
 
-## 4. OpenAI客户端实现
+## 7. OpenAI客户端实现
 
-### 4.1 客户端结构
+### 7.1 客户端结构
 
 ```rust
 pub struct OpenAiClient {
@@ -193,7 +338,7 @@ impl ModelClient for OpenAiClient {
 }
 ```
 
-## 5. 流式输出处理
+## 8. 流式输出处理
 
 ```rust
 use futures::StreamExt;
@@ -221,7 +366,7 @@ impl StreamHandler {
 }
 ```
 
-## 6. 工具调用处理
+## 9. 工具调用处理
 
 ```rust
 pub struct ToolCallHandler;
@@ -242,7 +387,7 @@ impl ToolCallHandler {
 }
 ```
 
-## 7. 错误处理
+## 10. 错误处理
 
 ```rust
 #[derive(Debug, Error)]

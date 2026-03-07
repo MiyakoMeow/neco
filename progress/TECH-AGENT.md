@@ -77,7 +77,83 @@ graph TB
 
 ## 3. Agent引擎设计
 
-### 3.1 Agent引擎核心
+### 3.1 仓储接口定义
+
+> 为解决循环依赖问题，在 `neco-core` 中定义领域仓储接口：
+
+```mermaid
+graph LR
+    subgraph "领域层"
+        Engine[Agent引擎] -->|依赖| AgentRepo[AgentRepository trait]
+        Engine -->|依赖| MessageRepo[MessageRepository trait]
+    end
+    
+    subgraph "基础设施层"
+        AgentRepo -->|实现| FileAgentRepo[FileAgentRepository]
+        MessageRepo -->|实现| FileMessageRepo[FileMessageRepository]
+    end
+```
+
+**Agent仓储接口：**
+
+```rust
+/// Agent仓储接口
+#[async_trait]
+pub trait AgentRepository: Send + Sync {
+    async fn save(&self, agent: &Agent) -> Result<(), StorageError>;
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>, StorageError>;
+    async fn find_children(&self, parent_id: &AgentId) -> Result<Vec<Agent>, StorageError>;
+}
+
+/// 消息仓储接口
+#[async_trait]
+pub trait MessageRepository: Send + Sync {
+    async fn save(&self, message: &Message) -> Result<(), StorageError>;
+    async fn find_by_session(&self, session_id: &SessionId) -> Result<Vec<Message>, StorageError>;
+}
+```
+
+### 3.2 领域模型定义
+
+```rust
+/// Agent状态
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentState {
+    Idle,
+    Running,
+    Waiting,
+    Completed,
+    Failed,
+}
+
+/// Agent领域模型
+pub struct Agent {
+    pub id: AgentId,
+    pub parent_id: Option<AgentId>,
+    pub definition_id: String,
+    pub state: AgentState,
+    pub model_group: Option<String>,
+    pub system_prompt: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // ... 其他字段
+}
+```
+
+**Agent字段说明：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | AgentId | Agent唯一标识 |
+| `parent_id` | Option\<AgentId\> | 父Agent ID |
+| `definition_id` | String | Agent定义标识 |
+| `state` | AgentState | Agent当前状态 |
+| `model_group` | Option\<String\> | 使用的模型组 |
+| `system_prompt` | Option\<String\> | 系统提示词 |
+| `created_at` | DateTime\<Utc\> | 创建时间 |
+| `updated_at` | DateTime\<Utc\> | 更新时间 |
+
+### 3.3 Agent引擎核心
 
 > **注意**：Agent引擎不直接持有领域模型，通过仓储接口访问
 
@@ -105,6 +181,51 @@ impl AgentEngine {
         // 5. 返回结果
         unimplemented!()
     }
+```
+
+**run_agent 执行流程：**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Engine as AgentEngine
+    participant Repo as AgentRepository
+    participant Model as ModelClient
+    participant Tools as ToolRegistry
+    participant Events as EventPublisher
+
+    Client->>Engine: run_agent(agent_id, input)
+    Engine->>Repo: find_by_id(agent_id)
+    Repo-->>Engine: agent
+    
+    alt agent not found
+        Engine-->>Client: Err(AgentError::NotFound)
+    else agent found
+        Engine->>Events: publish(AgentStarted)
+        
+        Engine->>Repo: find_children(agent_id)
+        Repo-->>Engine: children
+        
+        Engine->>Engine: build_context(agent, children)
+        
+        loop 模型调用循环
+            Engine->>Model: chat(context, input)
+            Model-->>Engine: response
+            
+            alt 有工具调用
+                Engine->>Tools: execute_tools(tool_calls)
+                Tools-->>Engine: tool_results
+                Engine->>Events: publish(ToolCalled)
+            else 无工具调用
+                break 模型返回最终结果
+            end
+        end
+        
+        Engine->>Repo: save(agent)
+        Engine->>Events: publish(AgentCompleted)
+        Engine-->>Client: Ok(result)
+    end
+```
     
     pub async fn spawn_child(
         &self,
@@ -118,6 +239,34 @@ impl AgentEngine {
         // 4. 返回AgentId
         unimplemented!()
     }
+```
+
+**spawn_child 执行流程：**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Engine as AgentEngine
+    participant Repo as AgentRepository
+    participant Events as EventPublisher
+
+    Client->>Engine: spawn_child(parent_id, definition_id)
+    Engine->>Repo: find_by_id(parent_id)
+    Repo-->>Engine: parent_agent
+    
+    alt parent not found
+        Engine-->>Client: Err(AgentError::ParentNotFound)
+    else parent found
+        Engine->>Engine: generate_child_id(parent_id)
+        
+        Engine->>Engine: create_agent(parent_id, definition_id)
+        
+        Engine->>Repo: save(child_agent)
+        Engine->>Events: publish(AgentCreated { id, parent_id })
+        
+        Engine-->>Client: Ok(child_agent_id)
+    end
+```
 }
 
 /// Agent执行结果

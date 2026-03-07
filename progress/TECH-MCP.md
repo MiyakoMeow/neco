@@ -2,6 +2,11 @@
 
 本文档描述Neco项目的MCP（Model Context Protocol）模块设计。
 
+**设计原则：**
+- 支持stdio和HTTP两种传输模式
+- 连接状态自动管理（重连、心跳）
+- 工具定义与执行分离
+
 ## 1. 模块概述
 
 MCP模块提供与MCP服务器的通信能力，支持stdio和HTTP两种传输模式。
@@ -85,13 +90,24 @@ impl ToolExecutor for McpToolWrapper {
         context: &ToolContext,
         args: Value,
     ) -> Result<ToolResult, ToolError> {
-        // TODO: 调用MCP工具
+        // TODO:
+        // 1. 从连接池获取该server的连接
+        // 2. 构建MCP JSON-RPC请求
+        // 3. 发送请求并等待响应
+        // 4. 解析响应结果
+        // 5. 转换为ToolResult返回
         unimplemented!()
     }
 }
 ```
 
-### 3.3 工具注册
+### 3.3 工具定义
+
+| 工具 | 功能 | 超时 |
+|------|------|------|
+| `mcp::server_name` | 调用MCP服务器工具 | 30秒 |
+
+### 3.4 工具注册
 
 ```rust
 pub async fn register_mcp_tools(
@@ -151,6 +167,95 @@ pub enum McpError {
     
     #[error("服务器错误: {0}")]
     ServerError(String),
+}
+```
+
+## 6. MCP协议消息定义
+
+### 6.1 JSON-RPC消息格式
+
+MCP协议基于JSON-RPC 2.0规范，主要消息类型包括：
+
+```json
+// 工具调用请求
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+        "name": "tool_name",
+        "arguments": {}
+    }
+}
+
+// 初始化请求
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {}
+    }
+}
+
+// 工具列表请求
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+}
+```
+
+### 6.2 核心方法
+
+| 方法 | 方向 | 说明 |
+|------|------|------|
+| `initialize` | Client→Server | 初始化连接，交换协议版本和能力 |
+| `tools/list` | Client→Server | 获取可用工具列表 |
+| `tools/call` | Client→Server | 调用指定工具 |
+| `notifications/initialized` | Client→Server | 通知初始化完成 |
+| `ping` | Client↔Server | 心跳保活 |
+
+## 7. 连接生命周期
+
+### 7.1 连接状态流转
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected
+    Disconnected --> Connecting: 发起连接
+    Connecting --> Connected: 连接成功
+    Connected --> Reconnecting: 连接断开
+    Reconnecting --> Connected: 重连成功
+    Reconnecting --> Error: 重连失败
+    Connected --> Disconnected: 主动断开
+    Error --> [*]
+```
+
+### 7.2 连接管理策略
+
+- **连接池**: 每个MCP服务器维护一个连接池，默认大小为1
+- **心跳**: 每30秒发送ping请求，超时10秒视为连接断开
+- **重连**: 断开后自动重连，最多尝试3次，间隔递增（1s, 2s, 4s）
+- **健康检查**: 连接建立后立即进行tools/list调用验证可用性
+
+### 7.3 生命周期事件
+
+```rust
+pub enum ConnectionEvent {
+    Connected { server: String },
+    Disconnected { server: String, reason: DisconnectReason },
+    Reconnecting { server: String, attempt: u32 },
+    Error { server: String, error: McpError },
+}
+
+pub enum DisconnectReason {
+    RemoteClosed,
+    TransportError,
+    Timeout,
+    MaxRetriesExceeded,
 }
 ```
 

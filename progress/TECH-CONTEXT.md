@@ -1,12 +1,44 @@
 # TECH-CONTEXT: 上下文管理模块
 
-本文档描述Neco项目的上下文管理模块设计。
+本文档描述Neco项目的上下文管理模块设计，采用领域驱动设计，分离领域模型与基础设施。
 
 ## 1. 模块概述
 
 上下文管理模块负责：
 1. 监控上下文大小，触发自动或手动压缩
 2. 提供上下文观测功能
+
+### 1.1 模块边界
+
+```mermaid
+graph LR
+    subgraph "neco-context"
+        CM[ContextManager]
+        CS[CompressionService]
+        CO[ContextObserver]
+        TC[TokenCounter]
+    end
+    
+    subgraph "依赖模块"
+        Session[neco-session]
+        Model[neco-model]
+        Agent[neco-agent]
+    end
+    
+    Agent --> CM
+    CM --> Session
+    CM --> Model
+    CO --> Session
+```
+
+### 1.2 核心职责
+
+| 组件 | 职责 |
+|------|------|
+| `ContextManager` | 上下文生命周期管理、触发压缩 |
+| `CompressionService` | 执行压缩逻辑、调用模型生成摘要 |
+| `ContextObserver` | 提供上下文观测能力 |
+| `TokenCounter` | Token数量估算 |
 
 ## 2. 核心概念
 
@@ -31,9 +63,150 @@ graph TD
 | 自动触发 | 上下文大小 > 窗口×阈值 | 默认90% |
 | 手动触发 | /compact命令 | 用户主动 |
 
-## 3. 上下文观测
+## 3. 核心Trait定义
 
-### 3.1 观测接口
+### 3.1 ContextManager
+
+```rust
+#[async_trait]
+pub trait ContextManager: Send + Sync {
+    /// 构建上下文消息列表
+    async fn build_context(
+        &self,
+        agent_id: &AgentId,
+        max_tokens: usize,
+    ) -> Result<Vec<ModelMessage>, ContextError>;
+    
+    /// 检查是否需要压缩
+    fn should_compact(&self, agent_id: &AgentId) -> bool;
+    
+    /// 执行压缩
+    async fn compact(
+        &self,
+        agent_id: &AgentId,
+    ) -> Result<CompactResult, ContextError>;
+    
+    /// 获取上下文统计信息
+    async fn get_stats(
+        &self,
+        agent_id: &AgentId,
+    ) -> Result<ContextStats, ContextError>;
+}
+```
+
+### 3.2 ContextManager实现
+
+```rust
+pub struct ContextManagerImpl {
+    session_repo: Arc<dyn SessionRepository>,
+    message_repo: Arc<dyn MessageRepository>,
+    compression_service: Arc<CompressionService>,
+    config: ContextConfig,
+}
+
+#[async_trait]
+impl ContextManager for ContextManagerImpl {
+    async fn build_context(
+        &self,
+        agent_id: &AgentId,
+        max_tokens: usize,
+    ) -> Result<Vec<ModelMessage>, ContextError> {
+        // TODO: 实现上下文构建
+        // 1. 从MessageRepository获取消息
+        // 2. 按token限制截断
+        // 3. 转换为ModelMessage返回
+        unimplemented!()
+    }
+    
+    fn should_compact(&self, agent_id: &AgentId) -> bool {
+        // TODO: 实现压缩检查
+        unimplemented!()
+    }
+    
+    async fn compact(
+        &self,
+        agent_id: &AgentId,
+    ) -> Result<CompactResult, ContextError> {
+        // TODO: 实现压缩
+        // 1. 获取消息列表
+        // 2. 调用CompressionService
+        // 3. 截断旧消息
+        // 4. 添加摘要消息
+        unimplemented!()
+    }
+    
+    async fn get_stats(
+        &self,
+        agent_id: &AgentId,
+    ) -> Result<ContextStats, ContextError> {
+        // TODO: 实现统计获取
+        unimplemented!()
+    }
+}
+
+## 4. 数据流
+
+### 4.1 消息获取流程
+
+```mermaid
+sequenceDiagram
+    participant Agent as neco-agent
+    participant CM as ContextManager
+    participant MR as MessageRepository
+    participant TC as TokenCounter
+
+    Agent->>CM: build_context(agent_id, max_tokens)
+    CM->>MR: list_messages(agent_id)
+    MR-->>CM: Vec<Message>
+    CM->>TC: estimate_tokens(messages)
+    CM->>CM: 按token限制截断
+    CM->>CM: 转换为ModelMessage
+    CM-->>Agent: Vec<ModelMessage>
+```
+
+### 4.2 压缩执行流程
+
+```mermaid
+sequenceDiagram
+    participant Agent as neco-agent
+    participant CM as ContextManager
+    participant CS as CompressionService
+    participant Model as neco-model
+    participant MR as MessageRepository
+
+    Agent->>CM: compact(agent_id)
+    CM->>MR: list_messages(agent_id)
+    MR-->>CM: Vec<Message>
+    CM->>CS: compact(messages)
+    CS->>Model: chat_completion(压缩提示)
+    Model-->>CS: 摘要文本
+    CS-->>CM: CompactResult
+    CM->>MR: truncate(agent_id, keep_ids)
+    CM->>MR: append(摘要消息)
+    CM-->>Agent: CompactResult
+```
+
+### 4.3 观测流程
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Tool as context::observe
+    participant CO as ContextObserver
+    participant MR as MessageRepository
+
+    User->>Tool: observe(filter?)
+    Tool->>CO: observe(agent_id, filter)
+    CO->>MR: list_messages(agent_id)
+    MR-->>CO: Vec<Message>
+    CO->>CO: 生成统计信息
+    CO-->>Tool: ContextObservation
+    Tool-->>User: 格式化输出
+```
+
+## 5. 上下文观测
+
+### 5.1 观测接口
 
 ```rust
 #[async_trait]
@@ -75,7 +248,7 @@ pub struct ContextStats {
 }
 ```
 
-### 3.2 context::observe 工具
+### 5.2 context::observe 工具
 
 ```rust
 pub struct ObserveTool {
@@ -125,9 +298,9 @@ impl ToolExecutor for ObserveTool {
 }
 ```
 
-## 4. 上下文压缩
+## 6. 上下文压缩
 
-### 4.1 压缩配置
+### 6.1 压缩配置
 
 ```rust
 pub struct ContextConfig {
@@ -149,7 +322,7 @@ impl Default for ContextConfig {
 }
 ```
 
-### 4.2 压缩结果
+### 6.2 压缩结果
 
 ```rust
 pub struct CompactResult {
@@ -170,7 +343,7 @@ pub struct TokenSavings {
 }
 ```
 
-### 4.3 压缩服务
+### 6.3 压缩服务
 
 ```rust
 pub struct CompressionService {
@@ -200,7 +373,7 @@ impl CompressionService {
 }
 ```
 
-## 5. Token计数
+## 7. Token计数
 
 ```rust
 pub trait TokenCounter: Send + Sync {
@@ -232,7 +405,7 @@ impl TokenCounter for SimpleCounter {
 }
 ```
 
-## 6. 错误处理
+## 8. 错误处理
 
 ```rust
 #[derive(Debug, Error)]

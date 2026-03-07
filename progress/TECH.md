@@ -149,7 +149,7 @@ sequenceDiagram
     UI-->>User: 显示结果
 ```
 
-### 1.3 数据流全景图
+### 1.4 数据流全景图
 
 ```mermaid
 sequenceDiagram
@@ -314,26 +314,33 @@ graph TD
 
 ### 3.2 统一消息系统
 
+> **详细数据结构定义见** [TECH-SESSION.md](TECH-SESSION.md)
+
 **设计原则**：消除 Session 层 `Message`（有id）与 Model 层 `ModelMessage`（无id）的重复
+
+**TODO**: 统一消息系统详细设计见 [TECH-SESSION.md#3-消息模型设计](TECH-SESSION.md#3-消息模型设计)
 
 ```rust
 // 领域消息（Session层使用，有id）
+// TODO: 详细字段定义见 TECH-SESSION.md
 pub struct Message {
-    pub id: MessageId,
-    pub role: Role,
-    pub content: String,
-    pub tool_calls: Option<Vec<ToolCall>>,
-    pub tool_call_id: Option<String>,
-    pub timestamp: DateTime<Utc>,
-    pub metadata: Option<MessageMetadata>,
+    // pub id: MessageId,
+    // pub role: Role,
+    // pub content: String,
+    // pub tool_calls: Option<Vec<ToolCall>>,
+    // pub tool_call_id: Option<String>,
+    // pub timestamp: DateTime<Utc>,
+    // pub metadata: Option<MessageMetadata>,
+    // ... 更多字段
 }
 
 // 模型消息（Model层使用，无id）
+// TODO: 详细字段定义见 TECH-SESSION.md
 pub struct ModelMessage<'a> {
-    pub role: Role,
-    pub content: Cow<'a, str>,
-    pub tool_calls: Option<&'a [ToolCall]>,
-    pub tool_call_id: Option<&'a str>,
+    // pub role: Role,
+    // pub content: Cow<'a, str>,
+    // pub tool_calls: Option<&'a [ToolCall]>,
+    // pub tool_call_id: Option<&'a str>,
 }
 
 // 转换方法
@@ -547,12 +554,13 @@ sequenceDiagram
 **统一事件类型：**
 
 ```rust
+// TODO: 详细事件类型定义见 TECH-AGENT.md
 pub enum Event {
-    Session(SessionEvent),
-    Agent(AgentEvent),
-    Workflow(WorkflowEvent),
-    Tool(ToolEvent),
-    System(SystemEvent),
+    // Session(SessionEvent),
+    // Agent(AgentEvent),
+    // Workflow(WorkflowEvent),
+    // Tool(ToolEvent),
+    // System(SystemEvent),
 }
 ```
 
@@ -581,52 +589,34 @@ pub trait EventSubscriber: Send + Sync {
 
 > **设计原则**: 所有模块错误类型统一在 `neco-core` 的 `AppError` 中定义，采用领域错误分类。
 
+**TODO**: 各领域错误详细定义见 [TECH-SESSION.md#6-错误类型设计](TECH-SESSION.md#6-错误类型设计)
+
 ```rust
 /// 统一错误类型 - 应用层错误
+// TODO: 详细错误定义见各模块文档
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("Session领域错误: {0}")]
-    Session(#[from] SessionError),
-    
-    #[error("Agent领域错误: {0}")]
-    Agent(#[from] AgentError),
-    
-    #[error("工作流领域错误: {0}")]
-    Workflow(#[from] WorkflowError),
-    
-    #[error("模型服务错误: {0}")]
-    Model(#[from] ModelError),
-    
-    #[error("工具服务错误: {0}")]
-    Tool(#[from] ToolError),
-    
-    #[error("配置错误: {0}")]
-    Config(#[from] ConfigError),
-    
-    #[error("存储错误: {0}")]
-    Storage(#[from] StorageError),
-    
-    #[error("MCP错误: {0}")]
-    Mcp(#[from] McpError),
-    
-    #[error("上下文错误: {0}")]
-    Context(#[from] ContextError),
-    
-    #[error("Skill错误: {0}")]
-    Skill(#[from] SkillError),
-    
-    #[error("标识符错误: {0}")]
-    Id(#[from] IdError),
+    // Session(#[from] SessionError),
+    // Agent(#[from] AgentError),
+    // Workflow(#[from] WorkflowError),
+    // Model(#[from] ModelError),
+    // Tool(#[from] ToolError),
+    // Config(#[from] ConfigError),
+    // Storage(#[from] StorageError),
+    // Mcp(#[from] McpError),
+    // Context(#[from] ContextError),
+    // Skill(#[from] SkillError),
+    // Id(#[from] IdError),
 }
 
 /// 标识符错误（新增）
+// TODO: 详细错误定义见 neco-core
 #[derive(Debug, Error)]
 pub enum IdError {
-    #[error("ID格式错误: {0}")]
-    InvalidFormat(String),
-    
-    #[error("ID类型不匹配: 期望 {expected}, 实际 {actual}")]
-    TypeMismatch { expected: &'static str, actual: &'static str },
+    // #[error("ID格式错误: {0}")]
+    // InvalidFormat(String),
+    // #[error("ID类型不匹配: 期望 {expected}, 实际 {actual}")]
+    // TypeMismatch { expected: &'static str, actual: &'static str },
 }
 ```
 

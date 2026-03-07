@@ -1,6 +1,21 @@
 # TECH-CONFIG: 配置管理模块
 
-本文档描述Neco项目的配置管理模块设计，采用类型安全的配置结构。
+本文文档描述Neco项目的配置管理模块设计，采用类型安全的配置结构。
+
+## 模块架构图
+
+```mermaid
+graph TB
+    subgraph Config
+        CL[ConfigLoader]
+        CM[ConfigMerger]
+        CV[ConfigValidator]
+    end
+    Storage --> CL
+    CL --> CM
+    CM --> CV
+    CV --> App
+```
 
 ## 1. 模块概述
 
@@ -88,7 +103,7 @@ pub struct ModelRef {
 impl ModelRef {
     pub fn parse(s: &str) -> Result<Self, ConfigError> {
         // 格式：provider/model?param=value
-        // TODO: 实现解析逻辑
+        // TODO(#??): 实现解析逻辑
         unimplemented!()
     }
 }
@@ -262,9 +277,44 @@ pub enum RunMode {
 }
 ```
 
-## 4. 配置加载器
+## 4. 配置数据流
 
-### 4.1 配置加载流程
+### 4.1 完整流程
+
+配置数据从源到应用的完整处理流程如下：
+
+```mermaid
+flowchart LR
+    A[配置文件] --> B[解析]
+    B --> C[合并]
+    C --> D[验证]
+    D --> E[应用]
+
+    subgraph 多级配置优先级
+        F[.neco/] --> C
+        G[.agents/] --> C
+        H[~/.config/neco/] --> C
+        I[~/.agents/] --> C
+    end
+```
+
+### 4.2 优先级处理逻辑
+
+多级配置按以下优先级处理（从高到低）：
+
+1. **当前项目 `.neco/`** - 最高优先级，用于项目特定配置
+2. **当前项目 `.agents/`** - 项目级通用配置
+3. **`~/.config/neco/`** - 用户主配置目录
+4. **`~/.agents/`** - 最低优先级，通用默认配置
+
+**合并规则：**
+- 高优先级配置覆盖低优先级相同键
+- 数组类型采用替换而非合并
+- 嵌套对象采用深度合并
+
+## 5. 配置加载器
+
+### 5.1 配置加载流程
 
 ```mermaid
 sequenceDiagram
@@ -290,7 +340,18 @@ sequenceDiagram
     end
 ```
 
-### 4.2 配置加载器实现
+### 5.2 ConfigSource Trait
+
+配置源抽象，允许扩展不同的配置来源：
+
+```rust
+pub trait ConfigSource: Send + Sync {
+    fn load(&self) -> Result<Config, ConfigError>;
+    fn watch(&self) -> Result<Box<dyn Stream>, ConfigError>;
+}
+```
+
+### 5.3 配置加载器实现
 
 ```rust
 pub struct ConfigLoader {
@@ -309,7 +370,7 @@ impl ConfigLoader {
     }
     
     pub fn load(&self) -> Result<Config, ConfigError> {
-        // TODO: 实现配置加载逻辑
+        // TODO(#??): 实现配置加载逻辑
         // 1. 查找所有配置文件
         // 2. 按优先级解析和合并
         // 3. 验证配置
@@ -318,7 +379,7 @@ impl ConfigLoader {
     }
     
     pub fn load_workflow_config(&self, workflow_dir: &Path) -> Result<Config, ConfigError> {
-        // TODO: 加载工作流特定配置
+        // TODO(#??): 加载工作流特定配置
         unimplemented!()
     }
 }
@@ -381,7 +442,7 @@ impl ConfigValidator {
     }
     
     fn validate_mcp_servers(config: &Config) -> Result<(), ConfigError> {
-        // TODO: 验证MCP服务器配置
+        // TODO(#??): 验证MCP服务器配置
         Ok(())
     }
 }

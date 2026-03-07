@@ -161,6 +161,7 @@ impl ToolId {
 ### 3.3 默认工具注册表实现
 
 ```rust
+/// 默认工具注册表实现
 pub struct DefaultToolRegistry {
     tools: RwLock<HashMap<ToolId, Arc<dyn ToolExecutor>>>,
     timeouts: RwLock<HashMap<String, Duration>>,
@@ -168,68 +169,15 @@ pub struct DefaultToolRegistry {
 
 impl DefaultToolRegistry {
     pub fn new() -> Self {
-        let registry = Self {
-            tools: RwLock::new(HashMap::new()),
-            timeouts: RwLock::new(HashMap::new()),
-        };
-        
-        // 注册内置工具
-        // TODO: 注册 fs 工具
-        // TODO: 注册 multi-agent 工具
-        // TODO: 注册 context 工具
-        
-        registry
+        // TODO: 1. 初始化tools和timeouts HashMap
+        // TODO: 2. 注册内置工具 fs, multi-agent, context
+        // TODO: 3. 注册外部工具 mcp, skill
     }
 }
 
 #[async_trait]
 impl ToolRegistry for DefaultToolRegistry {
-    fn register(&self, tool: Arc<dyn ToolExecutor>) {
-        let def = tool.definition();
-        self.tools.write().unwrap().insert(def.id.clone(), tool);
-    }
-    
-    fn get(&self, id: &ToolId) -> Option<Arc<dyn ToolExecutor>> {
-        self.tools.read().unwrap().get(id).cloned()
-    }
-    
-    fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.read().unwrap()
-            .values()
-            .map(|t| t.definition().clone())
-            .collect()
-    }
-    
-    fn timeout(&self, id: &ToolId) -> Duration {
-        let timeouts = self.timeouts.read().unwrap();
-        
-        // 前缀匹配
-        let id_str = id.0.as_str();
-        let mut best_match: Option<(&str, Duration)> = None;
-        
-        for (prefix, timeout) in timeouts.iter() {
-            if id_str.starts_with(prefix) {
-                if best_match.map_or(true, |(best, _)| prefix.len() > best.len()) {
-                    best_match = Some((prefix.as_str(), *timeout));
-                }
-            }
-        }
-        
-        best_match.map(|(_, d)| d).unwrap_or_else(|| {
-            self.tools.read().unwrap()
-                .get(id)
-                .map(|t| t.definition().timeout)
-                .unwrap_or(Duration::from_secs(30))
-        })
-    }
-    
-    fn set_timeout(&self, prefix: &str, duration: Duration) {
-        self.timeouts.write().unwrap().insert(prefix.to_string(), duration);
-    }
-    
-    fn list_tools(&self) -> Vec<ToolId> {
-        self.tools.read().unwrap().keys().cloned().collect()
-    }
+    // TODO: 实现register/get/definitions/timeout/set_timeout/list_tools
 }
 ```
 
@@ -409,7 +357,66 @@ pub fn verify_line_content(
 }
 ```
 
-## 5. 工具错误
+## 5. 工具数据流
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant TR as ToolRegistry
+    participant T as ToolExecutor
+    participant F as Filesystem
+
+    A->>TR: 1. list_tools() / get(tool_id)
+    TR-->>A: 返回工具定义
+    A->>T: 2. execute(context, args)
+    T->>F: 3. 读写文件操作
+    F-->>T: 返回结果
+    T-->>A: 4. ToolResult
+```
+
+**数据流说明：**
+1. Agent通过ToolRegistry获取可用工具列表或特定工具定义
+2. Agent调用ToolExecutor的execute方法，传入执行上下文和参数
+3. ToolExecutor执行具体的工具逻辑（如文件读写）
+4. 工具执行完成后返回ToolResult给Agent
+
+## 6. 工具执行状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: 工具注册
+    Idle --> Resolving: execute()调用
+    Resolving --> Validating: 参数解析完成
+    Validating --> Executing: 参数验证通过
+    Validating --> Failed: 参数验证失败
+    Executing --> Processing: 开始执行
+    Processing --> Completed: 执行成功
+    Processing --> Failed: 执行出错
+    Completed --> Idle: 返回结果
+    Failed --> Idle: 返回错误
+    Idle --> [*]: 工具注销
+```
+
+**状态说明：**
+| 状态 | 描述 |
+|------|------|
+| Idle | 工具空闲，可被调用 |
+| Resolving | 正在解析参数 |
+| Validating | 正在验证参数 |
+| Executing | 正在执行工具逻辑 |
+| Processing | 正在处理具体操作 |
+| Completed | 执行成功完成 |
+| Failed | 执行失败 |
+
+**状态转换触发：**
+- `execute()` 调用 → Resolving
+- 参数解析完成 → Validating
+- 验证通过 → Executing
+- 验证失败 → Failed
+- 执行完成 → Completed
+- 执行出错 → Failed
+
+## 7. 工具错误
 
 ```rust
 #[derive(Debug, Error)]

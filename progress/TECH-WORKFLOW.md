@@ -104,6 +104,8 @@ pub struct Requirement {
 }
 
 /// 节点ID（强类型）
+/// 
+/// 节点ID采用kebab-case格式，确保跨工作流的一致性命名。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub String);
 
@@ -203,12 +205,89 @@ pub enum WorkflowStatus {
 }
 ```
 
+## 3.2 仓储接口
+
+```rust
+use async_trait::async_trait;
+
+/// 工作流仓储接口
+#[async_trait]
+pub trait WorkflowRepository: Send + Sync {
+    async fn save(&self, runtime: &WorkflowRuntime) -> Result<(), StorageError>;
+    async fn find_by_id(&self, session_id: &SessionId) -> Result<Option<WorkflowRuntime>, StorageError>;
+    async fn find_by_status(&self, status: WorkflowStatus) -> Result<Vec<WorkflowRuntime>, StorageError>;
+    async fn delete(&self, session_id: &SessionId) -> Result<(), StorageError>;
+}
+
+/// 存储错误类型
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("数据未找到: {0}")]
+    NotFound(String),
+    
+    #[error("数据库错误: {0}")]
+    Database(String),
+    
+    #[error("序列化错误: {0}")]
+    Serialization(String),
+}
+```
+
+## 3.3 事件类型
+
+```rust
+/// 工作流事件类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum WorkflowEvent {
+    WorkflowStarted {
+        session_id: SessionId,
+        definition_id: String,
+    },
+    NodeStarted {
+        session_id: SessionId,
+        node_id: NodeId,
+        agent_id: AgentId,
+    },
+    NodeCompleted {
+        session_id: SessionId,
+        node_id: NodeId,
+        output: String,
+    },
+    NodeFailed {
+        session_id: SessionId,
+        node_id: NodeId,
+        error: String,
+    },
+    EdgeTriggered {
+        session_id: SessionId,
+        from: NodeId,
+        to: NodeId,
+        option: Option<String>,
+    },
+    WorkflowCompleted {
+        session_id: SessionId,
+    },
+    WorkflowFailed {
+        session_id: SessionId,
+        reason: String,
+    },
+}
+
+pub trait EventPublisher: Send + Sync {
+    fn publish(&self, event: WorkflowEvent);
+}
+```
+
 ## 4. 工作流引擎
 
 ### 4.1 引擎核心
 
 ```rust
 /// 工作流引擎
+/// 
+/// 引擎协调工作流执行，负责节点调度和状态管理。
+/// 事件发布见 [TECH-SESSION.md#3-消息模型设计](TECH-SESSION.md#3-消息模型设计)
 pub struct WorkflowEngine {
     agent_engine: Arc<AgentEngine>,
     event_publisher: Arc<dyn EventPublisher>,
@@ -220,7 +299,7 @@ impl WorkflowEngine {
         definition: WorkflowDefinition,
         initial_input: String,
     ) -> Result<WorkflowRuntime, WorkflowError> {
-        // TODO: 实现工作流启动逻辑
+        // [TODO] 实现工作流启动逻辑
         // 1. 创建workflow runtime
         // 2. 查找起始节点
         // 3. 启动起始节点
@@ -234,7 +313,7 @@ impl WorkflowEngine {
         node_id: NodeId,
         output: String,
     ) -> Result<(), WorkflowError> {
-        // TODO: 实现节点完成处理
+        // [TODO] 实现节点完成处理
         // 1. 更新节点状态
         // 2. 评估边条件
         // 3. 触发下一节点
@@ -293,10 +372,54 @@ impl WorkflowEngine {
             next_nodes.push(edge.to.clone());
         }
         
-        next_nodes
+    next_nodes
     }
 }
 ```
+
+### 4.2 执行流程
+
+工作流引擎通过以下步骤协调节点执行：
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Engine as WorkflowEngine
+    participant Runtime as WorkflowRuntime
+    participant Agent as AgentEngine
+    participant Store as Repository
+
+    User->>Engine: start_workflow(def, input)
+    Engine->>Runtime: 创建WorkflowRuntime
+    Engine->>Store: save(runtime)
+    Engine->>Runtime: find_start_nodes()
+    Engine->>Agent: 启动起始节点
+    Agent->>Runtime: NodeStarted事件
+    Runtime-->>Store: 更新状态
+    
+    Note over Agent: 节点执行中...
+    
+    Agent-->>Engine: 节点完成回调
+    Engine->>Runtime: handle_node_complete()
+    Engine->>Runtime: evaluate_edges()
+    
+    alt 有后续节点
+        Engine->>Agent: 触发下一节点
+        Agent->>Runtime: NodeStarted事件
+    else 无后续节点
+        Engine->>Runtime: 标记工作流完成
+        Engine->>Runtime: WorkflowCompleted事件
+    end
+    
+    Engine-->>User: 返回runtime
+```
+
+**执行步骤说明：**
+
+1. **启动工作流**：创建运行时实例，保存到存储，查找并启动起始节点
+2. **节点执行**：Agent引擎负责执行具体任务
+3. **边评估**：节点完成后，引擎评估边条件确定下一节点
+4. **状态更新**：每个事件都会触发运行时状态更新和持久化
 
 ## 5. 边条件控制
 
@@ -390,7 +513,7 @@ impl ToolExecutor for WorkflowTransitionTool {
         context: &ToolContext,
         args: Value,
     ) -> Result<ToolResult, ToolError> {
-        // TODO: 实现转场工具逻辑
+        // [TODO] 实现转场工具逻辑
         // 1. 解析option和message
         // 2. 更新计数器
         // 3. 触发转场
@@ -528,6 +651,8 @@ graph LR
 
 ## 8. 控制API
 
+> 见 [TECH-SESSION.md](TECH-SESSION.md) 中的Session生命周期管理
+
 ```rust
 #[async_trait]
 pub trait WorkflowControl: Send + Sync {
@@ -567,5 +692,7 @@ pub enum WorkflowError {
 
 *关联文档：*
 - [TECH.md](TECH.md) - 总体架构文档
-- [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块
-- [TECH-AGENT.md](TECH-AGENT.md) - 多智能体协作模块
+- [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块（SessionId定义、消息模型）
+- [TECH-AGENT.md](TECH-AGENT.md) - 多智能体协作模块（AgentEngine）
+- [TECH-TOOL.md](TECH-TOOL.md) - 工具系统（ToolExecutor、ToolRegistry）
+- [TECH-CONFIG.md](TECH-CONFIG.md) - 配置管理（WorkflowDef加载）

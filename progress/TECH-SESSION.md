@@ -225,12 +225,11 @@ pub struct AgentDefinition {
 
 impl AgentDefinition {
     pub fn from_file(path: &Path) -> Result<Self, AgentDefinitionError> {
-        // TODO: 解析Markdown文件头部YAML
+        // TODO: 实现从Markdown文件加载Agent定义
         // 1. 读取文件内容
-        // 2. 解析YAML头部
+        // 2. 解析YAML头部 (--- delimited)
         // 3. 提取配置字段
         // 4. 返回AgentDefinition
-        unimplemented!()
     }
 }
 
@@ -645,14 +644,30 @@ impl SessionManager {
         session_type: SessionType,
         metadata: SessionMetadata,
     ) -> Result<Session, SessionError> {
-        // TODO: 创建新Session实现
+        // TODO: 实现Session创建流程
         // 1. 创建Session领域模型
         // 2. 创建根Agent
         // 3. 保存到存储
         // 4. 返回Session
-        unimplemented!()
     }
 }
+
+### 5.1.1 Session创建流程
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SessionManager
+    participant SessionRepo
+    participant AgentRepo
+    
+    User->>SessionManager: create_session(type, metadata)
+    SessionManager->>SessionManager: 创建Session领域模型
+    SessionManager->>SessionManager: 生成SessionId
+    SessionManager->>SessionManager: 创建根AgentId
+    SessionManager->>AgentRepo: save(root_agent)
+    SessionManager->>SessionRepo: save(session)
+    SessionManager-->>User: Session
 ```
 
 ### 5.2 恢复Session
@@ -663,18 +678,87 @@ impl SessionManager {
         &self,
         session_id: &SessionId,
     ) -> Result<Session, SessionError> {
-        // TODO: 加载已有Session实现
+        // TODO: 实现Session恢复流程
         // 1. 从存储加载Session元数据
         // 2. 重建Agent层级关系
         // 3. 按需加载消息
-        unimplemented!()
     }
 }
 ```
 
-## 6. 上下文管理
+## 6. 消息流转流程
 
-### 6.1 上下文构建
+### 6.1 消息流转完整流程
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SessionManager
+    participant Agent
+    participant ModelClient
+    participant MessageRepo
+    
+    User->>SessionManager: 发送消息
+    SessionManager->>Agent: add_message(user_msg)
+    Agent->>MessageRepo: 存储用户消息
+    
+    loop 执行循环
+        Agent->>Agent: 构建上下文
+        Agent->>ModelClient: 发送请求
+        ModelClient-->>Agent: 返回响应
+        
+        alt 模型调用工具
+            Agent->>Agent: 处理工具调用
+            Agent->>ModelClient: 发送工具结果
+        end
+        
+        Agent->>MessageRepo: 存储助手消息
+    end
+    
+    Agent-->>SessionManager: 执行完成
+    SessionManager-->>User: 返回结果
+```
+
+### 6.2 Agent执行流程
+
+```mermaid
+sequenceDiagram
+    participant Executor
+    participant Agent
+    participant ContextBuilder
+    participant ModelClient
+    participant ToolExecutor
+    
+    Executor->>Agent: 执行Agent
+    Agent->>ContextBuilder: 构建上下文
+    ContextBuilder->>ContextBuilder: 合并系统消息
+    ContextBuilder->>ContextBuilder: 添加对话历史
+    ContextBuilder->>ContextBuilder: 应用token限制
+    ContextBuilder-->>Agent: ChatRequest
+    
+    loop 模型推理
+        Agent->>ModelClient: chat(request)
+        
+        alt 无工具调用
+            ModelClient-->>Agent: text response
+        else 有工具调用
+            ModelClient-->>Agent: text + tool_calls
+            
+            loop 执行工具
+                Agent->>ToolExecutor: 执行工具
+                ToolExecutor-->>Agent: tool result
+                Agent->>Agent: 添加tool消息
+                Agent->>ModelClient: 继续推理
+            end
+        end
+    end
+    
+    Agent-->>Executor: 执行完成
+```
+
+## 7. 上下文管理
+
+### 7.1 上下文构建
 
 ```rust
 /// 上下文构建器
@@ -709,8 +793,10 @@ impl ContextBuilder {
     }
     
     pub fn build(&self) -> Result<ChatRequest, ContextError> {
-        // TODO: 构建最终上下文
-        unimplemented!()
+        // TODO: 实现上下文构建
+        // 1. 合并系统消息和对话历史
+        // 2. 应用token限制
+        // 3. 返回ChatRequest
     }
 }
 ```
