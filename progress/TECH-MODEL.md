@@ -109,9 +109,8 @@ impl ResponseFormat {
 pub struct ExtraParams(HashMap<String, Value>);
 
 impl ExtraParams {
-    /// TODO: 等实际使用场景确定后实现
     pub fn new() -> Self {
-        todo!()
+        Self(HashMap::new())
     }
     
     pub fn insert(&mut self, key: impl Into<String>, value: Value) {
@@ -260,9 +259,13 @@ pub struct RetryConfig {
 }
 
 impl Default for RetryConfig {
-    // TODO: 从 TECH-CONFIG.md 的 config 模块导入，避免重复定义
     fn default() -> Self {
-        todo!()
+        Self {
+            max_retries: 3,
+            initial_delay_ms: 100,
+            max_delay_ms: 5000,
+            backoff_multiplier: 2.0,
+        }
     }
 }
 ```

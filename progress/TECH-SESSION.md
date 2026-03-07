@@ -302,8 +302,8 @@ impl AgentHierarchy {
     pub fn new(root: AgentId) -> Self {
         // TODO: 实现层级关系初始化
         // 1. 接收根节点ID作为参数
-        // 2. 创建空的parent_map (HashMap<AgentId, Weak<AgentId>>)
-        // 3. 创建空的children_map (HashMap<AgentId, Vec<Weak<AgentId>>>)
+        // 2. 创建空的parent_map (HashMap<AgentId, AgentId>)
+        // 3. 创建空的children_map (HashMap<AgentId, Vec<AgentId>>)
         // 4. 将根节点加入children_map，value为空Vec
         unimplemented!()
     }
@@ -326,9 +326,15 @@ impl AgentHierarchy {
     
     pub fn get_parent(&self, id: &AgentId) -> Option<AgentId> {
         // TODO: 实现获取父节点
-        // 1. 排除根节点情况（根节点无父节点）
-        // 2. 从parent_map中查找id对应的Weak
-        // 3. 调用upgrade()获取AgentId
+        // 1. 从parent_map中查找id对应的父AgentId
+        // 2. 返回Some(AgentId)或None
+        unimplemented!()
+    }
+    
+    pub fn get_children(&self, id: &AgentId) -> Vec<AgentId> {
+        // TODO: 实现获取子节点列表
+        // 1. 从children_map中查找id对应的Vec<AgentId>
+        // 2. 返回子AgentId列表
         unimplemented!()
     }
     
@@ -360,7 +366,7 @@ impl AgentHierarchy {
     
     pub fn serialize(&self) -> HierarchyMeta {
         // TODO: 序列化层级关系
-        // 1. 收集所有有效引用（Weak升级为AgentId）
+        // 1. 收集所有AgentId
         // 2. 构建parent_map和children_map
         // 3. 返回HierarchyMeta
         todo!()
@@ -368,9 +374,8 @@ impl AgentHierarchy {
     
     pub fn deserialize(meta: HierarchyMeta) -> Self {
         // TODO: 反序列化层级关系
-        // 1. 将AgentId转换为Weak<AgentId>
-        // 2. 重建parent_map和children_map
-        // 3. 返回AgentHierarchy实例
+        // 1. 从meta重建parent_map和children_map
+        // 2. 返回AgentHierarchy实例
         todo!()
     }
 }

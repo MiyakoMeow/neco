@@ -162,19 +162,19 @@ impl Agent {
     pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
     pub fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
     
-    pub fn set_state(&mut self, new_state: AgentState) {
+    pub fn set_state(&mut self, new_state: AgentState, timestamp: DateTime<Utc>) {
         self.state = new_state;
-        self.updated_at = Utc::now();
+        self.updated_at = timestamp;
     }
     
-    pub fn set_model_group(&mut self, model_group: Option<String>) {
+    pub fn set_model_group(&mut self, model_group: Option<String>, timestamp: DateTime<Utc>) {
         self.model_group = model_group;
-        self.updated_at = Utc::now();
+        self.updated_at = timestamp;
     }
     
-    pub fn set_system_prompt(&mut self, prompt: Option<String>) {
+    pub fn set_system_prompt(&mut self, prompt: Option<String>, timestamp: DateTime<Utc>) {
         self.system_prompt = prompt;
-        self.updated_at = Utc::now();
+        self.updated_at = timestamp;
     }
 }
 ```
