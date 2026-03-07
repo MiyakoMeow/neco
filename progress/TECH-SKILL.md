@@ -185,67 +185,39 @@ pub struct SkillInfo {
 ```rust
 impl SkillService {
     pub async fn load_index(&self) -> Result<SkillIndex, SkillError> {
-        // 扫描策略：
+        // [TODO] 实现Skill索引加载
         // 1. 扫描配置的skills目录（默认 ~/.neco/skills 或项目内 ./skills）
         // 2. 遍历顶层目录，每个有效目录视为一个Skill
         // 3. 解析SKILL.md的YAML frontmatter提取元数据
         // 4. 验证必需字段（name, description）
-        
-        // 缓存策略：
-        // - 首次加载：完整扫描所有Skill目录
-        // - 增量更新：监听文件变化事件，动态更新索引
-        // - 缓存失效：基于mtime检测文件修改
-        
-        let mut index = SkillIndex::default();
-        
-        // 扫描skills目录
-        let skills_path = self.config.skills_dir.clone();
-        let mut entries = tokio::fs::read_dir(&skills_path).await
-            .map_err(|e| SkillError::LoadFailed(e.to_string()))?;
-        
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| SkillError::LoadFailed(e.to_string()))? {
-            let path = entry.path();
-            if path.is_dir() {
-                let skill_path = path.join("SKILL.md");
-                if skill_path.exists() {
-                    if let Ok(skill_info) = self.parse_skill_info(&skill_path).await {
-                        index.skills.push(skill_info);
-                    }
-                }
-            }
-        }
-        
-        // 缓存索引
-        let mut index_lock = self.index.write().await;
-        *index_lock = index.clone();
-        
-        Ok(index)
+        // 5. 缓存索引到self.index中
+        unimplemented!()
     }
     
     async fn parse_skill_info(&self, path: &Path) -> Result<SkillInfo, SkillError> {
-        let content = tokio::fs::read_to_string(path).await
-            .map_err(|e| SkillError::LoadFailed(e.to_string()))?;
-        
-        // 解析YAML frontmatter
-        let (metadata, _) = frontmatter::parse(&content)
-            .map_err(|e| SkillError::LoadFailed(e.to_string()))?;
-        
-        Ok(SkillInfo {
-            id: SkillId::from(metadata.name.clone()),
-            name: metadata.name,
-            description: metadata.description,
-            tags: metadata.tags,
-        })
+        // [TODO] 实现Skill元数据解析
+        // 1. 读取SKILL.md文件内容
+        // 2. 解析YAML frontmatter提取name、description、tags等字段
+        // 3. 构建SkillInfo结构体并返回
+        unimplemented!()
     }
     
     pub async fn load_skill(&self, id: &SkillId) -> Result<Skill, SkillError> {
-        // TODO: 加载完整SKILL.md
+        // [TODO] 实现完整Skill加载
+        // 1. 根据skill_id查找Skill目录路径
+        // 2. 读取完整的SKILL.md内容
+        // 3. 解析frontmatter和指令内容
+        // 4. 构建Skill结构体（包含id、name、description、content、tags等）
         unimplemented!()
     }
     
     pub async fn activate(&self, id: &SkillId) -> Result<ActivatedSkill, SkillError> {
-        // TODO: 激活Skill
+        // [TODO] 实现Skill激活
+        // 1. 加载完整Skill内容（调用load_skill）
+        // 2. 扫描scripts/references/assets目录
+        // 3. 构建SkillResources（脚本、引用、资源信息）
+        // 4. 注册工具（如果有可执行脚本）
+        // 5. 构建ActivatedSkill并返回
         unimplemented!()
     }
 }

@@ -144,43 +144,41 @@ impl WorkflowRuntime {
         session_id: SessionId,
         definition: WorkflowDefinition,
     ) -> Self {
-        Self {
-            session_id,
-            definition: Arc::new(definition),
-            node_states: HashMap::new(),
-            counters: HashMap::new(),
-            variables: HashMap::new(),
-            active_nodes: HashSet::new(),
-            status: WorkflowStatus::Ready,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
+        // [TODO] 实现工作流运行时初始化
+        // 1. 初始化所有HashMap和HashSet
+        // 2. 设置初始状态为Ready
+        // 3. 设置created_at和updated_at为当前时间
+        unimplemented!()
     }
     
     pub fn start_node(&mut self, node_id: NodeId, agent_id: AgentId) {
-        self.node_states.insert(
-            node_id.clone(),
-            NodeRuntimeState::Running { agent_id }
-        );
-        self.active_nodes.insert(node_id);
-        self.updated_at = Utc::now();
+        // [TODO] 实现节点启动逻辑
+        // 1. 创建NodeRuntimeState::Running状态
+        // 2. 将节点加入active_nodes
+        // 3. 更新updated_at时间戳
+        unimplemented!()
     }
     
     pub fn complete_node(&mut self, node_id: &NodeId, output: String) {
-        self.node_states.insert(
-            node_id.clone(),
-            NodeRuntimeState::Success { output }
-        );
-        self.active_nodes.remove(node_id);
-        self.updated_at = Utc::now();
+        // [TODO] 实现节点完成逻辑
+        // 1. 更新节点状态为NodeRuntimeState::Success
+        // 2. 从active_nodes中移除该节点
+        // 3. 更新updated_at时间戳
+        unimplemented!()
     }
     
     pub fn increment_counter(&mut self, option: &str) {
-        *self.counters.entry(option.to_string()).or_insert(0) += 1;
+        // [TODO] 实现计数器递增逻辑
+        // 1. 使用entry API获取或创建计数器
+        // 2. 将计数值加1
+        unimplemented!()
     }
     
     pub fn get_counter(&self, option: &str) -> u32 {
-        *self.counters.get(option).unwrap_or(&0)
+        // [TODO] 实现获取计数器值逻辑
+        // 1. 从counters HashMap中获取对应option的值
+        // 2. 如果不存在则返回0
+        unimplemented!()
     }
 }
 
@@ -325,16 +323,11 @@ impl WorkflowEngine {
         &self,
         definition: &WorkflowDefinition,
     ) -> Vec<NodeId> {
-        // 找没有入边的节点
-        let mut has_incoming: HashSet<&NodeId> = HashSet::new();
-        for edge in &definition.edges {
-            has_incoming.insert(&edge.to);
-        }
-        
-        definition.nodes.iter()
-            .filter(|n| !has_incoming.contains(&n.id))
-            .map(|n| n.id.clone())
-            .collect()
+        // [TODO] 实现查找起始节点逻辑
+        // 1. 收集所有有入边的节点
+        // 2. 过滤出没有入边的节点作为起始节点
+        // 3. 返回NodeId列表
+        unimplemented!()
     }
     
     pub fn evaluate_edges(
@@ -342,37 +335,12 @@ impl WorkflowEngine {
         runtime: &WorkflowRuntime,
         current_node: &NodeId,
     ) -> Vec<NodeId> {
-        let definition = &runtime.definition;
-        let edges: Vec<_> = definition.edges.iter()
-            .filter(|e| e.from == *current_node)
-            .collect();
-        
-        let mut next_nodes = Vec::new();
-        
-        for edge in edges {
-            // 检查require条件
-            if let Some(ref requirements) = edge.require {
-                let mut satisfied = false;
-                for req in requirements {
-                    let count = runtime.get_counter(&req.option);
-                    if count >= req.min_count {
-                        satisfied = true;
-                        break;
-                    }
-                }
-                if !satisfied {
-                    continue;
-                }
-            }
-            
-            // 无条件边或select边直接触发
-            if edge.to.to_string() == "END" {
-                continue;
-            }
-            next_nodes.push(edge.to.clone());
-        }
-        
-    next_nodes
+        // [TODO] 实现边条件评估逻辑
+        // 1. 查找从当前节点出发的所有边
+        // 2. 对每条边检查require条件是否满足
+        // 3. 跳过指向END的边
+        // 4. 返回满足条件的后续节点列表
+        unimplemented!()
     }
 }
 ```
@@ -452,22 +420,13 @@ impl WorkflowEngine {
         counters: &HashMap<String, u32>,
         params: &WorkflowParams,
     ) -> bool {
-        let count = if let Some(param_ref) = &req.param_ref {
-            // 参数引用处理
-            if param_ref.starts_with("@params.") {
-                let key = &param_ref[8..];
-                params.0.get(key)
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32)
-                    .unwrap_or(0)
-            } else {
-                0
-            }
-        } else {
-            *counters.get(&req.option).unwrap_or(&0)
-        };
-        
-        count >= req.min_count
+        // [TODO] 实现需求条件评估逻辑
+        // 1. 检查param_ref是否引用参数（如@params.min_approvers）
+        // 2. 如果是参数引用，从params中获取值
+        // 3. 否则从counters中获取计数
+        // 4. 将获取的值与min_count比较
+        // 5. 返回是否满足条件
+        unimplemented!()
     }
 }
 ```

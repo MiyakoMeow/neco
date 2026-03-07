@@ -347,7 +347,7 @@ pub fn verify_line_content(
     actual: &str,
     expected: &str,
 ) -> VerifyResult {
-    // TODO: 实现verify验证逻辑
+    // [TODO] 实现verify验证逻辑
     // 1. 去除行尾换行符
     // 2. 完全匹配 -> ExactMatch
     // 3. 前缀匹配（内容≥20字符）-> PrefixMatch

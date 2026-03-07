@@ -70,7 +70,13 @@ pub struct CliArgs {
 
 impl CliInterface {
     pub async fn run(&self) -> Result<(), UiError> {
-        // TODO: 实现CLI运行逻辑
+        // [TODO] 实现CLI运行逻辑
+        // 1. 解析CliArgs参数（message, session, agent, workflow, working_dir）
+        // 2. 如果有message参数，直接执行单次交互并返回
+        // 3. 如果有session参数，恢复或创建Session
+        // 4. 如果有workflow参数，启动工作流引擎
+        // 5. 协调Agent执行任务并输出结果
+        // 6. 处理错误并返回适当的退出码
         unimplemented!()
     }
 }
@@ -98,12 +104,24 @@ pub enum ReplMode {
 
 impl ReplInterface {
     pub fn new(session_manager: Arc<SessionManager>) -> Result<Self, UiError> {
-        // TODO: 初始化终端
+        // [TODO] 初始化终端
+        // 1. 使用crossterm创建终端实例
+        // 2. 设置终端原始模式和非阻塞输入
+        // 3. 初始化输入缓冲区和输出历史
+        // 4. 设置初始ReplMode为Normal
+        // 5. 配置终端尺寸监听（用于响应式布局）
         unimplemented!()
     }
     
     pub async fn run(&mut self) -> Result<(), UiError> {
-        // TODO: REPL主循环
+        // [TODO] REPL主循环
+        // 1. 进入事件循环，持续读取用户输入直到Exit命令
+        // 2. 处理输入：根据ReplMode解析输入（Normal模式发送消息，Command模式执行命令）
+        // 3. 执行用户输入：调用Agent处理消息或执行特殊命令
+        // 4. 渲染输出：将AgentOutput渲染到终端（消息历史区域）
+        // 5. 更新状态栏：显示当前模式、会话信息等
+        // 6. 处理Interrupt信号（Ctrl+C）中断当前操作
+        // 7. 清理终端设置并退出
         unimplemented!()
     }
 }
@@ -153,7 +171,13 @@ pub struct DaemonConfig {
 
 impl DaemonInterface {
     pub async fn run(&self) -> Result<(), UiError> {
-        // TODO: 启动HTTP服务器
+        // [TODO] 启动HTTP服务器
+        // 1. 从DaemonConfig读取host和port配置
+        // 2. 使用HTTP框架（如axum或actix-web）创建服务
+        // 3. 注册REST API路由（/api/v1/sessions, /api/v1/workflows等）
+        // 4. 挂载SessionManager和WorkflowEngine到应用状态
+        // 5. 启动HTTP服务器监听指定地址
+        // 6. 处理优雅关闭（处理SIGTERM/SIGINT信号）
         unimplemented!()
     }
 }

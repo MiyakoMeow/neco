@@ -225,11 +225,12 @@ pub struct AgentDefinition {
 
 impl AgentDefinition {
     pub fn from_file(path: &Path) -> Result<Self, AgentDefinitionError> {
-        // TODO: 实现从Markdown文件加载Agent定义
+        // [TODO] 实现要点说明
         // 1. 读取文件内容
         // 2. 解析YAML头部 (--- delimited)
         // 3. 提取配置字段
         // 4. 返回AgentDefinition
+        unimplemented!()
     }
 }
 
@@ -284,53 +285,52 @@ pub struct AgentHierarchy {
 
 impl AgentHierarchy {
     pub fn new(root: AgentId) -> Self {
-        let mut children_map = HashMap::new();
-        children_map.insert(root, Vec::new());
-        Self {
-            root,
-            parent_map: HashMap::new(),
-            children_map,
-        }
+        // [TODO] 实现要点说明
+        // 1. 初始化根节点
+        // 2. 创建空的parent_map和children_map
+        // 3. 将根节点加入children_map
+        unimplemented!()
     }
     
     pub fn add_child(&mut self, parent: AgentId, child: AgentId) {
-        self.parent_map.insert(child.clone(), parent.clone());
-        self.children_map.entry(parent).or_default().push(child);
-        self.children_map.entry(child).or_default();
+        // [TODO] 实现要点说明
+        // 1. 在parent_map中记录child的parent
+        // 2. 在children_map中为parent添加child
+        // 3. 为child创建空的children列表
+        unimplemented!()
     }
     
     pub fn has_agent(&self, id: &AgentId) -> bool {
-        id == &self.root || self.parent_map.contains_key(id)
+        // [TODO] 实现要点说明
+        // 1. 检查id是否为根节点
+        // 2. 检查parent_map中是否包含该id
+        unimplemented!()
     }
     
     pub fn get_parent(&self, id: &AgentId) -> Option<&AgentId> {
-        self.parent_map.get(id)
+        // [TODO] 实现要点说明
+        // 从parent_map中查找id对应的parent
+        unimplemented!()
     }
     
     pub fn get_children(&self, id: &AgentId) -> Option<&Vec<AgentId>> {
-        self.children_map.get(id)
+        // [TODO] 实现要点说明
+        // 从children_map中查找id对应的children列表
+        unimplemented!()
     }
     
     pub fn get_ancestors(&self, id: &AgentId) -> Vec<AgentId> {
-        let mut ancestors = Vec::new();
-        let mut current = self.get_parent(id);
-        while let Some(pid) = current {
-            ancestors.push(pid.clone());
-            current = self.get_parent(pid);
-        }
-        ancestors
+        // [TODO] 实现要点说明
+        // 1. 从id开始向上遍历parent链
+        // 2. 收集所有祖先节点
+        unimplemented!()
     }
     
     pub fn get_descendants(&self, id: &AgentId) -> Vec<AgentId> {
-        let mut descendants = Vec::new();
-        let mut queue = VecDeque::from(self.get_children(id).cloned().unwrap_or_default());
-        while let Some(current) = queue.pop_front() {
-            descendants.push(current.clone());
-            if let Some(children) = self.get_children(&current) {
-                queue.extend(children.iter().cloned());
-            }
-        }
-        descendants
+        // [TODO] 实现要点说明
+        // 1. 使用BFS遍历id的所有子节点
+        // 2. 收集所有后代节点
+        unimplemented!()
     }
 }
 
@@ -644,11 +644,12 @@ impl SessionManager {
         session_type: SessionType,
         metadata: SessionMetadata,
     ) -> Result<Session, SessionError> {
-        // TODO: 实现Session创建流程
+        // [TODO] 实现要点说明
         // 1. 创建Session领域模型
         // 2. 创建根Agent
         // 3. 保存到存储
         // 4. 返回Session
+        unimplemented!()
     }
 }
 
@@ -678,10 +679,11 @@ impl SessionManager {
         &self,
         session_id: &SessionId,
     ) -> Result<Session, SessionError> {
-        // TODO: 实现Session恢复流程
+        // [TODO] 实现要点说明
         // 1. 从存储加载Session元数据
         // 2. 重建Agent层级关系
         // 3. 按需加载消息
+        unimplemented!()
     }
 }
 ```
@@ -793,10 +795,11 @@ impl ContextBuilder {
     }
     
     pub fn build(&self) -> Result<ChatRequest, ContextError> {
-        // TODO: 实现上下文构建
+        // [TODO] 实现要点说明
         // 1. 合并系统消息和对话历史
         // 2. 应用token限制
         // 3. 返回ChatRequest
+        unimplemented!()
     }
 }
 ```

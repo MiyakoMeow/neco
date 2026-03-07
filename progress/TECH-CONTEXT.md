@@ -258,33 +258,11 @@ pub struct ObserveTool {
 #[async_trait]
 impl ToolExecutor for ObserveTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("context::observe".into()),
-            description: "查看当前上下文的详细信息".into(),
-            schema: json!({
-                "type": "object",
-                "properties": {
-                    "roles": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "只显示指定角色的消息"
-                    },
-                    "sort": {
-                        "type": "string",
-                        "enum": ["id_asc", "id_desc", "size_asc", "size_desc"],
-                        "description": "排序方式"
-                    },
-                    "format": {
-                        "type": "string",
-                        "enum": ["table", "json", "summary"],
-                        "description": "输出格式"
-                    }
-                }
-            }),
-            capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(5),
-        });
-        &DEF
+        // [TODO] 实现工具定义
+        // 1. 定义工具ID和描述
+        // 2. 定义参数schema
+        // 3. 设置超时时间
+        unimplemented!()
     }
     
     async fn execute(
@@ -354,9 +332,11 @@ pub struct CompressionService {
 
 impl CompressionService {
     pub fn should_compact(&self, messages: &[Message], context_window: usize) -> bool {
-        let tokens = self.token_counter.estimate_tokens(messages);
-        let threshold = (context_window as f64 * self.config.auto_compact_threshold) as usize;
-        tokens >= threshold
+        // [TODO] 实现压缩条件检查
+        // 1. 计算当前token数量
+        // 2. 计算阈值
+        // 3. 比较判断是否需要压缩
+        unimplemented!()
     }
     
     pub async fn compact(
@@ -386,21 +366,25 @@ pub struct SimpleCounter;
 
 impl TokenCounter for SimpleCounter {
     fn estimate_string_tokens(&self, text: &str) -> usize {
-        text.len() / 4 + 4
+        // [TODO] 实现字符串token估算
+        // 1. 考虑字符编码和token化方式
+        // 2. 返回估算的token数量
+        unimplemented!()
     }
     
     fn estimate_tokens(&self, messages: &[Message]) -> usize {
-        messages.iter().map(|m| self.estimate_message_tokens(m)).sum()
+        // [TODO] 实现消息列表token估算
+        // 1. 遍历每条消息
+        // 2. 累加每条消息的token数
+        unimplemented!()
     }
     
     fn estimate_message_tokens(&self, message: &Message) -> usize {
-        let content = message.content.len();
-        let tool_calls = message.tool_calls.as_ref()
-            .map(|tc| tc.iter()
-                .map(|t| t.function.name.len() + t.function.arguments.len())
-                .sum::<usize>())
-            .unwrap_or(0);
-        (content + tool_calls) / 4 + 4
+        // [TODO] 实现单条消息token估算
+        // 1. 计算内容部分的token
+        // 2. 计算tool_calls部分的token
+        // 3. 考虑role等额外开销
+        unimplemented!()
     }
 }
 ```

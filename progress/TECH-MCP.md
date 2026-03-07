@@ -81,7 +81,9 @@ pub struct McpToolWrapper {
 #[async_trait]
 impl ToolExecutor for McpToolWrapper {
     fn definition(&self) -> &ToolDefinition {
-        // TODO: 返回工具定义
+        // [TODO] 实现要点说明
+        // 1. 从 self.tool 中提取工具名称、描述和参数模式
+        // 2. 转换为 ToolDefinition 结构返回
         unimplemented!()
     }
     
@@ -90,9 +92,9 @@ impl ToolExecutor for McpToolWrapper {
         context: &ToolContext,
         args: Value,
     ) -> Result<ToolResult, ToolError> {
-        // TODO:
+        // [TODO] 实现要点说明
         // 1. 从连接池获取该server的连接
-        // 2. 构建MCP JSON-RPC请求
+        // 2. 构建MCP JSON-RPC请求（tools/call方法）
         // 3. 发送请求并等待响应
         // 4. 解析响应结果
         // 5. 转换为ToolResult返回
@@ -115,7 +117,14 @@ pub async fn register_mcp_tools(
     registry: &mut dyn ToolRegistry,
     server_name: &str,
 ) -> Result<usize, McpError> {
-    // TODO: 连接MCP服务器并注册工具
+    // [TODO] 实现要点说明
+    // 1. 根据 server_name 获取服务器配置
+    // 2. 创建连接（stdio或http方式）
+    // 3. 发送 initialize 请求进行协议握手
+    // 4. 发送 tools/list 获取可用工具列表
+    // 5. 为每个工具创建 McpToolWrapper
+    // 6. 将工具包装器注册到 ToolRegistry
+    // 7. 返回注册的工具数量
     unimplemented!()
 }
 ```
@@ -129,16 +138,13 @@ pub async fn connect_stdio(
     command: String,
     args: Vec<String>,
 ) -> Result<Peer, McpError> {
-    let transport = TokioChildProcess::new(
-        Command::new(command).configure(|cmd| {
-            for arg in args {
-                cmd.arg(arg);
-            }
-        })?
-    )?;
-    
-    let client = RmcpClient;
-    client.serve(transport).await
+    // [TODO] 实现要点说明
+    // 1. 使用 Command 创建子进程
+    // 2. 配置子进程参数（args）
+    // 3. 创建 TokioChildProcess 传输层
+    // 4. 使用 RmcpClient 包装传输层
+    // 5. 调用 client.serve() 启动客户端并返回 Peer
+    unimplemented!()
 }
 ```
 
@@ -148,9 +154,11 @@ pub async fn connect_stdio(
 pub async fn connect_http(
     url: &str,
 ) -> Result<Peer, McpError> {
-    let transport = StreamableHttpClientTransport::new(url);
-    let client = RmcpClient;
-    client.serve(transport).await
+    // [TODO] 实现要点说明
+    // 1. 创建 StreamableHttpClientTransport，传入 url
+    // 2. 使用 RmcpClient 包装传输层
+    // 3. 调用 client.serve() 启动客户端并返回 Peer
+    unimplemented!()
 }
 ```
 

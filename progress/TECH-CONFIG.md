@@ -147,20 +147,13 @@ pub enum ApiKeyConfig {
 
 impl ApiKeyConfig {
     pub fn resolve(&self) -> Result<SecretString, ConfigError> {
-        match self {
-            Self::Env { name } => std::env::var(name)
-                .map(SecretString::from)
-                .map_err(|_| ConfigError::EnvVarNotFound(name.clone())),
-            Self::EnvList { names } => {
-                for name in names {
-                    if let Ok(key) = std::env::var(name) {
-                        return Ok(SecretString::from(key));
-                    }
-                }
-                Err(ConfigError::NoEnvVarFound)
-            }
-            Self::Direct { key } => Ok(key.clone()),
-        }
+        // [TODO] 实现要点说明
+        // 1. 根据 ApiKeyConfig 类型（Env/EnvList/Direct）获取 API 密钥
+        // 2. Env 类型：从指定名称的环境变量读取
+        // 3. EnvList 类型：遍历多个环境变量名，返回第一个存在的值
+        // 4. Direct 类型：直接返回嵌入的密钥
+        // 5. 正确处理密钥不存在的情况，返回对应的 ConfigError
+        unimplemented!()
     }
 }
 
@@ -403,47 +396,30 @@ impl ConfigValidator {
     }
     
     fn validate_model_groups(config: &Config) -> Result<(), ConfigError> {
-        for (name, group) in &config.model_groups.0 {
-            if group.models.is_empty() {
-                return Err(ConfigError::ValidationError(
-                    format!("Model group '{}' has no models", name)
-                ));
-            }
-            
-            for model in &group.models {
-                if !config.model_providers.0.contains_key(&model.provider) {
-                    return Err(ConfigError::ValidationError(
-                        format!("Provider '{}' not found for model in group '{}'", 
-                            model.provider, name)
-                    ));
-                }
-            }
-        }
-        Ok(())
+        // [TODO] 实现要点说明
+        // 1. 遍历所有模型组，检查每个组是否有模型
+        // 2. 检查模型引用的 provider 是否在 model_providers 中存在
+        // 3. 如果模型组为空，返回 ValidationError
+        // 4. 如果 provider 不存在，返回包含 provider 名称和模型组名称的错误信息
+        unimplemented!()
     }
     
     fn validate_providers(config: &Config) -> Result<(), ConfigError> {
-        for (name, provider) in &config.model_providers.0 {
-            // 验证API密钥
-            if let Err(e) = provider.api_key.resolve() {
-                return Err(ConfigError::ValidationError(
-                    format!("Provider '{}': {}", name, e)
-                ));
-            }
-            
-            // 验证base_url
-            if provider.base_url.host_str().is_none() {
-                return Err(ConfigError::ValidationError(
-                    format!("Provider '{}' has invalid base_url", name)
-                ));
-            }
-        }
-        Ok(())
+        // [TODO] 实现要点说明
+        // 1. 遍历所有模型提供商配置
+        // 2. 调用 provider.api_key.resolve() 验证 API 密钥是否可获取
+        // 3. 验证 base_url 是否有有效的主机名（host_str() 不为 None）
+        // 4. 返回对应的验证错误信息
+        unimplemented!()
     }
     
     fn validate_mcp_servers(config: &Config) -> Result<(), ConfigError> {
-        // TODO(#??): 验证MCP服务器配置
-        Ok(())
+        // [TODO] 实现要点说明
+        // 1. 遍历所有 MCP 服务器配置
+        // 2. 验证 Stdio 类型：检查 command 是否存在
+        // 3. 验证 Http 类型：检查 url 是否有效
+        // 4. 返回对应的验证错误信息
+        unimplemented!()
     }
 }
 ```

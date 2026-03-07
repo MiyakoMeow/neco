@@ -195,12 +195,12 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
-        Self {
-            max_retries: 3,
-            initial_delay_ms: 1000,
-            max_delay_ms: 30000,
-            backoff_multiplier: 2.0,
-        }
+        // [TODO] 实现要点说明
+        // 1. 设置默认重试次数为3次
+        // 2. 初始延迟1000ms
+        // 3. 最大延迟30000ms
+        // 4. 退避倍数为2.0
+        unimplemented!()
     }
 }
 ```
@@ -294,13 +294,12 @@ pub struct OpenAiClientConfig {
 
 impl OpenAiClient {
     pub fn new(config: OpenAiClientConfig) -> Result<Self, ConfigError> {
-        let openai_config = OpenAIConfig::new()
-            .with_api_key(config.api_key.expose_secret().clone())
-            .with_api_base(config.base_url.to_string());
-        
-        let client = Client::with_config(openai_config);
-        
-        Ok(Self { config, inner: client })
+        // [TODO] 实现要点说明
+        // 1. 使用config创建OpenAIConfig
+        // 2. 设置API Key和Base URL
+        // 3. 创建http客户端
+        // 4. 返回OpenAiClient实例
+        unimplemented!()
     }
 }
 
