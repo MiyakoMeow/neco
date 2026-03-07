@@ -426,7 +426,7 @@ pub struct ModelMessage<'a> {
 }
 
 impl<'a> ModelMessage<'a> {
-    pub fn from_message(msg: &'a Message) -> Self {
+    pub fn from_message(msg: &Message) -> ModelMessage<'_> {
         Self {
             role: msg.role,
             content: Cow::Borrowed(&msg.content),

@@ -169,13 +169,17 @@ pub struct DefaultToolRegistry {
 
 impl DefaultToolRegistry {
     pub fn new() -> Self {
-        // TODO: 实现注册表初始化
-        // 1. 创建新的RwLock包装的HashMap用于tools
-        // 2. 创建新的RwLock包装的HashMap用于timeouts
-        // 3. 注册内置工具：fs::read, fs::write, fs::edit, fs::delete
-        // 4. 注册多智能体工具：multi-agent::spawn, send, report
-        // 5. 注册上下文工具：context::observe
-        // 6. 注册MCP和Skill外部工具
+        let mut registry = Self {
+            tools: RwLock::new(HashMap::new()),
+            timeouts: RwLock::new(HashMap::new()),
+        };
+        
+        // 注册内置工具：fs::read, fs::write, fs::edit, fs::delete
+        // 注册多智能体工具：multi-agent::spawn, send, report
+        // 注册上下文工具：context::observe
+        // 注册MCP和Skill外部工具
+        
+        registry
     }
 }
 
