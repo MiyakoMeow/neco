@@ -980,8 +980,8 @@ graph LR
 | `mcp-stdio` | MCP stdio 传输 | 启用 |
 | `mcp-http` | MCP HTTP 传输 | 启用 |
 | `workflow` | 工作流引擎 | 启用 |
-| `cli` | CLI 界面 | 启用 |
-| `daemon` | 守护进程模式 | 启用 |
+| `cli` | CLI 界面（含 -m 参数） | 启用 |
+| `agent` | 守护进程模式（agent 子命令） | 启用 |
 
 ### 10.6 内核抽象层
 
@@ -991,8 +991,8 @@ graph LR
 graph TB
     subgraph "运行时"
         R1[CLI运行时]
-        R2[REPL运行时]
-        R3[Daemon运行时]
+        R2[TUI运行时]
+        R3[Agent运行时]
     end
     
     subgraph "NecoKernel Trait"

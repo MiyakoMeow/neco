@@ -76,20 +76,24 @@ pub struct CliArgs {
     
     /// 指定配置文件路径（覆盖默认合并行为）
     /// 
-    /// 默认按以下优先级查找并合并所有配置文件：
-    /// 1. .neco/neco.toml（当前项目，最高优先级）
-    /// 2. .agents/neco.toml（当前项目）
-    /// 3. ~/.config/neco/neco.toml（用户主配置）
-    /// 4. ~/.agents/neco.toml（通用配置，最低优先级）
+    /// 默认按以下优先级查找并合并所有配置文件（相对于 working_dir）：
+    /// 1. {working_dir}/.neco/neco.toml（当前项目，最高优先级）
+    /// 2. {working_dir}/.agents/neco.toml（当前项目）
+    /// 3. ~/.config/neco/neco.toml（用户主配置，不受 working_dir 影响）
+    /// 4. ~/.agents/neco.toml（通用配置，不受 working_dir 影响）
     /// 
     /// 合并规则：高优先级配置覆盖低优先级的相同键，嵌套对象采用深度合并。
     /// 提供此参数将跳过默认合并，直接使用指定文件。
     #[arg(short = 'c', long, global = true)]
     config: Option<PathBuf>,
     
-    /// 工作目录（默认为当前目录）
+    /// 工作目录（默认为当前目录 "."）
     /// 
-    /// 指定项目根目录，用于查找配置文件和存储数据。
+    /// 指定项目根目录，用于：
+    /// 1. 查找配置文件：相对路径（.neco/, .agents/）以此目录为基准
+    /// 2. 存储数据：Session数据默认存储于此目录下的数据目录中
+    /// 
+    /// 注意：绝对路径配置（~/.config/neco/, ~/.agents/）不受此参数影响。
     #[arg(short = 'w', long, global = true, default_value = ".")]
     working_dir: PathBuf,
 }
@@ -114,7 +118,9 @@ impl CliInterface {
         // 2. 加载配置文件：
         //    - 如果提供--config参数，使用指定文件
         //    - 否则按优先级查找并合并所有配置文件：
-        //      1. .neco/neco.toml → 2. .agents/neco.toml → 3. ~/.config/neco/neco.toml → 4. ~/.agents/neco.toml
+        //      1. {working_dir}/.neco/neco.toml → 2. {working_dir}/.agents/neco.toml → 3. ~/.config/neco/neco.toml → 4. ~/.agents/neco.toml
+        //      其中 {working_dir} 默认为当前目录（"."）
+        //      相对路径配置以 working_dir 为基准，绝对路径配置不受 working_dir 影响
         //      高优先级覆盖低优先级配置，嵌套对象深度合并
         // 3. 根据参数决定运行模式：
         //    - command=Some(Commands::Agent) → 启动守护进程模式
@@ -199,7 +205,7 @@ neco --working-dir /path/to/project
 
 ```mermaid
 graph TB
-    subgraph "REPL布局"
+    subgraph "TUI布局"
         M[消息历史]
         S1[状态栏（上方）]
         I[输入框]
@@ -237,8 +243,6 @@ neco agent --working-dir /path/to/project
 ```
 
 ### 5.2 配置结构
-
-### 5.1 API端点
 
 ```rust
 pub struct DaemonInterface {
@@ -315,9 +319,9 @@ impl DaemonInterface {
 }
 ```
 
-### 5.2 REST API
+### 5.3 REST API
 
-#### 5.2.1 创建会话
+#### 5.3.1 创建会话
 
 **请求：**
 ```json
@@ -342,7 +346,7 @@ Content-Type: application/json
 }
 ```
 
-#### 5.2.2 发送消息
+#### 5.3.2 发送消息
 
 **请求：**
 ```json
@@ -368,7 +372,7 @@ Content-Type: application/json
 }
 ```
 
-#### 5.2.3 获取会话状态
+#### 5.3.3 获取会话状态
 
 **请求：**
 ```json
@@ -385,7 +389,7 @@ GET /api/v1/sessions/{session_id}/status
 }
 ```
 
-#### 5.2.4 终止会话
+#### 5.3.4 终止会话
 
 **请求：**
 ```json
@@ -401,7 +405,7 @@ DELETE /api/v1/sessions/{session_id}
 }
 ```
 
-#### 5.2.5 错误响应格式
+#### 5.3.5 错误响应格式
 
 ```json
 {
@@ -545,13 +549,22 @@ $ curl -X POST http://127.0.0.1:8080/api/v1/sessions/{session_id}/messages \
 ### 7.4 配置文件合并示例
 
 ```bash
-# 不指定--config时，自动按优先级合并所有配置文件
+# 不指定--config时，自动按优先级合并所有配置文件（相对于当前目录）
 $ neco
 [INFO] Merging config files:
 [INFO]   - .neco/neco.toml (priority 1)
 [INFO]   - .agents/neco.toml (priority 2)
 [INFO]   - ~/.config/neco/neco.toml (priority 3)
 [INFO]   - ~/.agents/neco.toml (priority 4)
+[INFO] Config merged successfully (4 files)
+
+# 指定working-dir时，相对路径配置以此目录为基准
+$ neco --working-dir /path/to/project
+[INFO] Merging config files:
+[INFO]   - /path/to/project/.neco/neco.toml (priority 1)
+[INFO]   - /path/to/project/.agents/neco.toml (priority 2)
+[INFO]   - ~/.config/neco/neco.toml (priority 3, absolute path)
+[INFO]   - ~/.agents/neco.toml (priority 4, absolute path)
 [INFO] Config merged successfully (4 files)
 
 # 使用--config覆盖默认合并行为
