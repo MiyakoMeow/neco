@@ -293,8 +293,8 @@ pub struct Message {
 pub struct ModelMessage<'a> {
     pub role: Role,
     pub content: Cow<'a, str>,
-    pub tool_calls: Option<&'a [ToolCall]>,
-    pub tool_call_id: Option<&'a str>,
+    pub tool_calls: Option<Cow<'a, [ToolCall]>>,
+    pub tool_call_id: Option<Cow<'a, str>>,
 }
 
 // 转换方法
