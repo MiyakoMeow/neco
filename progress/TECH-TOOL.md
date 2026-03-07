@@ -528,6 +528,104 @@ impl ToolExecutor for FileDeleteTool {
 }
 ```
 
+## 4.5 上下文工具
+
+> 上下文工具帮助 Agent 管理内存，遵循 Arena Allocator 心智模型。
+
+### 4.5.1 工具定义
+
+| 工具 | 功能 | 超时 |
+|------|------|------|
+| `context::observe` | 观测上下文状态，获取 Dashboard | 5秒 |
+| `context::compact` | 主动压缩上下文（Layer A） | 30秒 |
+
+### 4.5.2 context::observe
+
+```rust
+pub struct ContextObserveTool {
+    observer: Arc<dyn ContextObserver>,
+}
+
+#[async_trait]
+impl ToolExecutor for ContextObserveTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("context::observe".into()),
+            description: "观测上下文状态，获取内存使用仪表盘".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "filter": {
+                        "type": "object",
+                        "description": "可选的过滤条件"
+                    }
+                }
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(5),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // 返回上下文仪表盘：
+        // • Usage: 78.2% (100k/128k)
+        // • Steps since tag: 35
+        // • Pruning status: Stage 1 approaching
+        // • Est. turns left: ~12
+        unimplemented!()
+    }
+}
+```
+
+### 4.5.3 context::compact
+
+```rust
+pub struct ContextCompactTool {
+    compression_service: Arc<CompressionService>,
+}
+
+#[async_trait]
+impl ToolExecutor for ContextCompactTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("context::compact".into()),
+            description: "主动压缩上下文，将历史消息压缩为摘要（Agent主动管理内存）".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "tag": {
+                        "type": "string",
+                        "description": "压缩起点标记，从该标记到当前位置的消息将被压缩"
+                    }
+                },
+                "required": ["tag"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // Layer A: Agent 主动压缩
+        // 1. 从 tag 位置到当前位置的消息
+        // 2. 调用模型生成摘要
+        // 3. 替换为一段 summary
+        // 4. 保留原始历史（backup tag）
+        unimplemented!()
+    }
+}
+```
+
 ## 5. 工具数据流
 
 ```mermaid
