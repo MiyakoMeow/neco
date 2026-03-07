@@ -199,10 +199,26 @@ impl DefaultToolRegistry {
 
         // 注册内置工具（按优先级排序）
         // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete
+        registry.register(FileReadTool);
+        registry.register(FileWriteTool);
+        registry.register(FileEditTool);
+        registry.register(FileDeleteTool);
+        
         // 2. 上下文工具：context::observe
+        registry.register(ContextObserveTool);
+        
         // 3. 多智能体工具：multi-agent::spawn, multi-agent::send, multi-agent::report
+        registry.register(MultiAgentSpawnTool);
+        registry.register(MultiAgentSendTool);
+        registry.register(MultiAgentReportTool);
+        
         // 4. 激活工具：activate::skill, activate::mcp
+        registry.register(ActivateSkillTool);
+        registry.register(ActivateMcpTool);
+        
         // 5. 工作流工具：workflow::approve, workflow::reject
+        registry.register(WorkflowApproveTool);
+        registry.register(WorkflowRejectTool);
 
         // 注意：MCP和Skill外部工具在运行时动态注册
 
@@ -212,13 +228,38 @@ impl DefaultToolRegistry {
 
 #[async_trait]
 impl ToolRegistry for DefaultToolRegistry {
-    // TODO: 实现以下方法
-    // - register: 接收ToolExecutor并注册到tools Map
-    // - get: 根据ToolId查找并返回ToolExecutor
-    // - definitions: 返回所有已注册工具的定义列表
-    // - timeout: 返回工具的超时时间（支持最长前缀匹配）
-    // - set_timeout: 设置特定工具的超时时间
-    // - list_tools: 返回所有已注册工具的ID列表
+    async fn register<T: ToolExecutor + Send + Sync + 'static>(&mut self, tool: T) {
+        let def = tool.definition();
+        let executor = Arc::new(tool);
+        self.tools.write().await.insert(def.id.clone(), executor);
+    }
+    
+    async fn get(&self, id: &ToolId) -> Option<Arc<dyn ToolExecutor>> {
+        self.tools.read().await.get(id).cloned()
+    }
+    
+    async fn definitions(&self) -> Vec<ToolDefinition> {
+        self.tools.read().await.values()
+            .map(|tool| tool.definition().clone())
+            .collect()
+    }
+    
+    async fn timeout(&self, id: &ToolId) -> Option<Duration> {
+        let tools = self.tools.read().await;
+        if let Some(tool) = tools.get(id) {
+            Some(tool.definition().timeout)
+        } else {
+            self.timeouts.read().await.get(id.0.as_str()).copied()
+        }
+    }
+    
+    async fn set_timeout(&self, id: ToolId, timeout: Duration) {
+        self.timeouts.write().await.insert(id.0, timeout);
+    }
+    
+    async fn list_tools(&self) -> Vec<ToolId> {
+        self.tools.read().await.keys().cloned().collect()
+    }
 }
 ```
 

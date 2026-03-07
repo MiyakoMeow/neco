@@ -167,6 +167,7 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub tool_calls: Option<Vec<ToolCall>>,
+    pub tool_call_id: Option<String>,
 }
 ```
 
@@ -395,12 +396,20 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use once_cell::sync::Lazy;
 
+/// 模型能力标识符
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct ModelCapabilityKey {
+    pub provider: String,
+    pub model: String,
+}
+
 /// 全局模型能力注册表
-static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy::new(|| {
+/// 使用(provider, model)组合键，支持不同提供商的同名模型
+static MODEL_CAPABILITIES: Lazy<HashMap<ModelCapabilityKey, ModelCapabilities>> = Lazy::new(|| {
     let mut m = HashMap::new();
     
-    // GPT-4 Vision 系列
-    m.insert("gpt-4-vision-preview", ModelCapabilities {
+    // OpenAI - GPT-4 Vision 系列
+    m.insert(ModelCapabilityKey { provider: "openai".into(), model: "gpt-4-vision-preview".into() }, ModelCapabilities {
         streaming: true,
         tools: true,
         functions: true,
@@ -408,7 +417,7 @@ static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy
         vision: true,
         context_window: 128_000,
     });
-    m.insert("gpt-4o", ModelCapabilities {
+    m.insert(ModelCapabilityKey { provider: "openai".into(), model: "gpt-4o".into() }, ModelCapabilities {
         streaming: true,
         tools: true,
         functions: true,
@@ -417,8 +426,8 @@ static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy
         context_window: 128_000,
     });
     
-    // GPT-4 Turbo
-    m.insert("gpt-4-turbo", ModelCapabilities {
+    // OpenAI - GPT-4 Turbo
+    m.insert(ModelCapabilityKey { provider: "openai".into(), model: "gpt-4-turbo".into() }, ModelCapabilities {
         streaming: true,
         tools: true,
         functions: true,
@@ -427,8 +436,8 @@ static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy
         context_window: 128_000,
     });
     
-    // GPT-3.5 系列
-    m.insert("gpt-3.5-turbo", ModelCapabilities {
+    // OpenAI - GPT-3.5 系列
+    m.insert(ModelCapabilityKey { provider: "openai".into(), model: "gpt-3.5-turbo".into() }, ModelCapabilities {
         streaming: true,
         tools: true,
         functions: true,
@@ -443,8 +452,12 @@ static MODEL_CAPABILITIES: Lazy<HashMap<&'static str, ModelCapabilities>> = Lazy
 impl OpenAiClient {
     /// 从注册表获取模型能力
     fn get_capabilities_for_model(&self, model: &str) -> ModelCapabilities {
+        let key = ModelCapabilityKey {
+            provider: "openai".into(),
+            model: model.to_string(),
+        };
         MODEL_CAPABILITIES
-            .get(model)
+            .get(&key)
             .cloned()
             .unwrap_or_else(|| ModelCapabilities {
                 // 未知模型的默认能力
@@ -482,7 +495,7 @@ impl ModelClient for OpenAiClient {
 
 **配置文件示例（TOML）：**
 ```toml
-[model_capabilities.gpt-4o]
+[model_capabilities.openai.gpt-4o]
 streaming = true
 tools = true
 functions = true
@@ -490,13 +503,21 @@ json_mode = true
 vision = true
 context_window = 128000
 
-[model_capabilities.gpt-4-turbo]
+[model_capabilities.openai.gpt-4-turbo]
 streaming = true
 tools = true
 functions = true
 json_mode = true
 vision = false
 context_window = 128000
+
+[model_capabilities.anthropic.claude-3-opus]
+streaming = true
+tools = true
+functions = true
+json_mode = true
+vision = true
+context_window = 200000
 ```
 
 ## 8. 流式输出处理

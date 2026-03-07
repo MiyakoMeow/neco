@@ -118,8 +118,14 @@ pub trait MessageRepository: Send + Sync {
 | 方法 | 错误场景 | 返回行为 |
 |------|---------|---------|
 | `save` | 序列化失败、IO错误、存储空间不足 | 返回 `StorageError` |
-| `find_by_id` | ID不存在、文件损坏、解析失败 | 返回 `Ok(None)` 或 `Err(StorageError)` |
-| `find_children` | 父ID不存在、权限错误 | 返回空Vec或 `Err(StorageError)` |
+| `save` | 并发冲突（文件被其他进程修改） | 返回 `StorageError::Conflict`，调用方应重试 |
+| `save` | 存储不可用（磁盘故障、权限问题） | 返回 `StorageError::Unavailable` |
+| `find_by_id` | ID不存在 | 返回 `Ok(None)` |
+| `find_by_id` | 文件损坏、解析失败 | 返回 `Err(StorageError::Corruption)` |
+| `find_by_id` | 存储不可用 | 返回 `Err(StorageError::Unavailable)` |
+| `find_children` | 父ID不存在 | 返回空Vec `Ok(vec![])` |
+| `find_children` | 权限错误 | 返回 `Err(StorageError::PermissionDenied)` |
+| `find_children` | 存储不可用 | 返回 `Err(StorageError::Unavailable)` |
 
 ### 3.2 领域模型定义
 
@@ -371,7 +377,7 @@ impl ToolExecutor for SpawnAgentTool {
                     },
                     "model_group": {
                         "type": "string",
-                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值"
+                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值。\n\n层级继承语义：\n- 如果不提供此参数，子Agent使用父Agent的model_group\n- 如果提供此参数，子Agent使用指定的model_group，忽略继承值\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
                     }
                 },
                 "required": ["agent_id", "task"]
@@ -569,17 +575,17 @@ pub enum WorkflowEvent {
 
 ```rust
 pub enum TriggerPattern {
-    /// 匹配所有事件
+    /// 匹配所有事件（包括SessionEvent、AgentEvent、WorkflowEvent、ToolEvent、SystemEvent的所有变体）
     All,
     /// 匹配特定生命周期事件
     Lifecycle { events: Vec<LifecycleEvent> },
     /// 匹配特定类型Agent创建
     AgentSpawned { agent_type: Option<String> },
-    /// 匹配Agent终止
+    /// 匹配Agent终止（包括Completed、Failed状态）
     AgentTerminated,
-    /// 匹配系统关键字（精确匹配）
+    /// 匹配系统关键字（精确匹配，不区分大小写）
     SystemKeyword { keywords: Vec<String> },
-    /// 匹配消息内容（正则表达式）
+    /// 匹配消息内容（正则表达式，使用regex crate语法）
     ContentMatch { pattern: String },
 }
 
@@ -606,14 +612,14 @@ pub enum TriggerAction {
 
 **触发器模式说明：**
 
-| 模式 | 触发条件 | 使用场景 |
-|------|---------|---------|
-| `All` | 所有事件 | 全局日志、监控 |
-| `Lifecycle` | 特定生命周期事件 | Agent状态跟踪 |
-| `AgentSpawned` | Agent创建时 | 初始化配置 |
-| `AgentTerminated` | Agent终止时 | 资源清理 |
-| `SystemKeyword` | 消息包含关键字 | 快捷命令响应 |
-| `ContentMatch` | 消息匹配正则 | 复杂内容过滤 |
+| 模式 | 触发条件 | 使用场景 | 详细说明 |
+|------|---------|---------|---------|
+| `All` | 所有事件类型 | 全局日志、监控 | 包含所有Event变体：SessionEvent、AgentEvent、WorkflowEvent、ToolEvent、SystemEvent及其所有子变体 |
+| `Lifecycle` | 特定生命周期事件 | Agent状态跟踪 | 需指定events列表，如：[Created, StateChanged, Completed] |
+| `AgentSpawned` | Agent创建时 | 初始化配置 | agent_type为None时匹配所有Agent，为Some时匹配特定definition_id |
+| `AgentTerminated` | Agent终止时 | 资源清理 | 匹配Agent状态变为Completed或Failed的事件 |
+| `SystemKeyword` | 消息包含关键字 | 快捷命令响应 | 关键字精确匹配（不区分大小写），适用于消息内容和系统命令 |
+| `ContentMatch` | 消息匹配正则 | 复杂内容过滤 | 使用regex crate语法，支持前瞻、后顾、捕获组等高级特性 |
 
 ## 6. Agent提示词加载
 

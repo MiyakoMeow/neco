@@ -106,6 +106,13 @@ pub trait PromptLoader {
     fn load(&self, component: &str) -> Result<String, PromptError>;
     fn list_components(&self) -> Result<Vec<String>, PromptError>;
 }
+
+/// 加载行为规范：
+/// - 文件编码：支持UTF-8（带BOM或不带BOM），自动检测并去除BOM
+/// - 换行符处理：自动将\r\n（Windows）和\r（Classic Mac）转换为\n（Unix）
+/// - 路径解析：component参数使用kebab-case命名，映射为{component}.md文件
+/// - 路径遍历防护：不允许包含".."或绝对路径，仅限prompts/目录内
+/// - 错误处理：文件不存在返回PromptError::NotFound，编码错误返回PromptError::Encoding
 ```
 
 **参数说明：**
