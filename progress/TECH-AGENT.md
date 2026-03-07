@@ -706,34 +706,84 @@ pub enum TriggerAction {
 | `SystemKeyword` | 消息包含关键字 | 快捷命令响应 | 关键字精确匹配（不区分大小写），适用于消息内容和系统命令 |
 | `ContentMatch` | 消息匹配正则 | 复杂内容过滤 | 使用regex crate语法，支持前瞻、后顾、捕获组等高级特性 |
 
-## 6. Agent提示词加载
+## 6. Agent技能加载（Demand Paging）
 
-### 6.1 提示词组件加载
+> **核心理念**：不要预装所有可能用到的技能。按需加载是空间局部性的基础。
+
+### 6.1 三层加载模型
+
+```mermaid
+graph TB
+    subgraph "Demand Paging"
+        L1[Layer 1: 摘要<br/>~50 tokens/skill<br/>永不变，prefix稳定] --> L2[Layer 2: 完整指南<br/>~2K tokens<br/>首次使用时注入]
+        L2 --> L3[Layer 3: 关键提醒<br/>~100 tokens<br/>后续使用时注入]
+    end
+```
+
+| 层级 | 内容 | Token | 加载时机 |
+|------|------|-------|---------|
+| Layer 1 | 摘要 | ~50/skill | 始终在 system prompt，永不变 |
+| Layer 2 | 完整指南 | ~2K | 首次使用工具时附着在 tool_result |
+| Layer 3 | 关键提醒 | ~100 | 5-20轮后使用，错误触发重载 |
+
+**判断标准**：如果一段信息放进 system prompt 后，有 >30% 的 session 不会用到它，就不该预装。
+
+### 6.2 空间局部性原则
+
+> 相关信息应该在 token 序列中物理相邻。
+
+**错误做法**：
+```
+System Prompt: 身份 + 浏览器指南(2k) + Shell指南(1k) + 代码重构指南(3k) + ...
+                                        ↑ 指南在开头
+Agent 第42轮执行浏览器操作:              ↑ 中间隔了几万个token，Lost in Middle
+```
+
+**正确做法**：
+```
+... | tool_call(browser_navigate, url) | tool_result(浏览器操作指南 + 实际结果)
+                                                    ^^^^^^^^^^^^^^^^^
+                                        指南和操作物理相邻 → 空间局部性
+```
+
+### 6.3 提示词组件加载实现
 
 ```rust
 impl AgentEngine {
-    pub async fn load_prompts(
+    /// 按需加载技能（Demand Paging）
+    pub async fn load_skill(
         &self,
-        agent: &Agent,
-        session: &Session,
-    ) -> Result<Vec<String>, AgentError> {
-        // TODO: 实现提示词加载逻辑
-        // 1. 获取Agent定义中的prompts列表
-        // 2. 加载每个提示词组件
-        // 3. 合并为系统消息
+        skill_name: &str,
+        usage_context: &UsageContext,
+    ) -> Result<SkillContent, AgentError> {
+        // TODO: 实现三层加载
+        // Layer 1: 摘要始终加载（已在 system prompt）
+        // Layer 2: 首次使用时，加载完整指南作为 tool_result
+        // Layer 3: 后续使用，加载关键提醒
         unimplemented!()
     }
     
-    pub async fn load_prompt_component(
+    /// 检查是否需要重载完整指南
+    pub fn should_reload_full_guide(
         &self,
-        name: &str,
-    ) -> Result<String, AgentError> {
-        // TODO: 实现提示词组件加载
-        // 1. 检查内置提示词
-        // 2. 从文件加载自定义提示词
-        // 3. 返回内容
-        unimplemented!()
+        skill_name: &str,
+        error_count: usize,
+    ) -> bool {
+        // 连续 2 次同类工具出错 → 自动重新注入完整指南
+        error_count >= 2
     }
+}
+
+pub struct UsageContext {
+    pub tool_name: String,
+    pub turn: usize,
+    pub recent_errors: usize,
+}
+
+pub enum SkillContent {
+    Summary(String),
+    FullGuide(String),
+    Reminder(String),
 }
 ```
 
