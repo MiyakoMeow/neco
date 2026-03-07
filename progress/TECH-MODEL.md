@@ -55,9 +55,9 @@ pub struct ModelCapabilities {
 
 /// 聊天完成请求
 #[derive(Debug, Clone)]
-pub struct ChatRequest {
+pub struct ChatRequest<'a> {
     pub model: String,
-    pub messages: Vec<ModelMessage<'static>>,
+    pub messages: Vec<ModelMessage<'a>>,
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
@@ -77,9 +77,12 @@ pub enum ToolChoice {
 }
 
 impl ToolChoice {
-    /// TODO: 等API格式确定后实现序列化
-    pub fn to_string(&self) -> String {
-        todo!()
+    pub fn to_value(&self) -> Value {
+        match self {
+            Self::Auto => Value::String("auto".to_string()),
+            Self::None => Value::String("none".to_string()),
+            Self::Function { name } => json!({ "type": "function", "function": { "name": name } }),
+        }
     }
 }
 
@@ -92,9 +95,12 @@ pub enum ResponseFormat {
 }
 
 impl ResponseFormat {
-    /// TODO: 等API格式确定后实现序列化
-    pub fn to_string(&self) -> String {
-        todo!()
+    pub fn to_value(&self) -> Value {
+        match self {
+            Self::Text => Value::String("text".to_string()),
+            Self::JsonObject => Value::String("json_object".to_string()),
+            Self::JsonSchema { schema } => json!({ "json_schema": schema }),
+        }
     }
 }
 

@@ -786,11 +786,10 @@ pub enum AgentError {
 
 impl AgentError {
     pub fn is_recoverable(&self) -> bool {
-        matches!(self, 
-            Self::Timeout | 
-            Self::ChannelClosed |
-            Self::Model(e) if e.is_retryable()
-        )
+        match self {
+            Self::Timeout | Self::ChannelClosed => true,
+            Self::Model(e) => e.is_retryable(),
+        }
     }
 }
 ```

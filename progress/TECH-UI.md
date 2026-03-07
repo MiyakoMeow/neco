@@ -452,6 +452,9 @@ pub enum UiError {
     
     #[error("API错误: {0}")]
     Api(#[source] ApiError),
+
+    #[error("请求错误: {0}")]
+    BadRequest(String),
 }
 
 #[derive(Debug, Error)]
