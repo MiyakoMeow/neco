@@ -104,10 +104,9 @@ enum Commands {
     /// 
     /// 守护进程将启动HTTP服务器，通过REST API提供会话管理和消息交互功能。
     /// 默认监听地址由配置文件指定。
+    /// 
+    /// 注意：此子命令与 --message 参数互斥，不能同时使用。
     Agent {
-    /// 指定配置文件路径（覆盖默认合并行为）
-    #[arg(short = 'c', long)]
-    config: Option<PathBuf>,
     },
 }
 
@@ -124,8 +123,10 @@ impl CliInterface {
         //      高优先级覆盖低优先级配置，嵌套对象深度合并
         // 3. 根据参数决定运行模式：
         //    - command=Some(Commands::Agent) → 启动守护进程模式
+        //      （与 --message 互斥，若同时提供则返回错误）
         //    - message=Some(msg) → CLI直接模式（执行后立即退出）
         //    - 无参数 → TUI交互模式（默认）
+        //    - command=Some + message=Some → 返回错误（互斥）
         // 4. 如果提供--session参数，恢复已有会话
         // 5. 处理错误并返回适当的退出码
         // 
@@ -140,7 +141,7 @@ impl CliInterface {
 
 ## 4. TUI交互模式（默认）
 
-### 4.1 REPL界面结构
+### 4.1 TUI界面结构
 
 ```rust
 pub struct TuiInterface {
@@ -518,9 +519,13 @@ $ neco -m "帮我分析" --config ~/.config/neco/custom.toml
 
 **错误处理示例**：
 ```bash
-# 消息为空（报错）
+# 消息为空（应用层校验失败）
 $ neco -m ""
-error: The value '--message <MESSAGE>' requires a value, but none was supplied
+error: 消息内容不能为空
+
+# 缺少消息值（参数解析失败）
+$ neco -m
+error: a value is required for '--message <MESSAGE>' but none was supplied
 
 # 未找到配置文件
 $ neco --config /nonexistent/config.toml
