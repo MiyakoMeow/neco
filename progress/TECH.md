@@ -267,7 +267,7 @@ graph TD
 | 类型 | 结构 | 校验规则 |
 |------|------|----------|
 | `SessionId` | `struct SessionId(Ulid)` | 26位Ulid字符串 |
-| `AgentId` | `struct AgentId(Ulid)` | 全局唯一Ulid。Session关联通过SessionId索引实现，而非嵌套结构。格式：纯Ulid字符串，通过`AgentId::session(&self) -> SessionId`方法获取所属Session |
+| `AgentId` | `struct AgentId(Ulid)` | 全局唯一Ulid。Session关联通过SessionManager的索引实现，而非嵌套结构。AgentHierarchy中的parent_map/children_map建立层级关系，查询Agent所属Session需通过SessionManager |
 | `MessageId` | `struct MessageId(u64)` | 原子自增，Session范围唯一 |
 | `NodeId` | `struct NodeId(String)` | kebab-case格式验证 |
 | `ToolId` | `struct ToolId(String)` | `namespace::name` 格式 |
@@ -315,7 +315,7 @@ pub struct ModelMessage<'a> {
 // 转换方法
 impl<'a> ModelMessage<'a> {
     pub fn from_message(msg: &'a Message) -> Self;
-    pub fn into_owned(self) -> Message;
+    pub fn into_owned(self, id: MessageId) -> Message;
 }
 ```
 
@@ -1086,7 +1086,7 @@ pub trait NecoKernel: Send + Sync {
     
     fn session_manager(&self) -> Arc<SessionManager>;
     
-    fn shutdown(&self) -> impl Future<Output = ()> + Send;
+    fn shutdown(&self) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 }
 ```
 

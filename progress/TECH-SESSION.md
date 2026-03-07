@@ -294,8 +294,8 @@ impl Agent {
 #[derive(Debug, Clone)]
 pub struct AgentHierarchy {
     root: AgentId,
-    parent_map: HashMap<AgentId, Weak<AgentId>>,
-    children_map: HashMap<AgentId, Vec<Weak<AgentId>>>,
+    parent_map: HashMap<AgentId, AgentId>,
+    children_map: HashMap<AgentId, Vec<AgentId>>,
 }
 
 impl AgentHierarchy {

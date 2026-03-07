@@ -175,25 +175,7 @@ impl TuiInterface {
         unimplemented!()
     }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TuiMode {
-    Normal,
-    Command,
-    MultiLine,
-}
-
-impl TuiInterface {
-    pub fn new(session_manager: Arc<SessionManager>) -> Result<Self, UiError> {
-        // [TODO] 初始化终端
-        // 1. 使用crossterm创建终端实例
-        // 2. 设置终端原始模式和非阻塞输入
-        // 3. 初始化输入缓冲区和输出历史
-        // 4. 设置初始TuiMode为Normal
-        // 5. 配置终端尺寸监听（用于响应式布局）
-        unimplemented!()
-    }
-    
-    pub async fn run(&mut self) -> Result<(), UiError> {
+    pub async fn run(&self) -> Result<(), UiError> {
         // [TODO] TUI主循环
         // 1. 进入事件循环，持续读取用户输入直到Exit命令
         // 2. 处理输入：根据TuiMode解析输入（Normal模式发送消息，Command模式执行命令）
@@ -205,7 +187,13 @@ impl TuiInterface {
         unimplemented!()
     }
 }
-```
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TuiMode {
+    Normal,
+    Command,
+    MultiLine,
+}
 
 ### 4.2 TUI界面布局
 

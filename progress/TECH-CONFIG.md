@@ -450,9 +450,9 @@ impl ConfigLoader {
         }
     }
     
-    pub fn load(&self) -> Result<Config, ConfigError> {
+    pub fn load(&self) -> Result<&Config, ConfigError> {
         // 使用OnceLock缓存配置，首次加载后复用
-        self.cache.get_or_try(|| {
+        self.cache.get_or_try_init(|| {
             // TODO(#??): 实现配置加载逻辑
             // 1. 查找所有配置文件
             // 2. 按优先级解析和合并
