@@ -345,6 +345,32 @@ impl AgentHierarchy {
         // 4. 队列为空时返回结果
         unimplemented!()
     }
+    
+    pub fn serialize(&self) -> HierarchyMeta {
+        // TODO: 实现序列化
+        HierarchyMeta {
+            root: self.root.clone(),
+            parent_map: self.parent_map.clone(),
+            children_map: self.children_map.clone(),
+        }
+    }
+    
+    pub fn deserialize(meta: HierarchyMeta) -> Self {
+        // TODO: 实现反序列化
+        Self {
+            root: meta.root,
+            parent_map: meta.parent_map,
+            children_map: meta.children_map,
+        }
+    }
+}
+
+/// 层级关系序列化表示
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HierarchyMeta {
+    pub root: AgentId,
+    pub parent_map: HashMap<AgentId, AgentId>,
+    pub children_map: HashMap<AgentId, Vec<AgentId>>,
 }
 
 /// Agent状态
@@ -783,15 +809,15 @@ sequenceDiagram
 
 ```rust
 /// 上下文构建器
-pub struct ContextBuilder<'a> {
+pub struct ContextBuilder<'a, T: TokenCounter> {
     system_messages: Vec<String>,
     conversation: Vec<ModelMessage<'a>>,
     active_tools: Vec<ToolDefinition>,
     max_tokens: Option<usize>,
-    token_counter: Option<Box<dyn TokenCounter>>,
+    token_counter: Option<&'a T>,
 }
 
-impl<'a> ContextBuilder<'a> {
+impl<'a, T: TokenCounter> ContextBuilder<'a, T> {
     pub fn new() -> Self {
         Self {
             system_messages: Vec::new(),
@@ -800,6 +826,11 @@ impl<'a> ContextBuilder<'a> {
             max_tokens: None,
             token_counter: None,
         }
+    }
+    
+    pub fn with_token_counter(&mut self, counter: &'a T) -> &mut Self {
+        self.token_counter = Some(counter);
+        self
     }
     
     pub fn with_agent_messages(
@@ -841,10 +872,10 @@ pub enum SessionError {
     AgentNotFound(AgentId),
     
     #[error("存储错误: {0}")]
-    Storage(#[from] StorageError),
+    Storage(#[source] StorageError),
     
     #[error("序列化错误: {0}")]
-    Serialization(String),
+    Serialization(#[source] serde_json::Error),
     
     #[error("消息ID分配失败")]
     MessageIdOverflow,
@@ -853,16 +884,31 @@ pub enum SessionError {
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("IO错误: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[source] std::io::Error),
     
     #[error("文件不存在: {0}")]
     NotFound(PathBuf),
     
     #[error("序列化错误: {0}")]
-    Serialization(String),
+    Serialization(#[source] serde_json::Error),
     
     #[error("文件损坏: {0}")]
     Corruption(String),
+}
+
+#[derive(Debug, Error)]
+pub enum AgentDefinitionError {
+    #[error("文件未找到: {0}")]
+    FileNotFound(PathBuf),
+    
+    #[error("解析错误: {0}")]
+    ParseError(#[source] serde_yaml::Error),
+    
+    #[error("验证失败: {0}")]
+    ValidationError(String),
+    
+    #[error("缺少必需字段: {0}")]
+    MissingField(String),
 }
 ```
 

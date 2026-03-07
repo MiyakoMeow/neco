@@ -142,15 +142,27 @@ pub enum AgentState {
 
 /// Agent领域模型
 pub struct Agent {
-    pub id: AgentId,
-    pub parent_id: Option<AgentId>,
-    pub definition_id: String,
-    pub state: AgentState,
-    pub model_group: Option<String>,
-    pub system_prompt: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    // ... 其他字段
+    id: AgentId,
+    parent_id: Option<AgentId>,
+    definition_id: String,
+    state: AgentState,
+    model_group: Option<String>,
+    system_prompt: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl Agent {
+    pub fn id(&self) -> &AgentId { &self.id }
+    pub fn parent_id(&self) -> Option<&AgentId> { self.parent_id.as_ref() }
+    pub fn definition_id(&self) -> &str { &self.definition_id }
+    pub fn state(&self) -> &AgentState { &self.state }
+    pub fn system_prompt(&self) -> Option<&str> { self.system_prompt.as_deref() }
+    
+    pub fn set_state(&mut self, new_state: AgentState) {
+        self.state = new_state;
+        self.updated_at = Utc::now();
+    }
 }
 ```
 
@@ -694,6 +706,16 @@ pub enum AgentError {
     
     #[error("通道已关闭")]
     ChannelClosed,
+}
+
+impl AgentError {
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, 
+            Self::Timeout | 
+            Self::ChannelClosed |
+            Self::Model(e) if e.is_retryable()
+        )
+    }
 }
 ```
 

@@ -287,8 +287,20 @@ impl ToolExecutor for ObserveTool {
 pub struct ContextConfig {
     pub auto_compact_enabled: bool,
     pub auto_compact_threshold: f64,
-    pub compact_model_group: String,
+    pub compact_model_group: ModelGroupRef,
     pub keep_recent_messages: usize,
+}
+
+pub struct ModelGroupRef(String);
+
+impl ModelGroupRef {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Default for ContextConfig {
@@ -296,7 +308,7 @@ impl Default for ContextConfig {
         Self {
             auto_compact_enabled: true,
             auto_compact_threshold: 0.9,
-            compact_model_group: "fast".to_string(),
+            compact_model_group: ModelGroupRef::new("fast"),
             keep_recent_messages: 10,
         }
     }
@@ -310,7 +322,7 @@ pub struct CompactResult {
     pub original_count: usize,
     pub compacted_count: usize,
     pub summary: String,
-    pub preserved_ids: Vec<u64>,
+    pub preserved_ids: Vec<MessageId>,
     pub token_savings: TokenSavings,
     pub duration: Duration,
 }
@@ -397,6 +409,9 @@ impl TokenCounter for SimpleCounter {
 ```rust
 #[derive(Debug, Error)]
 pub enum ContextError {
+    #[error("Agent不存在: {0}")]
+    AgentNotFound(AgentId),
+    
     #[error("模型调用错误: {0}")]
     Model(#[from] ModelError),
     

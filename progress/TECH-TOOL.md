@@ -105,9 +105,16 @@ pub struct ToolContext {
 /// 工具执行结果
 #[derive(Debug, Clone)]
 pub struct ToolResult {
-    pub output: String,
-    pub data: Option<Value>,
+    pub output: ToolOutput,
     pub is_error: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum ToolOutput {
+    Text(String),
+    Json(Value),
+    Binary(Vec<u8>),
+    Empty,
 }
 
 /// 工具执行器Trait
@@ -588,7 +595,7 @@ pub enum ToolError {
     InvalidArgs(String),
     
     #[error("执行失败: {0}")]
-    Execution(String),
+    Execution(#[source] std::io::Error),
     
     #[error("超时")]
     Timeout,

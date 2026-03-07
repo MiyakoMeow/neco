@@ -80,7 +80,7 @@ pub struct WorkflowParams(pub HashMap<String, Value>);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDefinition {
     pub id: NodeId,
-    pub agent: Option<String>,
+    pub agent: Option<AgentId>,
     #[serde(default)]
     pub new_session: bool,
 }
@@ -141,14 +141,34 @@ impl<'de> Deserialize<'de> for NodeId {
 #[derive(Debug, Clone)]
 pub struct WorkflowRuntime {
     pub session_id: SessionId,
-    pub definition: Arc<WorkflowDefinition>,
-    pub node_states: HashMap<NodeId, NodeRuntimeState>,
-    pub counters: HashMap<String, u32>,
-    pub variables: HashMap<String, Value>,
-    pub active_nodes: HashSet<NodeId>,
-    pub status: WorkflowStatus,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    definition: Arc<WorkflowDefinition>,
+    node_states: DashMap<NodeId, NodeRuntimeState>,
+    counters: DashMap<CounterKey, u32>,
+    variables: DashMap<VariableKey, Value>,
+    active_nodes: DashSet<NodeId>,
+    status: WorkflowStatus,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+/// 计数器键（强类型）
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CounterKey(String);
+
+impl CounterKey {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+}
+
+/// 变量键（强类型）
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VariableKey(String);
+
+impl VariableKey {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
 }
 
 impl WorkflowRuntime {
@@ -189,15 +209,17 @@ impl WorkflowRuntime {
     
     pub fn increment_counter(&mut self, option: &str) {
         // TODO: 实现计数器递增逻辑
-        // 1. 使用counters.entry(option).or_insert(0)获取或创建计数器
-        // 2. 对获取的可变引用执行加1操作
+        // 1. 使用CounterKey包装option
+        // 2. 使用counters.entry(key).or_insert(0)获取或创建计数器
+        // 3. 对获取的可变引用执行加1操作
         unimplemented!()
     }
     
     pub fn get_counter(&self, option: &str) -> u32 {
         // TODO: 实现获取计数器值逻辑
-        // 1. 调用counters.get(option)查找计数器
-        // 2. 如果Some(v)返回*v，否则返回0
+        // 1. 使用CounterKey包装option
+        // 2. 调用counters.get(key)查找计数器
+        // 3. 如果Some(v)返回*v，否则返回0
         unimplemented!()
     }
 }
@@ -227,6 +249,7 @@ pub enum WorkflowStatus {
 
 ```rust
 use async_trait::async_trait;
+use dashmap::{DashMap, DashSet};
 
 /// 工作流仓储接口
 #[async_trait]
@@ -715,6 +738,9 @@ pub enum WorkflowError {
     
     #[error("存储错误: {0}")]
     Storage(#[from] StorageError),
+    
+    #[error("事件发布失败: {0}")]
+    EventPublishFailed(String),
 }
 ```
 

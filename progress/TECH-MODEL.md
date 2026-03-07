@@ -55,9 +55,9 @@ pub struct ModelCapabilities {
 
 /// 聊天完成请求
 #[derive(Debug, Clone)]
-pub struct ChatRequest<'a> {
+pub struct ChatRequest {
     pub model: String,
-    pub messages: Vec<ModelMessage<'a>>,
+    pub messages: Vec<ModelMessage<'static>>,
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
@@ -260,7 +260,7 @@ flowchart TD
 pub struct ModelGroupClient {
     name: String,
     models: Vec<ModelRef>,
-    clients: HashMap<String, Arc<dyn ModelClient>>,
+    clients: DashMap<String, Arc<dyn ModelClient>>,
     retry_config: RetryConfig,
 }
 
@@ -394,7 +394,7 @@ impl ModelClient for OpenAiClient {
 ```rust
 use std::collections::HashMap;
 use std::sync::Arc;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// 模型能力标识符
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -405,7 +405,7 @@ pub struct ModelCapabilityKey {
 
 /// 全局模型能力注册表
 /// 使用(provider, model)组合键，支持不同提供商的同名模型
-static MODEL_CAPABILITIES: Lazy<HashMap<ModelCapabilityKey, ModelCapabilities>> = Lazy::new(|| {
+static MODEL_CAPABILITIES: LazyLock<HashMap<ModelCapabilityKey, ModelCapabilities>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     
     // OpenAI - GPT-4 Vision 系列
@@ -614,6 +614,12 @@ pub enum ModelError {
 
     #[error("超时")]
     Timeout,
+}
+
+impl ModelError {
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::RateLimit(_) | Self::Timeout | Self::ServerError { .. })
+    }
 }
 ```
 

@@ -84,7 +84,35 @@ pub struct Config {
 
 /// 模型组配置
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ModelGroups(pub HashMap<String, ModelGroup>);
+pub struct ModelGroups(HashMap<String, ModelGroup>);
+
+impl ModelGroups {
+    pub fn get(&self, key: &str) -> Option<&ModelGroup> {
+        self.0.get(key)
+    }
+    
+    pub fn insert(&mut self, key: String, value: ModelGroup) -> Option<ModelGroup> {
+        self.0.insert(key, value)
+    }
+    
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &ModelGroup)> {
+        self.0.iter()
+    }
+}
+
+impl std::ops::Deref for ModelGroups {
+    type Target = HashMap<String, ModelGroup>;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ModelGroups {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelGroup {
@@ -109,8 +137,26 @@ impl ModelRef {
 }
 
 /// 模型提供商配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelProviders(pub HashMap<String, ModelProvider>);
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelProviders(HashMap<String, ModelProvider>);
+
+impl ModelProviders {
+    pub fn get(&self, key: &str) -> Option<&ModelProvider> {
+        self.0.get(key)
+    }
+    
+    pub fn insert(&mut self, key: String, value: ModelProvider) -> Option<ModelProvider> {
+        self.0.insert(key, value)
+    }
+}
+
+impl std::ops::Deref for ModelProviders {
+    type Target = HashMap<String, ModelProvider>;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelProvider {
@@ -186,7 +232,25 @@ impl Default for RetryConfig {
 
 /// MCP服务器配置
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct McpServers(pub HashMap<String, McpServerConfig>);
+pub struct McpServers(HashMap<String, McpServerConfig>);
+
+impl McpServers {
+    pub fn get(&self, key: &str) -> Option<&McpServerConfig> {
+        self.0.get(key)
+    }
+    
+    pub fn insert(&mut self, key: String, value: McpServerConfig) -> Option<McpServerConfig> {
+        self.0.insert(key, value)
+    }
+}
+
+impl std::ops::Deref for McpServers {
+    type Target = HashMap<String, McpServerConfig>;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerConfig {
@@ -359,6 +423,7 @@ pub trait ConfigSource: Send + Sync {
 ```rust
 pub struct ConfigLoader {
     config_dirs: Vec<PathBuf>,
+    cache: std::sync::OnceLock<Config>,
 }
 
 impl ConfigLoader {
@@ -369,16 +434,29 @@ impl ConfigLoader {
             dirs::config_dir().unwrap_or_default().join("neco"),
             dirs::home_dir().unwrap_or_default().join(".agents"),
         ];
-        Self { config_dirs: dirs }
+        Self { 
+            config_dirs: dirs,
+            cache: std::sync::OnceLock::new(),
+        }
+    }
+    
+    pub fn with_dirs(dirs: Vec<PathBuf>) -> Self {
+        Self {
+            config_dirs: dirs,
+            cache: std::sync::OnceLock::new(),
+        }
     }
     
     pub fn load(&self) -> Result<Config, ConfigError> {
-        // TODO(#??): 实现配置加载逻辑
-        // 1. 查找所有配置文件
-        // 2. 按优先级解析和合并
-        // 3. 验证配置
-        // 4. 返回Config
-        unimplemented!()
+        // 使用OnceLock缓存配置，首次加载后复用
+        self.cache.get_or_try(|| {
+            // TODO(#??): 实现配置加载逻辑
+            // 1. 查找所有配置文件
+            // 2. 按优先级解析和合并
+            // 3. 验证配置
+            // 4. 返回Config
+            unimplemented!()
+        })
     }
     
     pub fn load_workflow_config(&self, workflow_dir: &Path) -> Result<Config, ConfigError> {
@@ -514,7 +592,7 @@ pub enum ConfigError {
     FileNotFound(PathBuf),
     
     #[error("解析错误: {0}")]
-    ParseError(String),
+    ParseError(#[source] toml::de::Error),
     
     #[error("验证失败: {0}")]
     ValidationError(String),
