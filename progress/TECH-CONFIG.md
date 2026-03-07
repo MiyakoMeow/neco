@@ -108,12 +108,6 @@ impl std::ops::Deref for ModelGroups {
     }
 }
 
-impl std::ops::DerefMut for ModelGroups {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelGroup {
     pub models: Vec<ModelRef>,

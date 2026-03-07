@@ -97,13 +97,8 @@ tags:
 pub struct SkillId(String);
 
 impl SkillId {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
-    }
-    
-    pub fn try_new(s: impl Into<String>) -> Result<Self, SkillError> {
+    pub fn new(s: impl Into<String>) -> Result<Self, SkillError> {
         let s = s.into();
-        // 验证：小写字母，数字、连字符
         if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
             return Err(SkillError::ValidationError(
                 "SkillId must contain only lowercase letters, digits, and hyphens".to_string()
