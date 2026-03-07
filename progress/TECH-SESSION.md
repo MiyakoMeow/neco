@@ -359,34 +359,19 @@ impl AgentHierarchy {
     }
     
     pub fn serialize(&self) -> HierarchyMeta {
-        // TODO: 实现序列化
-        HierarchyMeta {
-            root: self.root.clone(),
-            parent_map: self.parent_map.iter()
-                .filter_map(|(k, v)| v.upgrade().map(|p| (k.clone(), p)))
-                .collect(),
-            children_map: self.children_map.iter()
-                .map(|(k, v)| {
-                    let children: Vec<AgentId> = v.iter()
-                        .filter_map(|w| w.upgrade().cloned())
-                        .collect();
-                    (k.clone(), children)
-                })
-                .collect(),
-        }
+        // TODO: 序列化层级关系
+        // 1. 收集所有有效引用（Weak升级为AgentId）
+        // 2. 构建parent_map和children_map
+        // 3. 返回HierarchyMeta
+        todo!()
     }
     
     pub fn deserialize(meta: HierarchyMeta) -> Self {
-        // TODO: 实现反序列化
-        Self {
-            root: meta.root,
-            parent_map: meta.parent_map.into_iter()
-                .map(|(k, v)| (k, Weak::new(v)))
-                .collect(),
-            children_map: meta.children_map.into_iter()
-                .map(|(k, v)| (k, v.into_iter().map(Weak::new).collect()))
-                .collect(),
-        }
+        // TODO: 反序列化层级关系
+        // 1. 将AgentId转换为Weak<AgentId>
+        // 2. 重建parent_map和children_map
+        // 3. 返回AgentHierarchy实例
+        todo!()
     }
 }
 

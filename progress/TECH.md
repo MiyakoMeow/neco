@@ -661,22 +661,23 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// 检查错误是否可重试
+    /// 
+    /// TODO: 完善重试策略
+    /// - 模型错误：根据具体模型错误类型判断
+    /// - MCP错误：考虑网络超时等临时错误
+    /// - Session错误：仅存储相关错误可重试
     pub fn is_retryable(&self) -> bool {
-        match self {
-            AppError::Model(e) => e.is_retryable(),
-            AppError::Mcp(e) => e.is_retryable(),
-            AppError::Session(e) => matches!(e, SessionError::Storage(_)),
-            AppError::Agent(e) => e.is_recoverable(),
-            _ => false,
-        }
+        todo!("根据错误类型实现重试策略")
     }
     
+    /// 检查错误是否面向用户
+    /// 
+    /// TODO: 明确错误分类规则
+    /// - 用户相关错误：Session、Agent、Workflow、Config、Id
+    /// - 系统内部错误：Model、Tool、Storage、MCP、Context、Skill
     pub fn is_user_facing(&self) -> bool {
-        match self {
-            AppError::Session(_) | AppError::Agent(_) | AppError::Workflow(_) => true,
-            AppError::Config(_) | AppError::Id(_) => true,
-            AppError::Model(_) | AppError::Tool(_) | AppError::Storage(_) | AppError::Mcp(_) | AppError::Context(_) | AppError::Skill(_) => false,
-        }
+        todo!("实现用户面向错误判断逻辑")
     }
 }
 

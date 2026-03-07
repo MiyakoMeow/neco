@@ -197,14 +197,11 @@ impl WorkflowRuntime {
     }
     
     pub fn complete_node(&mut self, node_id: &NodeId, output: String) {
+        // TODO: 实现节点完成逻辑
         // 1. 更新node_states中该节点的状态为Success { output }
-        self.node_states.insert(node_id.clone(), NodeRuntimeState::Success { output });
-        
         // 2. 从active_nodes HashSet中移除该node_id
-        self.active_nodes.remove(node_id);
-        
         // 3. 更新updated_at为当前时间
-        self.updated_at = Utc::now();
+        todo!()
     }
     
     pub fn increment_counter(&mut self, option: &str) {
@@ -370,21 +367,11 @@ impl WorkflowEngine {
         &self,
         definition: &WorkflowDefinition,
     ) -> Vec<NodeId> {
+        // TODO: 查找起始节点
         // 1. 创建HashSet收集所有有入边的节点ID
-        let mut has_incoming: HashSet<NodeId> = HashSet::new();
-        
         // 2. 遍历所有edges，将target（to）加入HashSet
-        for edge in &definition.edges {
-            has_incoming.insert(edge.to.clone());
-        }
-        
         // 3. 遍历所有nodes，返回不在HashSet中的节点（无入边的节点）
-        definition
-            .nodes
-            .iter()
-            .filter(|node| !has_incoming.contains(&node.id))
-            .map(|node| node.id.clone())
-            .collect()
+        todo!()
     }
     
     pub fn evaluate_edges(
@@ -392,37 +379,12 @@ impl WorkflowEngine {
         runtime: &WorkflowRuntime,
         current_node: &NodeId,
     ) -> Vec<NodeId> {
+        // TODO: 评估边的条件以确定下一个节点
         // 1. 查找定义中从current_node出发的所有边
-        let edges_from_current: Vec<&EdgeDefinition> = runtime
-            .definition
-            .edges
-            .iter()
-            .filter(|edge| &edge.from == current_node)
-            .collect();
-        
-        let mut target_nodes = Vec::new();
-        
         // 2. 对每条边调用evaluate_requirement评估条件
-        for edge in edges_from_current {
-            // 如果边没有条件限制（require为None或空），直接通过
-            let condition_met = match &edge.require {
-                Some(requirements) if !requirements.is_empty() => {
-                    // 检查所有requirement是否都满足
-                    requirements.iter().all(|req| {
-                        Self::evaluate_requirement(req, &runtime.counters, &runtime.definition.params)
-                    })
-                }
-                _ => true, // 无条件限制
-            };
-            
-            // 3. 收集所有条件满足的边的target节点
-            if condition_met {
-                target_nodes.push(edge.to.clone());
-            }
-        }
-        
+        // 3. 收集所有条件满足的边的target节点
         // 4. 返回目标节点ID列表
-        target_nodes
+        todo!()
     }
 }
 ```
@@ -574,17 +536,10 @@ pub fn register_workflow_tools(
     runtime: Arc<RwLock<WorkflowRuntime>>,
     node_id: NodeId,
 ) {
-    // 注册 workflow 工具
-    registry.register(Arc::new(WorkflowTransitionTool {
-        runtime: runtime.clone(),
-        node_id: node_id.clone(),
-    }));
-    
-    // 注册 pass 工具
-    registry.register(Arc::new(PassTool {
-        runtime,
-        node_id,
-    }));
+    // TODO: 注册工作流相关工具
+    // 1. 注册 workflow 工具（WorkflowTransitionTool）
+    // 2. 注册 pass 工具（PassTool）
+    todo!()
 }
 ```
 

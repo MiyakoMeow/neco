@@ -77,12 +77,9 @@ pub enum ToolChoice {
 }
 
 impl ToolChoice {
+    /// TODO: 等API格式确定后实现序列化
     pub fn to_string(&self) -> String {
-        match self {
-            ToolChoice::Auto => "auto".to_string(),
-            ToolChoice::None => "none".to_string(),
-            ToolChoice::Function { name } => serde_json::json!({ "type": "function", "function": { "name": name } }).to_string(),
-        }
+        todo!()
     }
 }
 
@@ -95,12 +92,9 @@ pub enum ResponseFormat {
 }
 
 impl ResponseFormat {
+    /// TODO: 等API格式确定后实现序列化
     pub fn to_string(&self) -> String {
-        match self {
-            ResponseFormat::Text => "text".to_string(),
-            ResponseFormat::JsonObject => serde_json::json!({ "type": "json_object" }).to_string(),
-            ResponseFormat::JsonSchema { schema } => serde_json::json!({ "type": "json_object", "schema": schema }).to_string(),
-        }
+        todo!()
     }
 }
 
@@ -109,8 +103,9 @@ impl ResponseFormat {
 pub struct ExtraParams(HashMap<String, Value>);
 
 impl ExtraParams {
+    /// TODO: 等实际使用场景确定后实现
     pub fn new() -> Self {
-        Self(HashMap::new())
+        todo!()
     }
     
     pub fn insert(&mut self, key: impl Into<String>, value: Value) {
@@ -259,13 +254,9 @@ pub struct RetryConfig {
 }
 
 impl Default for RetryConfig {
+    // TODO: 从 TECH-CONFIG.md 的 config 模块导入，避免重复定义
     fn default() -> Self {
-        Self {
-            max_retries: 3,
-            initial_delay_ms: 1000,
-            max_delay_ms: 30000,
-            backoff_multiplier: 2.0,
-        }
+        todo!()
     }
 }
 ```
@@ -399,54 +390,9 @@ impl ModelClient for OpenAiClient {
     }
     
     fn capabilities(&self) -> ModelCapabilities {
-        // 根据模型名称返回不同的能力
-        match self.config.model.as_str() {
-            // GPT-4 Vision 系列
-            "gpt-4-vision-preview" | "gpt-4o" | "gpt-4o-mini" => ModelCapabilities {
-                streaming: true,
-                tools: true,
-                functions: true,
-                json_mode: true,
-                vision: true,
-                context_window: 128_000,
-            },
-            // GPT-4 Turbo
-            "gpt-4-turbo" | "gpt-4-turbo-preview" => ModelCapabilities {
-                streaming: true,
-                tools: true,
-                functions: true,
-                json_mode: true,
-                vision: false,
-                context_window: 128_000,
-            },
-            // GPT-4 标准版
-            "gpt-4" | "gpt-4-32k" => ModelCapabilities {
-                streaming: true,
-                tools: true,
-                functions: true,
-                json_mode: true,
-                vision: false,
-                context_window: 8192,
-            },
-            // GPT-3.5 系列
-            "gpt-3.5-turbo" | "gpt-3.5-turbo-16k" => ModelCapabilities {
-                streaming: true,
-                tools: true,
-                functions: true,
-                json_mode: true,
-                vision: false,
-                context_window: 16_385,
-            },
-            // 默认能力（用于未知模型）
-            _ => ModelCapabilities {
-                streaming: true,
-                tools: false,
-                functions: false,
-                json_mode: false,
-                vision: false,
-                context_window: 4096,
-            },
-        }
+        // TODO: 使用能力注册表模式替代硬编码 (见 7.2 节)
+        // 建议：从 MODEL_CAPABILITIES 静态注册表或配置文件获取能力
+        self.get_capabilities_for_model(&self.config.model)
     }
 }
 ```

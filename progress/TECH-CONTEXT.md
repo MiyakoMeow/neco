@@ -294,23 +294,21 @@ pub struct ContextConfig {
 pub struct ModelGroupRef(String);
 
 impl ModelGroupRef {
+    // TODO: 实现构造方法
     pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+        todo!()
     }
     
+    // TODO: 实现转换为字符串
     pub fn as_str(&self) -> &str {
-        &self.0
+        todo!()
     }
 }
 
 impl Default for ContextConfig {
+    // TODO: 实现默认值
     fn default() -> Self {
-        Self {
-            auto_compact_enabled: true,
-            auto_compact_threshold: 0.9,
-            compact_model_group: ModelGroupRef::new("fast"),
-            keep_recent_messages: 10,
-        }
+        todo!()
     }
 }
 ```
