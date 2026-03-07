@@ -123,19 +123,44 @@ pub struct Requirement {
     pub param_ref: Option<String>,
 }
 
+/// 节点ID错误
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NodeIdError {
+    #[error("NodeId must be non-empty: {0}")]
+    Empty(String),
+    #[error("NodeId must be kebab-case: {0}")]
+    InvalidFormat(String),
+}
+
+impl NodeIdError {
+    pub fn new_empty(value: impl Into<String>) -> Self {
+        NodeIdError::Empty(value.into())
+    }
+    
+    pub fn new_invalid(value: impl Into<String>) -> Self {
+        NodeIdError::InvalidFormat(value.into())
+    }
+}
+
 /// 节点ID（强类型）
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NodeId(pub String);
+pub struct NodeId(String);
 
 impl NodeId {
-    pub fn new(s: impl Into<String>) -> Self {
+    pub fn new(s: impl Into<String>) -> Result<Self, NodeIdError> {
         let s = s.into();
         // 验证kebab-case格式
-        if !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
-            Self(s)
-        } else {
-            panic!("NodeId must be kebab-case: {}", s)
+        if s.is_empty() {
+            return Err(NodeIdError::new_empty(&s));
         }
+        if !s.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
+            return Err(NodeIdError::new_invalid(&s));
+        }
+        Ok(Self(s))
+    }
+    
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 ```

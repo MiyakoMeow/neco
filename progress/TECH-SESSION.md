@@ -447,6 +447,8 @@ impl<'a> ModelMessage<'a> {
     }
     
     pub fn into_owned(self) -> Message {
+        /// 注意：此处使用 MessageId(0) 作为占位符
+        /// 调用者必须通过 Session::allocate_message_id() 重新分配有效的 MessageId
         Message {
             id: MessageId(0),
             role: self.role,
@@ -493,6 +495,8 @@ impl MessageBuilder {
     }
     
     pub fn build(self) -> Message {
+        /// 注意：此处使用 MessageId(0) 作为占位符
+        /// 调用者必须通过 Session::allocate_message_id() 重新分配有效的 MessageId
         Message {
             id: MessageId(0),
             role: self.role,

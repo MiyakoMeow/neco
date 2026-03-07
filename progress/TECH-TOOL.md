@@ -105,11 +105,13 @@ pub struct ToolContext {
 }
 
 /// 工具执行结果
+/// 
+/// 注意：不包含 `is_error` 字段，因为 `execute` 方法返回 `Result<ToolResult, ToolError>`
+/// 已经足够表达成功/失败状态。如果返回 `Err`，则表示执行失败。
 #[derive(Debug, Clone)]
 pub struct ToolResult {
     pub output: String,
     pub data: Option<Value>,
-    pub is_error: bool,
 }
 
 /// 工具执行器Trait
@@ -146,7 +148,7 @@ pub trait ToolRegistry: Send + Sync {
 
 /// 工具ID（强类型）
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolId(pub String);
+pub struct ToolId(String);
 
 impl ToolId {
     pub fn from_parts(namespace: &str, name: &str) -> Self {
@@ -159,6 +161,10 @@ impl ToolId {
     
     pub fn name(&self) -> Option<&str> {
         self.0.split("::").nth(1)
+    }
+    
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 ```
