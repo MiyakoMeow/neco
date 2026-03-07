@@ -1090,7 +1090,7 @@ pub trait NecoKernel: Send + Sync {
     
     fn session_manager(&self) -> Arc<SessionManager>;
     
-    async fn shutdown(&mut self);
+    async fn shutdown(&self);
 }
 ```
 
