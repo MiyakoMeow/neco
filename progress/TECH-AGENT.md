@@ -279,7 +279,7 @@ impl AgentManager {
 
 > 参考 OpenFang 的 EventBus + TriggerEngine 模式设计
 
-### 5.1 EventBus 架构
+### 5.1 EventBus 发布订阅流程
 
 ```mermaid
 graph TB
@@ -290,29 +290,85 @@ graph TB
         M[模型]
     end
     
-    subgraph "事件总线 EventBus"
-        Bus[事件路由器]
+    subgraph "EventBus"
+        Pub[publish]
+        Filter[过滤器链]
+        Transform[转换器链]
+        Router[广播]
     end
     
     subgraph "事件消费者"
-        UI[UI更新]
-        Log[日志]
-        Metric[指标]
-        Trigger[触发器引擎]
+        Sub1[订阅者1]
+        Sub2[订阅者2]
+        SubN[订阅者N]
     end
     
-    A -->|AgentEvent| Bus
-    W -->|WorkflowEvent| Bus
-    S -->|SessionEvent| Bus
-    M -->|ModelEvent| Bus
+    A -->|AgentEvent| Pub
+    W -->|WorkflowEvent| Pub
+    S -->|SessionEvent| Pub
+    M -->|ModelEvent| Pub
     
-    Bus --> UI
-    Bus --> Log
-    Bus --> Metric
-    Bus --> Trigger
+    Pub --> Filter
+    Filter --> Transform
+    Transform --> Router
+    
+    Router --> Sub1
+    Router --> Sub2
+    Router --> SubN
 ```
 
-### 5.2 事件类型定义
+### 5.2 事件过滤/转换流程
+
+```mermaid
+graph LR
+    subgraph "过滤阶段"
+        E1[原始事件] --> FT1[类型过滤]
+        FT1 --> FT2[Agent过滤]
+        FT2 --> FT3[内容过滤]
+        FT3 -->|不匹配| Drop[丢弃]
+    end
+    
+    subgraph "转换阶段"
+        FT3 -->|匹配| T1[Enrich]
+        T1 --> T2[聚合]
+        T2 --> T3[拆分]
+    end
+    
+    subgraph "输出"
+        T3 --> O1[事件1]
+        T3 --> O2[事件2]
+        T3 --> O3[事件N]
+    end
+```
+
+### 5.3 事件类型定义
+
+#### 核心接口定义
+
+```rust
+/// 事件 trait - 所有事件的基 trait
+#[async_trait]
+pub trait Event: Send + Sync + dyn_clone::DynClone + std::fmt::Debug {
+    fn event_type(&self) -> &str;
+    fn timestamp(&self) -> DateTime<Utc>;
+    fn source_id(&self) -> Option<AgentUlid>;
+    fn to_json(&self) -> serde_json::Result<serde_json::Value>;
+}
+
+/// 事件元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventMetadata {
+    pub id: EventUlid,
+    pub event_type: String,
+    pub timestamp: DateTime<Utc>,
+    pub source_id: Option<AgentUlid>,
+    pub session_id: Option<SessionUlid>,
+    pub correlation_id: Option<EventUlid>,
+    pub tags: SmallVec<[String; 4]>,
+}
+```
+
+#### 事件类型
 
 | 事件类型 | 描述 | 包含字段 |
 |----------|------|----------|
@@ -328,106 +384,269 @@ graph TB
 | `SessionCreated` | Session创建 | session_id, session_type |
 | `ContextCompact` | 上下文压缩 | agent_ulid, before_tokens, after_tokens |
 
-### 5.3 触发器模式
+#### 统一事件类型
 
-```mermaid
-graph LR
-    subgraph "事件源"
-        A[Agent]
-        W[Workflow]
-        S[Session]
-        M[Model]
-    end
-    
-    subgraph "TriggerEngine"
-        TE[事件路由器]
-        TP[TriggerPattern]
-        TH[TriggerHandler]
-    end
-    
-    subgraph "触发动作"
-        UA[更新UI]
-        LG[记录日志]
-        MT[发送指标]
-        TR[触发器动作]
-    end
-    
-    A --> TE
-    W --> TE
-    S --> TE
-    M --> TE
-    
-    TE --> TP
-    TP --> TH
-    TH --> UA
-    TH --> LG
-    TH --> MT
-    TH --> TR
+```rust
+/// Agent 事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "sub_type")]
+pub enum AgentEvent {
+    AgentCreated { agent_ulid: AgentUlid, parent_ulid: Option<AgentUlid>, agent_type: String },
+    AgentStateChanged { agent_ulid: AgentUlid, old_state: String, new_state: String },
+    MessageAdded { agent_ulid: AgentUlid, message_id: String, role: String, content_length: usize },
+    ToolCalled { agent_ulid: AgentUlid, tool_name: String, args: serde_json::Value },
+    ToolResult { agent_ulid: AgentUlid, tool_name: String, result: serde_json::Value, success: bool },
+    AgentTerminated { agent_ulid: AgentUlid, reason: Option<String> },
+}
+
+/// 工作流事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "sub_type")]
+pub enum WorkflowEvent {
+    WorkflowStarted { session_id: SessionUlid, workflow_def: String },
+    WorkflowNodeStarted { session_id: SessionUlid, node_id: String },
+    WorkflowNodeCompleted { session_id: SessionUlid, node_id: String, result: serde_json::Value },
+    WorkflowTransition { session_id: SessionUlid, from_node: Option<String>, to_node: String },
+    WorkflowCompleted { session_id: SessionUlid, final_result: serde_json::Value },
+}
+
+/// Session 事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "sub_type")]
+pub enum SessionEvent {
+    SessionCreated { session_id: SessionUlid, session_type: String },
+    SessionClosed { session_id: SessionUlid },
+    ContextCompact { agent_ulid: AgentUlid, before_tokens: u32, after_tokens: u32 },
+}
+
+/// 统一事件类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Event {
+    Agent(AgentEvent),
+    Workflow(WorkflowEvent),
+    Session(SessionEvent),
+}
 ```
 
-**TriggerPattern 数据结构：**
+### 5.4 EventBus 核心结构
+
+```rust
+/// 事件总线配置
+#[derive(Debug, Clone)]
+pub struct EventBusConfig {
+    pub channel_capacity: usize,
+    pub max_subscribers: usize,
+    pub enable_filtering: bool,
+    pub enable_transformation: bool,
+}
+
+impl Default for EventBusConfig {
+    fn default() -> Self { /* ... */ }
+}
+
+/// 事件总线 - 核心结构定义
+pub struct EventBus {
+    config: EventBusConfig,
+    sender: broadcast::Sender<Arc<dyn Event>>,
+    subscribers: Arc<RwLock<HashMap<String, mpsc::Sender<Arc<dyn Event>>>>>,
+    filters: Arc<RwLock<Vec<Arc<dyn EventFilter>>>>,
+    transformers: Arc<RwLock<Vec<Arc<dyn EventTransformer>>>>,
+    metrics: Arc<RwLock<EventBusMetrics>>,
+}
+
+/// 事件指标
+#[derive(Debug, Default)]
+pub struct EventBusMetrics {
+    pub events_published: u64,
+    pub events_delivered: u64,
+    pub events_filtered: u64,
+    pub active_subscribers: usize,
+}
+
+/// EventBus 核心接口
+impl EventBus {
+    pub fn new(config: EventBusConfig) -> Self { /* ... */ }
+    
+    /// 发布事件
+    pub async fn publish(&self, event: Arc<dyn Event>);
+    
+    /// 订阅事件
+    pub async fn subscribe(
+        &self,
+        id: impl Into<String>,
+        filter: Option<Arc<dyn EventFilter>>,
+    ) -> mpsc::Receiver<Arc<dyn Event>>;
+    
+    /// 取消订阅
+    pub async fn unsubscribe(&self, id: &str);
+    
+    /// 添加过滤器
+    pub async fn add_filter(&self, filter: Arc<dyn EventFilter>);
+    
+    /// 添加转换器
+    pub async fn add_transformer(&self, transformer: Arc<dyn EventTransformer>);
+    
+    /// 获取指标
+    pub async fn metrics(&self) -> EventBusMetrics;
+}
+
+/// TODO: EventBus 实现要点
+/// 1. 使用 broadcast::Sender 实现多订阅者（支持多消费者）
+/// 2. 过滤器在 publish 时链式调用，任一过滤不匹配则丢弃
+/// 3. 转换器可返回 None（丢弃原事件）或新事件（支持一拆多）
+/// 4. 指标使用 RwLock 保护，定期上报 Prometheus
+/// 5. 考虑支持同步/异步两种订阅模式
+
+
+### 5.5 事件过滤器
+
+```rust
+/// 事件过滤器 trait
+#[async_trait]
+pub trait EventFilter: Send + Sync + std::fmt::Debug {
+    async fn should_process(&self, event: &Arc<dyn Event>) -> bool;
+    fn name(&self) -> &str;
+}
+
+/// 按事件类型过滤
+pub struct EventTypeFilter {
+    allowed_types: Vec<String>,
+}
+
+/// 按 Agent ID 过滤
+pub struct AgentFilter {
+    agent_ids: Vec<AgentUlid>,
+}
+
+/// 按时间范围过滤
+pub struct TimeFilter {
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+}
+
+/// 内容过滤器（关键词匹配）
+pub struct ContentFilter {
+    keywords: Vec<String>,
+    exclude_keywords: Vec<String>,
+}
+
+/// 组合过滤器
+pub struct CompositeFilter {
+    filters: Vec<Arc<dyn EventFilter>>,
+    mode: FilterMode,
+}
+
+#[derive(Debug, Clone)]
+pub enum FilterMode {
+    All,  // 所有过滤器都通过
+    Any,  // 任意一个过滤器通过
+}
+
+/// TODO: 过滤器实现要点
+/// 1. EventTypeFilter: 使用 HashSet 提升查找性能
+/// 2. AgentFilter: 支持前缀匹配和正则
+/// 3. TimeFilter: 使用 i64 时间戳比较，避免 DateTime 开销
+/// 4. ContentFilter: 预编译正则表达式，避免每次匹配重新编译
+/// 5. CompositeFilter: 支持 All/Any 模式，可嵌套组合
+```
+
+### 5.6 事件转换器
+
+```rust
+/// 事件转换器 trait
+#[async_trait]
+pub trait EventTransformer: Send + Sync + std::fmt::Debug {
+    async fn transform(&self, event: Arc<dyn Event>) -> Option<Arc<dyn Event>>;
+    fn name(&self) -> &str;
+}
+
+/// 事件 enricher - 添加额外上下文
+pub struct EventEnricher {
+    enrichments: HashMap<String, serde_json::Value>,
+}
+
+/// 事件聚合器 - 将多个事件聚合成一个
+pub struct EventAggregator {
+    window_size: usize,
+    window_duration: std::time::Duration,
+}
+
+/// 事件拆分器 - 将一个事件拆分为多个
+pub struct EventSplitter;
+
+/// TODO: 转换器实现要点
+/// 1. EventEnricher: 从外部服务获取上下文（如用户信息、工作流状态），合并到事件元数据
+/// 2. EventAggregator: 使用 BTreeMap 按时间窗口聚合，触发条件：数量达到 window_size 或时间超过 window_duration
+/// 3. EventSplitter: 适用于批量操作事件，拆分为单个事件便于细粒度处理
+/// 4. 转换器可链式组合，返回 Vec<Arc<dyn Event>> 实现一拆多
+```
+
+### 5.7 触发器引擎
 
 ```rust
 /// 触发模式
 pub enum TriggerPattern {
-    /// 匹配所有事件
-    All,
-    /// 生命周期事件
-    Lifecycle {
-        events: Vec<LifecycleEvent>,
-    },
-    /// Agent创建匹配
-    AgentSpawned {
-        agent_type: Option<String>,
-    },
-    /// Agent终止
-    AgentTerminated,
-    /// 系统关键词匹配
-    SystemKeyword {
-        keywords: Vec<String>,
-    },
-    /// 内存更新
-    MemoryUpdate {
-        threshold: f32,
-    },
-    /// 内容匹配
-    ContentMatch {
-        pattern: String,
-    },
+    All,                                              // 匹配所有事件
+    Lifecycle { events: Vec<LifecycleEvent> },         // 生命周期事件
+    AgentSpawned { agent_type: Option<String> },      // Agent创建匹配
+    AgentTerminated,                                   // Agent终止
+    SystemKeyword { keywords: Vec<String> },           // 系统关键词匹配
+    MemoryUpdate { threshold: f32 },                  // 内存更新
+    ContentMatch { pattern: String },                 // 内容匹配（正则）
 }
-```
 
-**TriggerHandler 数据结构：**
+/// 生命周期事件
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleEvent {
+    Created, Started, Paused, Resumed, Stopped, Completed, Failed,
+}
 
-```rust
 /// 触发处理器
 pub struct TriggerHandler {
-    /// 处理器ID
     pub id: String,
-    /// 触发模式
     pub pattern: TriggerPattern,
-    /// 动作类型
     pub action: TriggerAction,
-    /// 是否启用
     pub enabled: bool,
 }
 
 /// 触发动作
 pub enum TriggerAction {
-    /// 执行工具
-    ExecuteTool { tool_name: String, args: Value },
-    /// 发送消息
+    ExecuteTool { tool_name: String, args: serde_json::Value },
     SendMessage { target: AgentUlid, content: String },
-    /// 调用回调
     Callback { callback_id: String },
-    /// 记录日志
-    Log { level: LogLevel, message: String },
-    /// 发出事件
-    EmitEvent { event_type: String, payload: Value },
+    Log { level: tracing::Level, message: String },
+    EmitEvent { event_type: String, payload: serde_json::Value },
 }
+
+/// 触发引擎
+pub struct TriggerEngine {
+    event_bus: Arc<EventBus>,
+    handlers: Arc<RwLock<HashMap<String, TriggerHandler>>>,
+}
+
+/// 触发引擎核心接口
+impl TriggerEngine {
+    pub fn new(event_bus: Arc<EventBus>) -> Self { /* ... */ }
+    
+    pub async fn register_handler(&self, handler: TriggerHandler);
+    
+    pub async fn unregister_handler(&self, id: &str);
+    
+    pub async fn handle_event(&self, event: Arc<dyn Event>);
+}
+
+/// TODO: 触发器引擎实现要点
+/// 1. 模式匹配使用 HashMap 缓存正则编译结果，避免重复编译
+/// 2. 支持优先级（priority字段），高优先级 handler 先执行
+/// 3. ExecuteTool: 通过 ToolRegistry 执行，需处理工具不存在、参数错误等
+/// 4. SendMessage: 通过 AgentManager 发送内部消息
+/// 5. Callback: 预注册异步回调函数，支持超时和重试
+/// 6. EmitEvent: 重新发布到 EventBus，可触发其他触发器（需防环）
+/// 7. 考虑支持触发器别名（alias）和动态启用/禁用
 ```
 
-### 5.4 事件流处理
+### 5.8 事件流处理
 
 ```mermaid
 sequenceDiagram
@@ -437,38 +656,37 @@ sequenceDiagram
     participant Agent as Agent
     
     Source->>Bus: 发布事件
-    Bus->>Bus: 事件路由
+    Bus->>Bus: 过滤→转换→路由
     Bus->>Handler: 分发给订阅者
     Handler->>Handler: 处理逻辑
     Handler->>Agent: 触发操作
 ```
 
-### 5.5 事件过滤与转换
+### 5.9 零分配事件设计
 
-```mermaid
-graph TD
-    E[原始事件] --> F[过滤器]
-    F -->|过滤后| T[转换器]
-    T -->|处理后| D[分发器]
-    D --> H[处理器]
+```rust
+/// 使用 SmallVec 优化小事件存储
+pub struct CompactEvent {
+    pub metadata: EventMetadata,
+    pub payload: SmallVec<[u8; 256]>,
+}
+
+/// 预分配的事件通道
+pub struct EventChannel {
+    sender: mpsc::Sender<Arc<CompactEvent>>,
+    receiver: mpsc::Receiver<Arc<CompactEvent>>,
+}
+
+impl EventChannel {
+    pub fn new(capacity: usize) -> Self { /* ... */ }
+}
+
+/// TODO: 零分配优化要点
+/// 1. CompactEvent 使用 SmallVec<[u8; 256]> 避免小事件堆分配
+/// 2. EventMetadata 中的 tags 使用 SmallVec<[String; 4]> 减少分配
+/// 3. 批量事件使用 Vec<Arc<CompactEvent>> 而非独立发送
+/// 4. 考虑使用 object_pool 或 slab 减少 Event 对象分配
 ```
-
-**事件过滤器：**
-
-| 过滤器类型 | 描述 |
-|-----------|------|
-| `EventFilter` | 按事件类型过滤 |
-| `AgentFilter` | 按Agent过滤 |
-| `TimeFilter` | 按时间范围过滤 |
-| `ContentFilter` | 按内容过滤 |
-
-**事件转换器：**
-
-| 转换器类型 | 描述 |
-|-----------|------|
-| `Enricher` | 添加额外上下文 |
-| `Aggregator` | 聚合多个事件 |
-| `Splitter` | 拆分为多个事件 |
 
 ## 6. Agent通信工具
 

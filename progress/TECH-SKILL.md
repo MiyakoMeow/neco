@@ -97,9 +97,34 @@ allowed-tools:                   # 预批准的工具列表（实验性）
 ### 3.3 Skill定义结构
 
 ```rust
-/// Skill标识符
+/// Skill标识符（小写字母、数字、连字符）
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SkillId(pub String);
+pub struct SkillId {
+    value: String,
+}
+
+impl SkillId {
+    pub fn new(value: String) -> Result<Self, IdError> {
+        if value.is_empty() {
+            return Err(IdError::Empty);
+        }
+        if !value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+            return Err(IdError::InvalidFormat(" SkillId只能包含小写字母、数字和连字符".into()));
+        }
+        Ok(Self { value })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+/// ID验证错误
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdError {
+    Empty,
+    InvalidFormat(String),
+}
 
 /// Skill定义
 pub struct Skill {

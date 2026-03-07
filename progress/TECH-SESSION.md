@@ -11,26 +11,108 @@ Session管理模块负责管理对话Session的生命周期、消息存储和Age
 ### 2.1 标识符体系
 
 ```mermaid
-classDiagram
-    class SessionId {
-        +Ulid ulid
-        +new() SessionId
-    }
+graph TB
+    subgraph "ID类型层次"
+        S[SessionId<br/>顶级容器] --> A[AgentUlid<br/>Agent实例标识]
+        A --> N[NodeSessionId<br/>工作流节点]
+    end
     
-    class AgentUlid {
-        +Ulid ulid
-        +SessionId session_id
-    }
-    
-    class NodeSessionId {
-        +Ulid ulid
-        +SessionId workflow_session_id
-        +NodeId node_id
-    }
-    
-    SessionId --> AgentUlid : 包含
-    SessionId --> NodeSessionId : 工作流Session
+    S -.->|"session_id()"| A
+    A -.->|"session_id()"| N
+    N -.->|"workflow_session_id()"| S
 ```
+
+#### 核心接口定义
+
+```rust
+/// Session唯一标识符（顶级容器）
+pub struct SessionId(String);
+
+impl SessionId {
+    // TODO: 实现要点
+    // 1. 使用 ULID 生成唯一ID
+    // 2. 提供 as_str() 方法用于兼容
+    // 3. 实现 Display trait
+    pub fn new() -> Self;
+    pub fn as_str(&self) -> &str;
+}
+
+/// Agent实例标识符（归属于Session）
+pub struct AgentUlid(Ulid, SessionId);
+
+impl AgentUlid {
+    // TODO: 实现要点
+    // 1. 组合 ULID + SessionId
+    // 2. 提供 session_id() 方法获取所属Session
+    // 3. 根Agent的ULID = SessionId的ULID
+    pub fn new(session_id: &SessionId) -> Self;
+    pub fn session_id(&self) -> &SessionId;
+}
+
+/// 工作流节点Session标识符
+pub struct NodeSessionId(Ulid, SessionId, NodeId);
+
+impl NodeSessionId {
+    // TODO: 实现要点
+    // 1. 组合 ULID + WorkflowSessionId + NodeId
+    // 2. 提供 workflow_session_id() 和 node_id() 方法
+    pub fn new(workflow_session_id: &SessionId, node_id: NodeId) -> Self;
+    pub fn workflow_session_id(&self) -> &SessionId;
+    pub fn node_id(&self) -> &NodeId;
+}
+
+/// 节点标识符
+pub struct NodeId(String);
+```
+
+#### 错误类型定义
+
+```rust
+/// ID验证错误
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum IdError {
+    #[error("ID不能为空")]
+    Empty,
+    
+    #[error("ID格式无效: {0}")]
+    InvalidFormat(String),
+    
+    #[error("ID不匹配: 期望 {expected}, 实际 {actual}")]
+   Mismatch { expected: String, actual: String },
+}
+
+impl IdError {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, IdError::Empty)
+    }
+    
+    pub fn is_mismatch(&self) -> bool {
+        matches!(self, IdError::Mismatch { .. })
+    }
+}
+```
+
+#### ID验证流程
+
+```mermaid
+flowchart TD
+    A[创建ID] --> B{格式验证}
+    B -->|通过| C{唯一性检查}
+    B -->|失败| D[返回 IdError]
+    C -->|通过| E[返回 ID实例]
+    C -->|失败| F[返回 IdError]
+    
+    G[验证ID关联] --> H{session_id 匹配}
+    H -->|是| I[通过]
+    H -->|否| J[返回 IdError::Mismatch]
+```
+
+**验证规则：**
+- `SessionId`：非空，使用ULID格式
+- `AgentUlid`：必须关联有效的 `SessionId`
+- `NodeSessionId`：必须关联有效的 `WorkflowSessionId` 和 `NodeId`
+
+---
 
 **标识符规则：**
 
@@ -172,6 +254,7 @@ pub struct SessionMeta {
     pub metadata: SessionMetadata,
 }
 
+use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 消息ID分配器
@@ -190,7 +273,7 @@ impl MessageIdAllocator {
     /// 
     /// 使用 fetch_update 实现原子检查+递增，避免 TOCTOU 并发漏洞
     /// 返回 None 表示 ID 已溢出
-    pub fn next_id(&self) -> Option<u64> {
+    pub fn next_id(&self) -> Option<MessageId> {
         self.counter
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
                 if current >= u64::MAX {
@@ -200,6 +283,7 @@ impl MessageIdAllocator {
                 }
             })
             .ok()
+            .and_then(MessageId::new)
     }
 }
 ```
@@ -209,15 +293,70 @@ impl MessageIdAllocator {
 ```rust
 /// Agent实例标识符
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct McpServerId(String);
+pub struct McpServerId {
+    value: String,
+}
 
-/// Skill标识符
+impl McpServerId {
+    pub fn new(value: String) -> Result<Self, IdError> {
+        if value.is_empty() {
+            return Err(IdError::Empty);
+        }
+        Ok(Self { value })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+/// Skill标识符（小写字母、数字、连字符）
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SkillId(String);
+pub struct SkillId {
+    value: String,
+}
+
+impl SkillId {
+    pub fn new(value: String) -> Result<Self, IdError> {
+        if value.is_empty() {
+            return Err(IdError::Empty);
+        }
+        if !value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+            return Err(IdError::InvalidFormat(" SkillId只能包含小写字母、数字和连字符".into()));
+        }
+        Ok(Self { value })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
 
 /// 工具标识符
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolId(String);
+pub struct ToolId {
+    value: String,
+}
+
+impl ToolId {
+    pub fn new(value: String) -> Result<Self, IdError> {
+        if value.is_empty() {
+            return Err(IdError::Empty);
+        }
+        Ok(Self { value })
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+/// ID验证错误
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdError {
+    Empty,
+    InvalidFormat(String),
+}
 
 /// Agent实例
 pub struct Agent {
@@ -285,51 +424,159 @@ pub enum AgentState {
 
 ### 3.3 消息结构
 
+#### 3.3.1 消息处理流程
+
+```mermaid
+sequenceDiagram
+    participant Client as Client
+    participant Session as Session
+    participant Allocator as MessageIdAllocator
+    participant Agent as Agent
+    participant Storage as StorageBackend
+
+    Client->>Session: add_message(ulid, role, content, tool_call_id)
+    Session->>Allocator: next_id()
+    Allocator-->>Session: MessageId
+    Session->>Agent: 验证Agent存在
+    Agent-->>Session: Agent reference
+    Session->>Session: 创建Message实例
+    Session->>Agent: push message to messages
+    Session->>Storage: append_message() (异步)
+    Storage-->>Session: Result
+    Session-->>Client: MessageId
+```
+
+#### 3.3.2 数据结构定义
+
 ```rust
+/// 消息ID（使用NonZeroU64优化内存）
+/// 
+/// TODO: MessageId 实现要点
+/// 1. 使用 NonZeroU64 确保不为0，节约一个bit
+/// 2. 实现 FromStr/Display 用于序列化
+/// 3. Session范围内通过 MessageIdAllocator 分配
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MessageId(NonZeroU64);
+
+/// 角色（使用repr(u8)优化内存布局）
+/// 
+/// TODO: Role 实现要点
+/// 1. #[repr(u8)] 确保内存紧凑
+/// 2. 实现 is_assistant()/is_tool() 辅助方法
+/// 3. 实现 FromStr 用于解析
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum Role {
+    System = 0,
+    User = 1,
+    Assistant = 2,
+    Tool = 3,
+}
+
+/// 消息内容（支持多格式）
+/// 
+/// TODO: MessageContent 实现要点
+/// 1. 使用 #[serde(untagged)] 简化序列化
+/// 2. Text 变体使用 String
+/// 3. ToolCalls 变体复用现有 ToolCall
+/// 4. Multimodal 支持多种媒体类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MessageContent {
+    /// 纯文本内容
+    Text(String),
+    /// 工具调用（Assistant角色）
+    ToolCalls(Vec<ToolCall>),
+    /// 多模态内容（文本+图片等）
+    Multimodal {
+        /// 文本部分
+        text: String,
+        /// 媒体资源（URL或Base64）
+        media: Vec<MediaResource>,
+    },
+}
+
+/// 媒体资源
+/// 
+/// TODO: MediaResource 实现要点
+/// 1. mime_type 使用 MIME 类型字符串
+/// 2. data 支持 URL 或 Base64 编码
+/// 3. 可扩展支持更多资源类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaResource {
+    /// 资源类型
+    pub mime_type: String,
+    /// 资源URL或Base64数据
+    pub data: String,
+}
+
 /// 消息
+/// 
+/// TODO: Message 实现要点
+/// 1. id 由 Session 的 MessageIdAllocator 分配
+/// 2. role 决定消息的语义和处理方式
+/// 3. tool_call_id 仅在 Role::Tool 时有值
+/// 4. metadata 可选，用于token统计等
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     /// 消息ID（Session范围内唯一）
-    pub id: u64,
-    
+    pub id: MessageId,
     /// 角色
     pub role: Role,
-    
     /// 内容
-    pub content: String,
-    
-    /// 工具调用（Assistant角色时）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    
+    pub content: MessageContent,
     /// 工具调用ID（Tool角色时）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
-    
     /// 时间戳
     pub timestamp: DateTime<Utc>,
-    
     /// 元数据（如token使用量）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<MessageMetadata>,
 }
 
-/// 角色
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Role {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
-
 /// 消息元数据
+/// 
+/// TODO: MessageMetadata 实现要点
+/// 1. 用于存储token使用量等统计信息
+/// 2. 可扩展添加更多统计字段
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageMetadata {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+}
+```
+
+#### 3.3.3 接口定义
+
+```rust
+impl Role {
+    /// 判断是否为Assistant角色
+    pub fn is_assistant(&self) -> bool {
+        // TODO: 实现
+        matches!(self, Role::Assistant)
+    }
+    
+    /// 判断是否为Tool角色
+    pub fn is_tool(&self) -> bool {
+        // TODO: 实现
+        matches!(self, Role::Tool)
+    }
+}
+
+impl MessageId {
+    /// 从u64创建MessageId
+    pub fn new(id: u64) -> Option<Self> {
+        // TODO: 实现
+        NonZeroU64::new(id).map(Self)
+    }
+    
+    /// 获取内部u64值
+    pub fn get(&self) -> u64 {
+        // TODO: 实现
+        self.0.get()
+    }
 }
 ```
 
@@ -864,10 +1111,9 @@ impl Session {
         &mut self,
         ulid: AgentUlid,
         role: Role,
-        content: String,
-        tool_calls: Option<Vec<ToolCall>>,
+        content: MessageContent,
         tool_call_id: Option<String>,
-    ) -> Result<u64, SessionError> {
+    ) -> Result<MessageId, SessionError> {
         // 1. 验证Agent存在
         let agent = self.agents.get_mut(&ulid)
             .ok_or_else(|| SessionError::AgentNotFound(ulid.clone()))?;
@@ -881,7 +1127,6 @@ impl Session {
             id: message_id,
             role,
             content,
-            tool_calls,
             tool_call_id,
             timestamp: Utc::now(),
             metadata: None,
@@ -910,7 +1155,7 @@ impl Session {
     pub fn get_message_history(
         &self,
         ulid: AgentUlid,
-        up_to_id: Option<u64>,
+        up_to_id: Option<MessageId>,
     ) -> Result<Vec<&Message>, SessionError> {
         // TODO: 获取Agent的完整消息历史
         // 1. 验证Agent存在
@@ -923,7 +1168,7 @@ impl Session {
     pub async fn rewind_to(
         &mut self,
         ulid: AgentUlid,
-        message_id: u64,
+        message_id: MessageId,
     ) -> Result<(), SessionError> {
         // TODO: 回溯到指定消息ID实现
         // 1. 验证Agent存在

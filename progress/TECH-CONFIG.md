@@ -430,16 +430,60 @@ graph TD
 
 ### 5.2 合并实现
 
+```mermaid
+graph TD
+    subgraph "配置合并流程"
+        Start[开始合并] --> Check1{base 存在?}
+        Check1 -->|否| Insert1[直接插入] --> Done1[完成]
+        Check1 -->|是| Check2{类型匹配?}
+        
+        Check2 -->|Object| DeepMerge[深度合并]
+        Check2 -->|Array| Check3{需要追加?}
+        Check2 -->|Scalar| Override[直接覆盖]
+        
+        Check3 -->|是| Append[数组追加] --> Done2[完成]
+        Check3 -->|否| Override
+        
+        DeepMerge --> ForEach[遍历字段]
+        ForEach --> Recursive[递归合并]
+        Recursive --> Done3{还有字段?}
+        Done3 -->|是| ForEach
+        Done3 -->|否| Done1
+    end
+```
+
+#### 数据结构
+
 ```rust
-/// 配置合并器
+/// TODO: 合并策略实现要点
+/// 1. 支持三种策略: Override, Append, DeepMerge
+/// 2. Array 默认使用 Append，Object 使用 DeepMerge
+/// 3. 可通过 MergeConfig 自定义路径策略
+pub enum MergeStrategy {
+    Override,   // 直接覆盖
+    Append,     // 数组追加
+    DeepMerge,  // 深度合并
+}
+
+/// TODO: 合并器核心结构
+/// - 使用 serde_json::Value 处理任意类型
+/// - MergeConfig 保存路径->策略映射
 pub struct ConfigMerger;
 
+pub struct MergeConfig {
+    strategies: HashMap<String, MergeStrategy>,
+}
+
+/// 接口定义
 impl ConfigMerger {
     /// 合并两个配置值
-    pub fn merge(base: &mut Value, override_: Value) {
-        // TODO: 实现配置合并逻辑
-        unimplemented!()
-    }
+    pub fn merge(base: &mut Value, override_: Value);
+    
+    /// 使用指定策略合并
+    pub fn merge_with_strategy(base: &mut Value, override_: Value, strategy: MergeStrategy);
+    
+    /// 合并完整配置结构
+    pub fn merge_config(base: &mut NecoConfig, override_: NecoConfig, config: &MergeConfig);
 }
 ```
 
@@ -482,25 +526,198 @@ sequenceDiagram
 
 ### 6.2 配置验证
 
+#### 6.2.1 分层验证架构
+
 ```rust
-/// 配置验证器
+use thiserror::Error;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationStage {
+    Required,
+    Format,
+    Reference,
+}
+
+#[derive(Debug, Error, Clone)]
+pub enum ValidationError {
+    #[error("[Required] 缺少必需字段 '{field}'")]
+    RequiredField { field: String },
+    
+    #[error("[Format] 字段 '{field}' 格式无效: {reason}")]
+    FormatError { field: String, reason: String },
+    
+    #[error("[Reference] 引用无效: {target} 在 '{location}' 中不存在")]
+    ReferenceError { target: String, location: String },
+    
+    #[error("[Type] 类型不匹配: 期望 {expected}，实际 {actual}")]
+    TypeMismatch { expected: String, actual: String },
+}
+
+impl ValidationError {
+    pub fn stage(&self) -> ValidationStage {
+        match self {
+            Self::RequiredField { .. } => ValidationStage::Required,
+            Self::FormatError { .. } => ValidationStage::Format,
+            Self::ReferenceError { .. } => ValidationStage::Reference,
+            Self::TypeMismatch { .. } => ValidationStage::Format,
+        }
+    }
+    
+    pub fn with_context(&self, context: &str) -> String {
+        format!("{} | 上下文: {}", self, context)
+    }
+}
+
+pub struct ValidationResult {
+    errors: Vec<ValidationError>,
+    warnings: Vec<String>,
+}
+
+impl ValidationResult {
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+    
+    pub fn errors_by_stage(&self) -> HashMap<ValidationStage, Vec<&ValidationError>> {
+        let mut grouped: HashMap<ValidationStage, Vec<&ValidationError>> = HashMap::new();
+        for error in &self.errors {
+            grouped.entry(error.stage()).or_default().push(error);
+        }
+        grouped
+    }
+    
+    pub fn summary(&self) -> String {
+        if self.is_valid() {
+            "配置验证通过".to_string()
+        } else {
+            let by_stage = self.errors_by_stage();
+            let mut parts = Vec::new();
+            for (stage, errors) in by_stage {
+                parts.push(format!("{}: {} 个错误", 
+                    match stage {
+                        ValidationStage::Required => "必需字段",
+                        ValidationStage::Format => "格式",
+                        ValidationStage::Reference => "引用",
+                    },
+                    errors.len()
+                ));
+            }
+            parts.join(", ")
+        }
+    }
+}
+```
+
+#### 6.2.2 ConfigValidator 实现
+
+```mermaid
+graph TD
+    subgraph "验证流程"
+        Start[开始验证] --> Required[Required 阶段]
+        Required --> Check1{有错误?}
+        Check1 -->|是| ReturnErr1[返回错误]
+        Check1 -->|否| Format[Format 阶段]
+        
+        Format --> Check2{有错误?}
+        Check2 -->|是| ReturnErr2[返回错误]
+        Check2 -->|否| Reference[Reference 阶段]
+        
+        Reference --> Check3{有错误?}
+        Check3 -->|是| ReturnErr3[返回错误]
+        Check3 -->|否| Success[验证通过]
+    end
+    
+    subgraph "验证内容"
+        R1[检查必填字段<br/>model_groups<br/>model_providers] 
+        F1[检查格式<br/>URL 有效性<br/>超时 > 0]
+        Ref1[检查引用完整性<br/>模型引用提供商<br/>MCP 路径存在]
+    end
+```
+
+#### 数据结构
+
+```rust
+/// TODO: 验证器实现要点
+/// 1. Required: 检查 model_groups, model_providers 非空，models 列表非空
+/// 2. Format: 检查 URL 格式有效，超时 > 0
+/// 3. Reference: 检查模型引用指向存在的提供商，MCP 路径存在
+/// 4. 使用 Vec<Box<dyn Validator>> 支持扩展验证器
 pub struct ConfigValidator;
 
+pub enum ValidationMode {
+    Fast,   // 仅 Required
+    Full,   // 完整三阶段
+}
+
+/// 接口定义
 impl ConfigValidator {
-    /// 验证完整配置
-    pub fn validate(config: &NecoConfig) -> Result<(), ConfigError> {
-        // TODO: 实现配置验证逻辑
-        unimplemented!()
+    /// 验证配置（默认全阶段）
+    pub fn validate(config: &NecoConfig) -> Result<(), Vec<ValidationError>>;
+    
+    /// 分阶段验证
+    pub fn validate_staged(config: &NecoConfig, mode: ValidationMode) -> Result<(), Vec<ValidationError>>;
+}
+```
+
+#### 6.2.3 编译期类型验证
+
+```rust
+use std::marker::PhantomData;
+
+pub trait ConfigValidated: Sized {
+    type Repr;
+    fn try_from_repr(r: Self::Repr) -> Result<Self, Vec<ValidationError>>;
+    fn into_repr(self) -> Self::Repr;
+}
+
+pub struct Validated<T>(T);
+
+impl<T: ConfigValidated> Validated<T> {
+    pub fn new(value: T::Repr) -> Result<Self, Vec<ValidationError>> {
+        T::try_from_repr(value).map(Validated)
     }
     
-    fn validate_model_groups(config: &NecoConfig) -> Result<(), ConfigError> {
-        // TODO: 实现模型组验证逻辑
-        unimplemented!()
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl ConfigValidated for ModelRef {
+    type Repr = String;
+    
+    fn try_from_repr(s: Self::Repr) -> Result<Self, Vec<ValidationError>> {
+        let mut errors = Vec::new();
+        
+        let parts: Vec<&str> = s.split('/').collect();
+        if parts.len() != 2 {
+            errors.push(ValidationError::FormatError {
+                field: "model_ref".to_string(),
+                reason: format!("格式必须为 'provider/model'，实际: {}", s),
+            });
+        }
+        
+        if errors.is_empty() {
+            Self::from_str(&s).map_err(|e| vec![ValidationError::FormatError {
+                field: "model_ref".to_string(),
+                reason: e.to_string(),
+            }])
+        } else {
+            Err(errors)
+        }
     }
     
-    fn validate_providers(config: &NecoConfig) -> Result<(), ConfigError> {
-        // TODO: 实现提供商验证逻辑
-        unimplemented!()
+    fn into_repr(self) -> Self::Repr {
+        if self.params.is_empty() {
+            format!("{}/{}", self.provider_id, self.model_name)
+        } else {
+            let params = self.params
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("&");
+            format!("{}/{}?{}", self.provider_id, self.model_name, params)
+        }
     }
 }
 ```
@@ -509,58 +726,94 @@ impl ConfigValidator {
 
 ```mermaid
 graph TB
-    subgraph "热重载机制"
+    subgraph "热重载流程"
         W[文件系统Watcher] -->|文件变更| D[去抖动]
         D -->|延迟500ms| L[重新加载]
         L -->|解析&合并| M[配置合并]
         M -->|验证| V[配置验证]
         V -->|成功| U[更新共享配置]
         V -->|失败| R[回滚&记录日志]
+        U -->|广播| N[通知订阅者]
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant W as Watcher
+    participant M as ConfigManager
+    participant V as ConfigValidator
+    participant S as Subscribers
+    
+    W->>M: 文件变更事件
+    M->>M: 去抖动(500ms)
+    M->>M: 重新加载配置
+    M->>V: 验证新配置
+    alt 验证成功
+        V-->>M: 验证通过
+        M->>M: 更新内存配置
+        M->>S: 广播 ConfigChange
+    else 验证失败
+        V-->>M: 验证失败
+        M->>M: 回滚到旧配置
+        M->>S: 广播错误事件
     end
 ```
 
 ### 6.4 线程安全配置访问
 
+#### 数据结构
+
 ```rust
-/// 线程安全的配置管理器
+/// TODO: ConfigManager 实现要点
+/// 1. 使用 RwLock 保护配置，实现并发读
+/// 2. 使用 broadcast 频道通知配置变更
+/// 3. update_config 验证通过后才更新
+/// 4. diff_configs 计算配置差异
 pub struct ConfigManager {
-    /// 当前配置（读写锁）
     config: RwLock<Arc<NecoConfig>>,
-    /// 配置变更通知
     change_tx: broadcast::Sender<ConfigChange>,
 }
 
-impl ConfigManager {
-    /// 获取当前配置（只读）
-    pub fn get_config(&self) -> Arc<NecoConfig> {
-        // TODO: 实现线程安全的配置获取
-        unimplemented!()
-    }
-    
-    /// 更新配置（热重载）
-    pub fn update_config(&self, new_config: NecoConfig) -> Result<(), ConfigError> {
-        // TODO: 实现配置热重载逻辑
-        unimplemented!()
-    }
-    
-    /// 订阅配置变更
-    pub fn subscribe_changes(&self) -> broadcast::Receiver<ConfigChange> {
-        // TODO: 实现配置变更订阅功能
-        unimplemented!()
-    }
-}
-
-/// 配置变更通知
+/// 配置变更事件
 pub struct ConfigChange {
     pub changes: Vec<ConfigDiff>,
+    pub timestamp: SystemTime,
 }
 
+/// 配置差异
 pub enum ConfigDiff {
     ModelGroupAdded(String),
     ModelGroupRemoved(String),
     ModelProviderChanged(String),
     McpServerAdded(String),
     McpServerRemoved(String),
+}
+
+/// 更新错误
+pub enum ConfigUpdateError {
+    ValidationFailed(Vec<ValidationError>),
+    LoadFailed(String),
+}
+
+/// 接口定义
+impl ConfigManager {
+    /// 创建配置管理器
+    pub fn new(initial_config: NecoConfig) -> Self;
+    
+    /// 同步获取配置
+    pub fn get_config(&self) -> Arc<NecoConfig>;
+    
+    /// 异步获取配置
+    pub async fn get_config_async(&self) -> Arc<NecoConfig>;
+    
+    /// 更新配置（需通过验证）
+    pub async fn update_config(&self, new_config: NecoConfig) -> Result<(), ConfigUpdateError>;
+    
+    /// 订阅配置变更
+    pub fn subscribe_changes(&self) -> broadcast::Receiver<ConfigChange>;
+    
+    /// 热重载单个文件
+    pub async fn hot_reload(&self, file_path: &Path) -> Result<(), ConfigUpdateError>;
 }
 ```
 

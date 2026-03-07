@@ -71,10 +71,51 @@ graph TB
 
 ### 3.1 工作流定义
 
+#### DAG验证流程
+
+```mermaid
+graph TD
+    Load[加载定义] --> Parse[解析节点边]
+    Parse --> Build[构建图]
+    Build --> Validate{DAG验证}
+    Validate -->|通过| Ready[就绪]
+    Validate -->|失败| Error[返回错误]
+    
+    subgraph "构建图"
+        Build --> AddNodes[添加节点]
+        AddNodes --> AddEdges[添加边]
+    end
+    
+    subgraph "DAG验证"
+        Validate --> CycleCheck[检测环]
+        CycleCheck -->|有环| CycleError[NotADag错误]
+    end
+```
+
+#### WorkflowDef 结构定义
+
 ```rust
+use petgraph::{graph::NodeIndex, Graph, Directed};
+use rustc_hash::{FxIndexMap, FxIndexSet};
+use std::marker::PhantomData;
+use toml;
+
+type WorkflowGraph<N, E> = Graph<N, E, Directed>;
+
+/// 工作流验证器（类型状态）
+pub trait WorkflowValidator {
+    const DAG_VALIDATED: bool;
+}
+
+/// 未验证的工作流定义
+pub struct Unvalidated;
+
+/// 已验证为DAG的工作流定义
+pub struct DagValidated;
+
 /// 工作流定义（来自workflow.toml）
 #[derive(Debug, Clone, Deserialize)]
-pub struct WorkflowDef {
+pub struct WorkflowDef<V: WorkflowValidator = DagValidated> {
     /// 工作流名称
     pub name: String,
     
@@ -83,7 +124,7 @@ pub struct WorkflowDef {
     
     /// 工作流参数
     #[serde(default)]
-    pub workflow_params: HashMap<String, Value>,
+    pub workflow_params: FxIndexMap<String, Value>,
     
     /// 节点定义
     #[serde(rename = "nodes")]
@@ -92,6 +133,76 @@ pub struct WorkflowDef {
     /// 边定义
     #[serde(rename = "edges", default)]
     pub edge_defs: Vec<EdgeDef>,
+    
+    #[serde(skip)]
+    _marker: PhantomData<V>,
+}
+
+/// TODO: DAG验证实现要点
+/// 1. 使用 petgraph::Graph<N, E, Directed> 存储节点和边
+/// 2. 使用 petgraph::algo::is_cyclic_directed() 检测环
+/// 3. 类型状态模式：Unvalidated -> DagValidated（编译期保证）
+/// 4. 验证失败返回 WorkflowError::NotADag
+impl WorkflowDef<Unvalidated> {
+    /// 从配置文件加载并验证DAG
+    pub fn load(content: &str) -> Result<WorkflowDef<DagValidated>, WorkflowError> {
+        // TODO: 实现加载逻辑
+        // 1. toml::from_str 解析为 WorkflowDef<Unvalidated>
+        // 2. 调用 validate_dag() 转换类型
+        unimplemented!()
+    }
+
+    /// 验证是否为DAG
+    pub fn validate_dag(self) -> Result<WorkflowDef<DagValidated>, WorkflowError> {
+        // TODO: 实现DAG验证
+        // 1. build_graph() 构建 petgraph 图
+        // 2. is_cyclic_directed() 检测环
+        // 3. 有环返回 WorkflowError::NotADag
+        // 4. 无环返回 WorkflowDef<DagValidated>
+        unimplemented!()
+    }
+
+    fn build_graph(&self) -> Result<WorkflowGraph<NodeDef, EdgeDef>, WorkflowError> {
+        // TODO: 实现图构建
+        // 1. 创建 Graph<NodeDef, EdgeDef, Directed>
+        // 2. 遍历 node_defs 添加节点，保存 NodeIndex 映射
+        // 3. 遍历 edge_defs 添加边（需先解析 from/to 为 NodeIndex）
+        // 4. 节点不存在返回 WorkflowError::NodeNotFound
+        unimplemented!()
+    }
+}
+
+impl WorkflowDef<DagValidated> {
+    /// 获取图结构
+    pub fn graph(&self) -> WorkflowGraph<NodeDef, EdgeDef> {
+        // TODO: 实现图重建
+        // 与 build_graph() 类似，但假设已验证无需错误处理
+        unimplemented!()
+    }
+
+    /// 获取节点索引映射
+    pub fn node_indices(&self) -> FxIndexMap<NodeId, NodeIndex> {
+        // TODO: 实现节点索引映射
+        // 使用 enumerate 快速构建 NodeId -> NodeIndex
+        unimplemented!()
+    }
+
+    /// 查找起始节点（没有入边的节点）
+    pub fn start_nodes(&self) -> Vec<NodeId> {
+        // TODO: 实现起始节点查找
+        // 1. 调用 graph() 获取图
+        // 2. 遍历所有节点，入度为0则是起始节点
+        // 3. 返回 NodeId 列表
+        unimplemented!()
+    }
+
+    /// 获取节点的出边
+    pub fn outgoing_edges(&self, node_id: &NodeId) -> Vec<&EdgeDef> {
+        // TODO: 实现出边获取
+        // 1. 查找 node_id 对应的 NodeIndex
+        // 2. 过滤 edge_defs 中 from 等于 node_id 的边
+        unimplemented!()
+    }
 }
 
 /// 节点定义
@@ -139,20 +250,20 @@ pub struct WorkflowSession {
     /// Session ID
     pub session_id: SessionId,
     
-    /// 工作流定义
-    pub definition: Arc<WorkflowDef>,
+    /// 工作流定义（已验证为DAG）
+    pub definition: Arc<WorkflowDef<DagValidated>>,
     
-    /// 节点执行状态
-    pub node_states: HashMap<NodeId, NodeState>,
+    /// 节点执行状态（使用IndexMap提升遍历效率）
+    pub node_states: FxIndexMap<NodeId, NodeState>,
     
     /// 边计数器（全局共享）
-    pub counters: HashMap<String, u32>,
+    pub counters: FxIndexMap<String, u32>,
     
     /// 工作流变量
-    pub variables: HashMap<String, Value>,
+    pub variables: FxIndexMap<String, Value>,
     
     /// 当前活动节点
-    pub active_nodes: HashSet<NodeId>,
+    pub active_nodes: FxIndexSet<NodeId>,
     
     /// 工作流状态
     pub status: WorkflowStatus,
@@ -202,7 +313,7 @@ pub struct WorkflowStatusInfo {
     /// 工作流状态
     pub status: WorkflowStatus,
     /// 节点执行状态
-    pub node_states: HashMap<NodeId, NodeState>,
+    pub node_states: FxIndexMap<NodeId, NodeState>,
     /// 活动节点数量
     pub active_nodes_count: usize,
     /// 创建时间
@@ -244,7 +355,7 @@ pub struct WorkflowEngine {
     config: EngineConfig,
     
     /// 运行中的工作流
-    running_workflows: Arc<RwLock<HashMap<SessionId, WorkflowHandle>>>,
+    running_workflows: Arc<RwLock<FxIndexMap<SessionId, WorkflowHandle>>>,
     
     /// 节点执行器
     node_executor: Arc<dyn NodeExecutor>,
@@ -254,7 +365,7 @@ impl WorkflowEngine {
     /// 启动工作流
     pub async fn start_workflow(
         &self,
-        workflow_def: Arc<WorkflowDef>,
+        workflow_def: Arc<WorkflowDef<DagValidated>>,
         initial_input: String,
     ) -> Result<WorkflowSession, WorkflowError> {
         // TODO: 实现工作流启动逻辑
@@ -268,11 +379,9 @@ impl WorkflowEngine {
     /// 查找起始节点（没有入边的节点）
     fn find_start_nodes(
         &self,
-        def: &WorkflowDef,
+        def: &WorkflowDef<DagValidated>,
     ) -> Result<Vec<NodeId>, WorkflowError> {
-        // TODO: 实现起始节点查找逻辑
-        // 返回没有入边的节点作为起始节点
-        unimplemented!()
+        Ok(def.start_nodes())
     }
     
     /// 生成节点任务
@@ -368,12 +477,26 @@ impl WorkflowEngine {
         current_node: &NodeId,
         result: &NodeResult,
     ) -> Vec<NodeId> {
-        // TODO: 实现边条件评估逻辑
-        // 1. 检查select条件（匹配选项时触发）
-        // 2. 检查require条件（计数器满足时触发）
-        // 3. 无条件边直接触发
-        // 4. 返回下一个要执行的节点列表
-        unimplemented!()
+        let edges = session.definition.outgoing_edges(current_node);
+        
+        edges
+            .iter()
+            .filter(|edge| {
+                if let Some(select) = &edge.select {
+                    match &result.selected_option {
+                        Some(selected) => select.contains(selected),
+                        None => false,
+                    }
+                } else if let Some(require) = &edge.require {
+                    require.iter().all(|key| {
+                        session.counters.get(key).copied().unwrap_or(0) > 0
+                    })
+                } else {
+                    true
+                }
+            })
+            .map(|edge| edge.to.clone())
+            .collect()
     }
 }
 ```
@@ -624,16 +747,29 @@ pub trait WorkflowControl: Send + Sync {
 > `WorkflowError` 和 `NodeError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Workflow`。
 
 ```rust
+/// TODO: WorkflowError 设计要点
+/// 1. InvalidDefinition - 解析/反序列化失败
+/// 2. NotADag - DAG验证失败（包含环）
+/// 3. NodeNotFound - 边引用的节点不存在
+/// 4. NoStartNode - 没有起始节点
+/// 5. NodeExecution - 节点执行错误（包含 NodeError）
+/// 6. Storage - 存储层错误
+/// 7. WorkflowNotFound - 工作流不存在
+/// 8. WorkflowCompleted - 工作流已完成
+/// 9. DeadlockDetected - 死锁检测
 #[derive(Debug, Error)]
 pub enum WorkflowError {
+    #[error("工作流定义无效: {0}")]
+    InvalidDefinition(String),
+    
+    #[error("工作流不是有效的DAG: {0}")]
+    NotADag(String),
+    
     #[error("节点未找到: {0}")]
     NodeNotFound(NodeId),
     
     #[error("没有起始节点")]
     NoStartNode,
-    
-    #[error("检测到循环依赖")]
-    CycleDetected,
     
     #[error("节点执行错误: {0}")]
     NodeExecution(#[from] NodeError),
@@ -651,6 +787,11 @@ pub enum WorkflowError {
     DeadlockDetected,
 }
 
+/// TODO: NodeError 设计要点
+/// 1. Model - 模型调用错误（包含 ModelError）
+/// 2. Tool - 工具执行错误（包含 ToolError）
+/// 3. AgentNotFound - Agent配置未找到
+/// 4. Timeout - 节点执行超时
 #[derive(Debug, Error)]
 pub enum NodeError {
     #[error("模型调用错误: {0}")]

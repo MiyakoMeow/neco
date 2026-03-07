@@ -192,89 +192,104 @@ pub trait ToolRegistry: Send + Sync {
         self.get(name).is_some()
     }
 }
+```
+
+### 3.3 工具注册流程
+
+```mermaid
+graph LR
+    Reg[register 注册工具] --> BuildDef[构建 ToolDefinition]
+    BuildDef --> CacheTools[缓存工具实例]
+    CacheTools --> CacheDef[缓存定义]
+    
+    Lookup[get 查找工具] --> FindTools[DashMap 查找]
+    FindTools --> Return[返回 Arc 克隆]
+    
+    Timeout[get_timeout 超时配置] --> Match[前缀匹配]
+    Match --> MaxLen[最长前缀优先]
+    MaxLen --> Fallback[降级到工具默认超时]
+```
+
+### 3.4 DashMap 并发设计
+
+```rust
+/// TODO: DashMap 并发设计要点
+/// 1. 使用 dashmap::DashMap 替代 RwLock + HashMap
+/// 2. dashmap 内部实现细粒度锁，无锁读
+/// 3. 工具定义缓存使用享元模式，避免重复创建
+/// 4. 超时配置使用 filter().max_by_key() 简化最长前缀匹配
+
+use dashmap::DashMap;
 
 /// 工具注册表默认实现
 pub struct DefaultToolRegistry {
-    /// 工具映射（使用RwLock支持并发访问）
-    tools: RwLock<HashMap<String, Arc<dyn ToolProvider>>>,
+    /// 工具映射（使用dashmap实现无锁并发访问）
+    tools: DashMap<String, Arc<dyn ToolProvider>>,
     
-    /// 超时配置（按工具前缀，使用RwLock支持并发访问）
-    timeout_overrides: RwLock<HashMap<String, Duration>>,
+    /// 工具定义缓存（享元模式，避免重复创建）
+    tool_definitions: DashMap<String, ToolDefinition>,
+    
+    /// 超时配置（按工具前缀匹配）
+    timeout_overrides: DashMap<String, Duration>,
 }
 
 impl DefaultToolRegistry {
     /// 创建空注册表
     pub fn new() -> Self {
-        Self {
-            tools: RwLock::new(HashMap::new()),
-            timeout_overrides: RwLock::new(HashMap::new()),
-        }
-    }
-}
-
-impl Default for DefaultToolRegistry {
-    fn default() -> Self {
-        Self::new()
+        // TODO: 初始化 DashMap
+        // tools: DashMap::new()
+        // tool_definitions: DashMap::new()  
+        // timeout_overrides: DashMap::new()
+        unimplemented!()
     }
 }
 
 impl ToolRegistry for DefaultToolRegistry {
     fn register(&self, tool: Arc<dyn ToolProvider>) {
-        let name = tool.name().to_string();
-        self.tools.write().unwrap().insert(name, tool);
+        // TODO: 实现要点
+        // 1. 获取工具名称
+        // 2. tools.insert(name, tool)
+        // 3. 构建 ToolDefinition
+        // 4. tool_definitions.insert(name, definition)
+        unimplemented!()
     }
     
     fn get(&self, name: &str) -> Option<Arc<dyn ToolProvider>> {
-        self.tools.read().unwrap().get(name).cloned()
+        // TODO: 直接使用 DashMap::get 返回 Option<Arc<dyn ToolProvider>>
+        // 无需手动 unwrap，DashMap 自动处理并发
+        unimplemented!()
     }
     
     fn get_tool_definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.read().unwrap().values()
-            .map(|t| ToolDefinition {
-                name: t.name().to_string(),
-                description: t.description().to_string(),
-                parameters: t.parameters_schema(),
-            })
-            .collect()
+        // TODO: 使用 iter().map(|r| r.clone()).collect()
+        unimplemented!()
     }
     
     fn get_timeout(&self, tool_name: &str) -> Duration {
-        let mut best_match: Option<(&str, Duration)> = None;
-        
-        let timeout_overrides = self.timeout_overrides.read().unwrap();
-        for (prefix, duration) in &*timeout_overrides {
-            if tool_name.starts_with(prefix) {
-                if best_match.map_or(true, |(best, _)| prefix.len() > best.len()) {
-                    best_match = Some((prefix, *duration));
-                }
-            }
-        }
-        
-        if let Some((_, duration)) = best_match {
-            return duration;
-        }
-        
-        drop(timeout_overrides);
-        
-        if let Some(tool) = self.get(tool_name) {
-            return tool.timeout();
-        }
-        
-        Duration::from_secs(30)
+        // TODO: 实现要点
+        // 1. 使用 timeout_overrides.iter()
+        // 2. filter 过滤匹配前缀
+        // 3. max_by_key 按前缀长度取最长匹配
+        // 4. 降级到工具默认超时
+        // 5. 默认超时 30 秒
+        unimplemented!()
     }
     
     fn set_timeout(&self, prefix: &str, duration: Duration) {
-        self.timeout_overrides.write().unwrap().insert(
-            prefix.to_string(),
-            duration
-        );
+        // TODO: timeout_overrides.insert(prefix.to_string(), duration)
+        unimplemented!()
     }
     
     fn list_tools(&self) -> Vec<String> {
-        self.tools.read().unwrap().keys().cloned().collect()
+        // TODO: 使用 iter().map(|r| r.key().clone()).collect()
+        unimplemented!()
     }
 }
+```
 
+### 3.5 工具定义
+
+```rust
 /// 工具定义（用于发送给模型）
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolDefinition {
@@ -315,7 +330,6 @@ impl std::fmt::Display for ToolLifecycleState {
         }
     }
 }
-```
 
 ## 4. 文件系统工具
 
