@@ -1080,6 +1080,8 @@ graph TB
 
 **NecoKernel Trait 定义：**
 
+> **设计说明**：`shutdown()` 使用 `async fn` 而非 `fn shutdown() -> impl Future`。这是因为 NecoKernel 主要用于库内部直接调用，而非作为 `dyn NecoKernel` trait object 使用。多个运行时连接到同一个 handle 的场景在当前架构中不存在，此设计简化了异步处理。如需 trait object 支持，可改用 `async_trait` 或 `Box<dyn Future>`。
+
 ```rust
 pub trait NecoKernel: Send + Sync {
     fn agent_engine(&self) -> Arc<dyn AgentEngine>;

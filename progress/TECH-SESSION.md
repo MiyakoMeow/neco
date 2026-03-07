@@ -340,9 +340,8 @@ impl AgentHierarchy {
     
     pub fn get_children(&self, id: &AgentId) -> Vec<AgentId> {
         // TODO: 实现获取子节点列表
-        // 1. 从children_map中查找id对应的Vec<Weak<AgentId>>
-        // 2. 遍历并调用upgrade()过滤已释放的引用
-        // 3. 返回有效的AgentId列表
+        // 1. 从children_map中查找id对应的Vec<AgentId>
+        // 2. 返回子AgentId列表
         unimplemented!()
     }
     
