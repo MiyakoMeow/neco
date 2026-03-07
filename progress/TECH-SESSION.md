@@ -180,7 +180,7 @@ impl Session {
         Self {
             id: id.clone(),
             session_type,
-            root_agent_id,
+            root_agent_id: root_agent_id.clone(),
             hierarchy: AgentHierarchy::new(root_agent_id),
             id_allocator: MessageIdAllocator::new(1),
             metadata,
@@ -423,8 +423,8 @@ pub struct Message {
 pub struct ModelMessage<'a> {
     pub role: Role,
     pub content: Cow<'a, str>,
-    pub tool_calls: Option<&'a [ToolCall]>,
-    pub tool_call_id: Option<&'a str>,
+    pub tool_calls: Option<Cow<'a, [ToolCall]>>,
+    pub tool_call_id: Option<Cow<'a, str>>,
 }
 
 impl<'a> ModelMessage<'a> {
@@ -432,8 +432,8 @@ impl<'a> ModelMessage<'a> {
         Self {
             role: msg.role,
             content: Cow::Borrowed(&msg.content),
-            tool_calls: msg.tool_calls.as_deref(),
-            tool_call_id: msg.tool_call_id.as_deref(),
+            tool_calls: msg.tool_calls.as_deref().map(Cow::Borrowed),
+            tool_call_id: msg.tool_call_id.as_deref().map(Cow::Borrowed),
         }
     }
     

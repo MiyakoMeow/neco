@@ -360,13 +360,16 @@ select = ["reject"]  # 触发时 counters.reject += 1
 [[edges]]
 from = "write-prd"
 to = "write-tech-doc"
-require = ["approve_prd"]  # 需要 counters.approve_prd > 0
+require:
+  - option: "approve_prd"
+    min_count: 1
 
 # 支持参数引用
 [[edges]]
 from = "review-prd"
 to = "final-approve"
-require = ["@params.min_approvers"]  # 引用workflow_params
+require:
+  - option: "@params.min_approvers"
 ```
 
 ### 5.2 条件评估实现
