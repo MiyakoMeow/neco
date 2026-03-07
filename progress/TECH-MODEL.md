@@ -105,7 +105,7 @@ impl ResponseFormat {
 }
 
 /// 额外参数（强类型map）
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ExtraParams(HashMap<String, Value>);
 
 impl ExtraParams {
