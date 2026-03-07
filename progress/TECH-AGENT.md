@@ -789,6 +789,11 @@ impl AgentError {
         match self {
             Self::Timeout | Self::ChannelClosed => true,
             Self::Model(e) => e.is_retryable(),
+            Self::Tool(e) => e.is_retryable(),
+            Self::NotFound(_) | Self::ParentNotFound | Self::DefinitionNotFound(_)
+            | Self::PromptNotFound(_) | Self::CannotSpawnChildren
+            | Self::MaxChildrenReached | Self::PermissionDenied
+            | Self::NoParentAgent | Self::Config(_) => false,
         }
     }
 }

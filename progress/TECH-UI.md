@@ -175,7 +175,7 @@ impl TuiInterface {
         unimplemented!()
     }
 
-    pub async fn run(&self) -> Result<(), UiError> {
+    pub async fn run(&mut self) -> Result<(), UiError> {
         // [TODO] TUI主循环
         // 1. 进入事件循环，持续读取用户输入直到Exit命令
         // 2. 处理输入：根据TuiMode解析输入（Normal模式发送消息，Command模式执行命令）
@@ -463,7 +463,7 @@ pub enum ApiError {
     SessionNotFound,
     
     #[error("未授权访问: {0}")]
-    Unauthorized(#[source] std::io::Error),
+    Unauthorized(String),
     
     #[error("无效请求: {0}")]
     BadRequest(String),

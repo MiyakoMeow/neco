@@ -896,6 +896,12 @@ pub enum SessionError {
     MessageIdOverflow,
 }
 
+impl SessionError {
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Storage(e) if e.is_retryable())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("IO错误: {0}")]
@@ -909,6 +915,12 @@ pub enum StorageError {
     
     #[error("文件损坏: {0}")]
     Corruption(String),
+}
+
+impl StorageError {
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Io(e) if e.kind() == std::io::ErrorKind::NotFound)
+    }
 }
 
 #[derive(Debug, Error)]

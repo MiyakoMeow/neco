@@ -662,22 +662,26 @@ pub enum AppError {
 
 impl AppError {
     /// 检查错误是否可重试
-    /// 
-    /// TODO: 完善重试策略
-    /// - 模型错误：根据具体模型错误类型判断
-    /// - MCP错误：考虑网络超时等临时错误
-    /// - Session错误：仅存储相关错误可重试
     pub fn is_retryable(&self) -> bool {
-        todo!("根据错误类型实现重试策略")
+        match self {
+            Self::Session(e) => e.is_retryable(),
+            Self::Agent(e) => e.is_recoverable(),
+            Self::Workflow(e) => e.is_retryable(),
+            Self::Model(e) => e.is_retryable(),
+            Self::Tool(e) => e.is_retryable(),
+            Self::Config(_) | Self::Storage(_) | Self::Mcp(e) => e.is_retryable(),
+            Self::Context(_) | Self::Skill(_) | Self::Id(_) => false,
+        }
     }
     
     /// 检查错误是否面向用户
-    /// 
-    /// TODO: 明确错误分类规则
     /// - 用户相关错误：Session、Agent、Workflow、Config、Id
     /// - 系统内部错误：Model、Tool、Storage、MCP、Context、Skill
     pub fn is_user_facing(&self) -> bool {
-        todo!("实现用户面向错误判断逻辑")
+        matches!(
+            self,
+            Self::Session(_) | Self::Agent(_) | Self::Workflow(_) | Self::Config(_) | Self::Id(_)
+        )
     }
 }
 
@@ -1086,7 +1090,7 @@ pub trait NecoKernel: Send + Sync {
     
     fn session_manager(&self) -> Arc<SessionManager>;
     
-    async fn shutdown(&self);
+    async fn shutdown(&mut self);
 }
 ```
 

@@ -616,6 +616,12 @@ pub enum ToolError {
     #[error("序列化错误: {0}")]
     Serialization(#[from] serde_json::Error),
 }
+
+impl ToolError {
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Timeout | Self::Execution(e) if e.kind() == std::io::ErrorKind::NotFound)
+    }
+}
 ```
 
 ---

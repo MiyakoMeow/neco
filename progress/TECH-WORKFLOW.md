@@ -697,6 +697,12 @@ pub enum WorkflowError {
     #[error("事件发布失败: {0}")]
     EventPublishFailed(String),
 }
+
+impl WorkflowError {
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, Self::Storage(e) if e.is_retryable())
+    }
+}
 ```
 
 ---
