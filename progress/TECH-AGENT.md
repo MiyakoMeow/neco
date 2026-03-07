@@ -1,10 +1,15 @@
 # TECH-AGENT: 多智能体协作模块
 
-本文档描述Neco项目的多智能体协作模块设计，包括SubAgent模式、通信机制和Agent生命周期。
+本文档描述Neco项目的多智能体协作模块设计，采用领域驱动设计，分离Agent引擎与领域模型。
 
 ## 1. 模块概述
 
 多智能体协作模块实现SubAgent模式，支持动态创建下级Agent、上下级通信和Agent树形结构管理。
+
+**设计原则：**
+- Agent引擎负责生命周期管理，不持有领域模型
+- 领域模型（Agent）不含外部依赖
+- 通过事件系统传播状态变更
 
 ## 2. 核心概念
 
@@ -48,28 +53,17 @@ graph TB
 ```mermaid
 graph TB
     subgraph "Session"
-        S[Session Root Agent 1 ULID = SessionId]
-        
-        subgraph "Agent树"
-            A1[Agent 1
-               parent: null
-               最上级]
-            
-            A2[Agent 1.1
-               parent: Agent 1]
-            A3[Agent 1.2
-               parent: Agent 1]
-            A4[Agent 1.3
-               parent: Agent 1]
-            
-            A5[Agent 1.1.1
-               parent: Agent 1.1]
-            A6[Agent 1.1.2
-               parent: Agent 1.1]
-            
-            A7[Agent 1.2.1
-               parent: Agent 1.2]
-        end
+        S[Session Root<br/>AgentId.session = SessionId]
+    end
+    
+    subgraph "Agent Hierarchy"
+        A1[Agent 1<br/>parent: null<br/>最上级]
+        A2[Agent 1.1<br/>parent: Agent 1]
+        A3[Agent 1.2<br/>parent: Agent 1]
+        A4[Agent 1.3<br/>parent: Agent 1]
+        A5[Agent 1.1.1<br/>parent: Agent 1.1]
+        A6[Agent 1.1.2<br/>parent: Agent 1.1]
+        A7[Agent 1.2.1<br/>parent: Agent 1.2]
     end
     
     S --> A1
@@ -81,71 +75,259 @@ graph TB
     A3 --> A7
 ```
 
-## 3. 数据结构设计
+## 3. Agent引擎设计
 
-> **注意**: 
-> - `Agent` 和 `AgentConfig` 结构定义见 [TECH-SESSION.md#32-agent结构](TECH-SESSION.md#32-agent结构)
-> - `Message` 类型定义见 [TECH-SESSION.md#33-消息结构](TECH-SESSION.md#33-消息结构)
+### 3.1 仓储接口定义
 
-### 3.1 Agent间通信
+> 为解决循环依赖问题，在 `neco-core` 中定义领域仓储接口：
+
+```mermaid
+graph LR
+    subgraph "领域层"
+        Engine[Agent引擎] -->|依赖| AgentRepo[AgentRepository trait]
+        Engine -->|依赖| MessageRepo[MessageRepository trait]
+    end
+    
+    subgraph "基础设施层"
+        AgentRepo -->|实现| FileAgentRepo[FileAgentRepository]
+        MessageRepo -->|实现| FileMessageRepo[FileMessageRepository]
+    end
+```
+
+**Agent仓储接口：**
+
+```rust
+/// Agent仓储接口
+#[async_trait]
+pub trait AgentRepository: Send + Sync {
+    async fn save(&self, agent: &Agent) -> Result<(), StorageError>;
+    async fn find_by_id(&self, id: &AgentId) -> Result<Option<Agent>, StorageError>;
+    async fn find_children(&self, parent_id: &AgentId) -> Result<Vec<Agent>, StorageError>;
+}
+
+/// 消息仓储接口
+#[async_trait]
+pub trait MessageRepository: Send + Sync {
+    async fn save(&self, message: &Message) -> Result<(), StorageError>;
+    async fn find_by_session(&self, session_id: &SessionId) -> Result<Vec<Message>, StorageError>;
+}
+```
+
+**错误场景说明：**
+
+| 方法 | 错误场景 | 返回行为 |
+|------|---------|---------|
+| `save` | 序列化失败、IO错误、存储空间不足 | 返回 `StorageError` |
+| `save` | 并发冲突（文件被其他进程修改） | 返回 `StorageError::Conflict`，调用方应重试 |
+| `save` | 存储不可用（磁盘故障、权限问题） | 返回 `StorageError::Unavailable` |
+| `find_by_id` | ID不存在 | 返回 `Ok(None)` |
+| `find_by_id` | 文件损坏、解析失败 | 返回 `Err(StorageError::Corruption)` |
+| `find_by_id` | 存储不可用 | 返回 `Err(StorageError::Unavailable)` |
+| `find_children` | 父ID不存在 | 返回空Vec `Ok(vec![])` |
+| `find_children` | 权限错误 | 返回 `Err(StorageError::PermissionDenied)` |
+| `find_children` | 存储不可用 | 返回 `Err(StorageError::Unavailable)` |
+
+### 3.2 领域模型定义
+
+```rust
+/// Agent状态
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentState {
+    Idle,
+    Running,
+    Waiting,
+    Completed,
+    Failed,
+}
+
+/// Agent领域模型
+pub struct Agent {
+    pub id: AgentId,
+    pub parent_id: Option<AgentId>,
+    pub definition_id: String,
+    pub state: AgentState,
+    pub model_group: Option<String>,
+    pub system_prompt: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // ... 其他字段
+}
+```
+
+**Agent字段说明：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | AgentId | Agent唯一标识 |
+| `parent_id` | Option\<AgentId\> | 父Agent ID |
+| `definition_id` | String | Agent定义标识 |
+| `state` | AgentState | Agent当前状态 |
+| `model_group` | Option\<String\> | 使用的模型组 |
+| `system_prompt` | Option\<String\> | Agent运行时使用的系统提示词，可覆盖或扩展定义中的默认提示词 |
+| `created_at` | DateTime\<Utc\> | Agent实例创建的时间戳 |
+| `updated_at` | DateTime\<Utc\> | Agent实例最后更新的时间戳（状态变更、属性修改等） |
+
+### 3.3 Agent引擎核心
+
+> **注意**：Agent引擎不直接持有领域模型，通过仓储接口访问
+
+```rust
+/// Agent引擎（应用层）
+pub struct AgentEngine {
+    session_manager: Arc<SessionManager>,
+    model_client: Arc<dyn ModelClient>,
+    tool_registry: Arc<dyn ToolRegistry>,
+    config: Config,
+    event_publisher: Arc<dyn EventPublisher>,
+}
+
+impl AgentEngine {
+    pub async fn run_agent(
+        &self,
+        agent_id: AgentId,
+        input: String,
+    ) -> Result<AgentResult, AgentError> {
+        // TODO: 实现Agent运行逻辑
+        // 1. 从Session加载Agent
+        // 2. 构建上下文
+        // 3. 调用模型
+        // 4. 处理工具调用
+        // 5. 返回结果
+        unimplemented!()
+    }
+```
+
+**run_agent 执行流程：**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Engine as AgentEngine
+    participant Repo as AgentRepository
+    participant Model as ModelClient
+    participant Tools as ToolRegistry
+    participant Events as EventPublisher
+
+    Client->>Engine: run_agent(agent_id, input)
+    Engine->>Repo: find_by_id(agent_id)
+    Repo-->>Engine: agent
+    
+    alt agent not found
+        Engine-->>Client: Err(AgentError::NotFound)
+    else agent found
+        Engine->>Events: publish(AgentStarted)
+        
+        Engine->>Repo: find_children(agent_id)
+        Repo-->>Engine: children
+        
+        Engine->>Engine: build_context(agent, children)
+        
+        loop 模型调用循环
+            Engine->>Model: chat(context, input)
+            Model-->>Engine: response
+            
+            alt 有工具调用
+                Engine->>Tools: execute_tools(tool_calls)
+                Tools-->>Engine: tool_results
+                Engine->>Events: publish(ToolCalled)
+            else 无工具调用
+                break 模型返回最终结果
+            end
+        end
+        
+        Engine->>Repo: save(agent)
+        Engine->>Events: publish(AgentCompleted)
+        Engine-->>Client: Ok(result)
+    end
+```
+    
+    pub async fn spawn_child(
+        &self,
+        parent_id: AgentId,
+        definition_id: String,
+    ) -> Result<AgentId, AgentError> {
+        // TODO: 实现子Agent创建逻辑
+        // 1. 验证父Agent存在
+        // 2. 在Session中创建子Agent
+        // 3. 发布AgentCreated事件
+        // 4. 返回AgentId
+        unimplemented!()
+    }
+```
+
+**spawn_child 执行流程：**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Engine as AgentEngine
+    participant Repo as AgentRepository
+    participant Events as EventPublisher
+
+    Client->>Engine: spawn_child(parent_id, definition_id)
+    Engine->>Repo: find_by_id(parent_id)
+    Repo-->>Engine: parent_agent
+    
+    alt parent not found
+        Engine-->>Client: Err(AgentError::ParentNotFound)
+    else parent found
+        Engine->>Engine: generate_child_id(parent_id)
+        
+        Engine->>Engine: create_agent(parent_id, definition_id)
+        
+        Engine->>Repo: save(child_agent)
+        Engine->>Events: publish(AgentCreated { id, parent_id })
+        
+        Engine-->>Client: Ok(child_agent_id)
+    end
+```
+}
+
+/// Agent执行结果
+pub struct AgentResult {
+    pub output: String,
+    pub messages: Vec<Message>,
+    pub tool_calls: Vec<ToolCall>,
+}
+```
+
+### 3.4 Agent间通信
 
 ```rust
 /// Agent间消息
 #[derive(Debug, Clone)]
 pub struct InterAgentMessage {
-    /// 消息ID
-    pub id: String,
-    
-    /// 发送方
-    pub from: AgentUlid,
-    
-    /// 接收方
-    pub to: AgentUlid,
-    
-    /// 消息类型
+    pub id: MessageId,
+    pub from: AgentId,
+    pub to: AgentId,
     pub message_type: MessageType,
-    
-    /// 内容
     pub content: String,
-    
-    /// 时间戳
     pub timestamp: DateTime<Utc>,
-    
-    /// 是否需要回复
     pub requires_response: bool,
 }
 
 /// 消息类型
 #[derive(Debug, Clone)]
 pub enum MessageType {
-    /// 任务分配
     TaskAssignment {
         task_id: String,
         priority: TaskPriority,
         deadline: Option<DateTime<Utc>>,
     },
-    
-    /// 进度报告
     ProgressReport {
         task_id: String,
         progress: f64,
         status: TaskStatus,
     },
-    
-    /// 结果汇报
     ResultReport {
         task_id: String,
         result: String,
         success: bool,
     },
-    
-    /// 询问/澄清
     ClarificationRequest {
         question: String,
         context: String,
     },
-    
-    /// 普通消息
     General,
 }
 
@@ -167,130 +349,171 @@ pub enum TaskStatus {
 }
 ```
 
-## 4. Agent管理器
+## 4. 工具实现
 
-### 4.1 核心结构
+### 4.1 multi-agent::spawn 工具
 
 ```rust
-/// Agent管理器
-pub struct AgentManager {
-    /// Session引用
-    session: Arc<RwLock<Session>>,
-    
-    /// 模型客户端
-    model_client: Arc<dyn ModelClient>,
-    
-    /// 工具注册表
-    tool_registry: Arc<ToolRegistry>,
-    
-    /// 配置
-    config: ConfigManager,
-    
-    /// 消息发送通道
-    message_tx: mpsc::Sender<InterAgentMessage>,
+pub struct SpawnAgentTool {
+    agent_engine: Arc<AgentEngine>,
 }
 
-impl AgentManager {
-    /// 创建根Agent
-    pub async fn create_root_agent(
-        &self,
-        agent_id: &str,
-    ) -> Result<AgentUlid, AgentError> {
-        // TODO: 实现创建根Agent的逻辑
-        // 1. 查找Agent定义
-        // 2. 解析Agent定义
-        // 3. 创建Session
-        // 4. 加载提示词
+#[async_trait]
+impl ToolExecutor for SpawnAgentTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("multi-agent::spawn".into()),
+            description: "生成一个下级Agent来执行特定任务".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "要生成的Agent标识"
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "分配给下级Agent的任务描述"
+                    },
+                    "model_group": {
+                        "type": "string",
+                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值。\n\n层级继承语义：\n- 如果不提供此参数，子Agent使用父Agent的model_group\n- 如果提供此参数，子Agent使用指定的model_group，忽略继承值\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
+                    }
+                },
+                "required": ["agent_id", "task"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
     }
     
-    /// 生成下级Agent
-    pub async fn spawn_child_agent(
+    async fn execute(
         &self,
-        parent_ulid: AgentUlid,
-        agent_id: &str,
-        overrides: AgentConfigOverrides,
-    ) -> Result<AgentUlid, AgentError> {
-        // TODO: 实现生成下级Agent的逻辑
-        // 1. 检查父Agent存在性和权限
-        // 2. 检查数量限制
-        // 3. 查找并解析Agent定义
-        // 4. 应用配置覆盖
-        // 5. 创建子Agent
-        // 6. 加载提示词
-        // 7. 添加child提示词
-    }
-    
-    /// 查找Agent定义
-    async fn find_agent_definition(
-        &self,
-        agent_id: &str,
-    ) -> Result<AgentDefinition, AgentError> {
-        // TODO: 实现查找Agent定义的逻辑
-        // 1. 先在工作流目录查找
-        // 2. 在配置目录查找
-        // 3. 如果都不存在则返回错误
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现spawn工具执行逻辑
+        // 1. 解析参数
+        // 2. 创建子Agent
+        // 3. 发送初始任务
+        // 4. 返回结果
+        unimplemented!()
     }
 }
 ```
 
-### 4.2 Agent提示词加载
+### 4.2 multi-agent::send 工具
 
 ```rust
-impl AgentManager {
-    /// 加载Agent提示词
-    async fn load_agent_prompts(
-        &self,
-        session: &mut Session,
-        ulid: &AgentUlid,
-    ) -> Result<(), AgentError> {
-        // TODO: 实现加载Agent提示词的逻辑
-        // 1. 获取Agent配置
-        // 2. 加载每个提示词组件
-        // 3. 合并为系统消息
-        // 4. 添加为第一条消息
+pub struct SendMessageTool {
+    agent_engine: Arc<AgentEngine>,
+}
+
+#[async_trait]
+impl ToolExecutor for SendMessageTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("multi-agent::send".into()),
+            description: "向指定Agent发送消息".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "target_agent": {
+                        "type": "string",
+                        "description": "目标Agent的ID"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "消息内容"
+                    },
+                    "message_type": {
+                        "type": "string",
+                        "enum": ["task", "query", "response", "general"],
+                        "description": "消息类型"
+                    }
+                },
+                "required": ["target_agent", "message"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
     }
     
-    /// 加载提示词组件
-    async fn load_prompt_component(
+    async fn execute(
         &self,
-        name: &str,
-    ) -> Result<String, AgentError> {
-        // TODO: 实现加载提示词组件的逻辑
-        // 1. 检查内置提示词
-        // 2. 从文件加载自定义提示词
-        // 3. 返回提示词内容或错误
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现send工具执行逻辑
+        unimplemented!()
+    }
+}
+```
+
+### 4.3 multi-agent::report 工具
+
+```rust
+pub struct ReportTool {
+    agent_engine: Arc<AgentEngine>,
+}
+
+#[async_trait]
+impl ToolExecutor for ReportTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId("multi-agent::report".into()),
+            description: "向上级Agent汇报任务进度或结果".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "report_type": {
+                        "type": "string",
+                        "enum": ["progress", "result", "question"],
+                        "description": "汇报类型"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "汇报内容"
+                    },
+                    "progress": {
+                        "type": "number",
+                        "description": "进度百分比（0-100）"
+                    }
+                },
+                "required": ["report_type", "content"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
     }
     
-    /// 为子Agent添加child提示词
-    async fn add_child_prompt(
+    async fn execute(
         &self,
-        session: &mut Session,
-        child_ulid: &AgentUlid,
-    ) -> Result<(), AgentError> {
-        // TODO: 实现为子Agent添加child提示词的逻辑
-        // 1. 检查是否为子Agent
-        // 2. 加载multi-agent-child提示词
-        // 3. 添加到Agent消息历史
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现report工具执行逻辑
+        unimplemented!()
     }
 }
 ```
 
 ## 5. 事件驱动架构
 
-> 参考 OpenFang 的 EventBus + TriggerEngine 模式设计
-
-### 5.1 EventBus 架构
+### 5.1 事件系统架构
 
 ```mermaid
 graph TB
     subgraph "事件发布者"
-        A[Agent]
-        W[工作流]
-        S[Session]
-        M[模型]
+        A[Agent引擎]
+        W[Workflow引擎]
+        S[Session管理器]
     end
     
-    subgraph "事件总线 EventBus"
+    subgraph "EventBus"
         Bus[事件路由器]
     end
     
@@ -304,7 +527,6 @@ graph TB
     A -->|AgentEvent| Bus
     W -->|WorkflowEvent| Bus
     S -->|SessionEvent| Bus
-    M -->|ModelEvent| Bus
     
     Bus --> UI
     Bus --> Log
@@ -314,111 +536,72 @@ graph TB
 
 ### 5.2 事件类型定义
 
-| 事件类型 | 描述 | 包含字段 |
-|----------|------|----------|
-| `AgentCreated` | Agent创建事件 | agent_ulid, parent_ulid |
-| `AgentStateChanged` | Agent状态变更 | agent_ulid, old_state, new_state |
-| `MessageAdded` | 消息添加 | agent_ulid, message_id, role |
-| `ToolCalled` | 工具调用 | agent_ulid, tool_name, args |
-| `ToolResult` | 工具结果 | agent_ulid, tool_name, result |
-| `WorkflowStarted` | 工作流启动 | session_id, workflow_def |
-| `WorkflowNodeStarted` | 节点启动 | session_id, node_id |
-| `WorkflowNodeCompleted` | 节点完成 | session_id, node_id, result |
-| `WorkflowTransition` | 工作流转场 | session_id, from_node, to_node |
-| `SessionCreated` | Session创建 | session_id, session_type |
-| `ContextCompact` | 上下文压缩 | agent_ulid, before_tokens, after_tokens |
+```rust
+pub enum Event {
+    Session(SessionEvent),
+    Agent(AgentEvent),
+    Workflow(WorkflowEvent),
+    Tool(ToolEvent),
+    System(SystemEvent),
+}
+
+pub enum AgentEvent {
+    Created { id: AgentId, parent_id: Option<AgentId> },
+    StateChanged { id: AgentId, old: AgentState, new: AgentState },
+    MessageAdded { id: AgentId, message_id: MessageId },
+    ToolCalled { id: AgentId, tool_id: ToolId },
+    ToolResult { id: AgentId, tool_id: ToolId, success: bool },
+    Completed { id: AgentId, output: String },
+    Error { id: AgentId, error: String },
+}
+
+pub enum SessionEvent {
+    Created { id: SessionId, session_type: SessionType },
+    Updated { id: SessionId },
+    Deleted { id: SessionId },
+}
+
+pub enum WorkflowEvent {
+    Started { session_id: SessionId, definition: String },
+    NodeStarted { session_id: SessionId, node_id: NodeId },
+    NodeCompleted { session_id: SessionId, node_id: NodeId, result: String },
+    Transition { session_id: SessionId, from: NodeId, to: NodeId },
+    Completed { session_id: SessionId },
+    Failed { session_id: SessionId, error: String },
+}
+```
 
 ### 5.3 触发器模式
 
-```mermaid
-graph LR
-    subgraph "事件源"
-        A[Agent]
-        W[Workflow]
-        S[Session]
-        M[Model]
-    end
-    
-    subgraph "TriggerEngine"
-        TE[事件路由器]
-        TP[TriggerPattern]
-        TH[TriggerHandler]
-    end
-    
-    subgraph "触发动作"
-        UA[更新UI]
-        LG[记录日志]
-        MT[发送指标]
-        TR[触发器动作]
-    end
-    
-    A --> TE
-    W --> TE
-    S --> TE
-    M --> TE
-    
-    TE --> TP
-    TP --> TH
-    TH --> UA
-    TH --> LG
-    TH --> MT
-    TH --> TR
-```
-
-**TriggerPattern 数据结构：**
-
 ```rust
-/// 触发模式
 pub enum TriggerPattern {
-    /// 匹配所有事件
+    /// 匹配所有事件（包括SessionEvent、AgentEvent、WorkflowEvent、ToolEvent、SystemEvent的所有变体）
     All,
-    /// 生命周期事件
-    Lifecycle {
-        events: Vec<LifecycleEvent>,
-    },
-    /// Agent创建匹配
-    AgentSpawned {
-        agent_type: Option<String>,
-    },
-    /// Agent终止
+    /// 匹配特定生命周期事件
+    Lifecycle { events: Vec<LifecycleEvent> },
+    /// 匹配特定类型Agent创建
+    AgentSpawned { agent_type: Option<String> },
+    /// 匹配Agent终止（包括Completed、Failed状态）
     AgentTerminated,
-    /// 系统关键词匹配
-    SystemKeyword {
-        keywords: Vec<String>,
-    },
-    /// 内存更新
-    MemoryUpdate {
-        threshold: f32,
-    },
-    /// 内容匹配
-    ContentMatch {
-        pattern: String,
-    },
+    /// 匹配系统关键字（精确匹配，不区分大小写）
+    SystemKeyword { keywords: Vec<String> },
+    /// 匹配消息内容（正则表达式，使用regex crate语法）
+    ContentMatch { pattern: String },
 }
-```
 
-**TriggerHandler 数据结构：**
-
-```rust
-/// 触发处理器
 pub struct TriggerHandler {
-    /// 处理器ID
     pub id: String,
-    /// 触发模式
     pub pattern: TriggerPattern,
-    /// 动作类型
     pub action: TriggerAction,
-    /// 是否启用
     pub enabled: bool,
 }
 
-/// 触发动作
 pub enum TriggerAction {
-    /// 执行工具
+    /// 执行指定工具
     ExecuteTool { tool_name: String, args: Value },
-    /// 发送消息
-    SendMessage { target: AgentUlid, content: String },
-    /// 调用回调
+    /// 向指定Agent发送消息
+    SendMessage { target: AgentId, content: String },
+    /// 触发回调函数
     Callback { callback_id: String },
     /// 记录日志
     Log { level: LogLevel, message: String },
@@ -427,315 +610,75 @@ pub enum TriggerAction {
 }
 ```
 
-### 5.4 事件流处理
+**触发器模式说明：**
 
-```mermaid
-sequenceDiagram
-    participant Source as 事件源
-    participant Bus as EventBus
-    participant Handler as 事件处理器
-    participant Agent as Agent
-    
-    Source->>Bus: 发布事件
-    Bus->>Bus: 事件路由
-    Bus->>Handler: 分发给订阅者
-    Handler->>Handler: 处理逻辑
-    Handler->>Agent: 触发操作
-```
+| 模式 | 触发条件 | 使用场景 | 详细说明 |
+|------|---------|---------|---------|
+| `All` | 所有事件类型 | 全局日志、监控 | 包含所有Event变体：SessionEvent、AgentEvent、WorkflowEvent、ToolEvent、SystemEvent及其所有子变体 |
+| `Lifecycle` | 特定生命周期事件 | Agent状态跟踪 | 需指定events列表，如：[Created, StateChanged, Completed] |
+| `AgentSpawned` | Agent创建时 | 初始化配置 | agent_type为None时匹配所有Agent，为Some时匹配特定definition_id |
+| `AgentTerminated` | Agent终止时 | 资源清理 | 匹配Agent状态变为Completed或Failed的事件 |
+| `SystemKeyword` | 消息包含关键字 | 快捷命令响应 | 关键字精确匹配（不区分大小写），适用于消息内容和系统命令 |
+| `ContentMatch` | 消息匹配正则 | 复杂内容过滤 | 使用regex crate语法，支持前瞻、后顾、捕获组等高级特性 |
 
-### 5.5 事件过滤与转换
+## 6. Agent提示词加载
 
-```mermaid
-graph TD
-    E[原始事件] --> F[过滤器]
-    F -->|过滤后| T[转换器]
-    T -->|处理后| D[分发器]
-    D --> H[处理器]
-```
-
-**事件过滤器：**
-
-| 过滤器类型 | 描述 |
-|-----------|------|
-| `EventFilter` | 按事件类型过滤 |
-| `AgentFilter` | 按Agent过滤 |
-| `TimeFilter` | 按时间范围过滤 |
-| `ContentFilter` | 按内容过滤 |
-
-**事件转换器：**
-
-| 转换器类型 | 描述 |
-|-----------|------|
-| `Enricher` | 添加额外上下文 |
-| `Aggregator` | 聚合多个事件 |
-| `Splitter` | 拆分为多个事件 |
-
-## 6. Agent通信工具
-
-### 6.1 spawn工具
+### 6.1 提示词组件加载
 
 ```rust
-/// multi-agent::spawn 工具
-pub struct SpawnAgentTool {
-    agent_manager: Arc<AgentManager>,
-}
-
-impl ToolProvider for SpawnAgentTool {
-    fn name(&self) -> &str {
-        "multi-agent::spawn"
-    }
-    
-    fn description(&self) -> &str {
-        "生成一个下级Agent来执行特定任务"
-    }
-    
-    fn schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string",
-                    "description": "要生成的Agent标识（如 'researcher'）"
-                },
-                "task": {
-                    "type": "string",
-                    "description": "分配给下级Agent的任务描述"
-                },
-                "model_group": {
-                    "type": "string",
-                    "description": "覆盖使用的模型组（可选）"
-                },
-                "prompts": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "覆盖使用的提示词组件（可选）"
-                }
-            },
-            "required": ["agent_id", "task"]
-        })
-    }
-    
-    async fn execute(
+impl AgentEngine {
+    pub async fn load_prompts(
         &self,
-        args: Value,
-    ) -> Result<ToolResult, ToolError> {
-        // TODO: 实现spawn工具执行逻辑
-        // 1. 解析参数（agent_id, task等）
-        // 2. 构建配置覆盖
-        // 3. 生成子Agent
-        // 4. 发送初始任务
-        // 5. 返回结果
+        agent: &Agent,
+        session: &Session,
+    ) -> Result<Vec<String>, AgentError> {
+        // TODO: 实现提示词加载逻辑
+        // 1. 获取Agent定义中的prompts列表
+        // 2. 加载每个提示词组件
+        // 3. 合并为系统消息
+        unimplemented!()
+    }
+    
+    pub async fn load_prompt_component(
+        &self,
+        name: &str,
+    ) -> Result<String, AgentError> {
+        // TODO: 实现提示词组件加载
+        // 1. 检查内置提示词
+        // 2. 从文件加载自定义提示词
+        // 3. 返回内容
+        unimplemented!()
     }
 }
 ```
 
-### 6.2 send工具
+## 7. 错误处理
 
-```rust
-/// multi-agent::send 工具
-pub struct SendMessageTool {
-    agent_manager: Arc<AgentManager>,
-    message_tx: mpsc::Sender<InterAgentMessage>,
-}
-
-impl ToolProvider for SendMessageTool {
-    fn name(&self) -> &str {
-        "multi-agent::send"
-    }
-    
-    fn description(&self) -> &str {
-        "向指定Agent发送消息"
-    }
-    
-    fn schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "target_agent": {
-                    "type": "string",
-                    "description": "目标Agent的ULID"
-                },
-                "message": {
-                    "type": "string",
-                    "description": "消息内容"
-                },
-                "message_type": {
-                    "type": "string",
-                    "enum": ["task", "query", "response", "general"],
-                    "description": "消息类型"
-                }
-            },
-            "required": ["target_agent", "message"]
-        })
-    }
-    
-    async fn execute(
-        &self,
-        args: Value,
-    ) -> Result<ToolResult, ToolError> {
-        // TODO: 实现send工具执行逻辑
-        // 1. 解析参数（target_agent, message等）
-        // 2. 解析目标ULID
-        // 3. 验证通信权限
-        // 4. 发送消息
-        // 5. 返回结果
-    }
-}
-```
-
-### 6.3 report工具（下级向上级汇报）
-
-```rust
-/// 下级Agent向上级汇报
-pub struct ReportTool {
-    agent_manager: Arc<AgentManager>,
-}
-
-impl ToolProvider for ReportTool {
-    fn name(&self) -> &str {
-        "multi-agent::report"
-    }
-    
-    fn description(&self) -> &str {
-        "向上级Agent汇报任务进度或结果"
-    }
-    
-    fn schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "report_type": {
-                    "type": "string",
-                    "enum": ["progress", "result", "question"],
-                    "description": "汇报类型"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "汇报内容"
-                },
-                "progress": {
-                    "type": "number",
-                    "description": "进度百分比（0-100）"
-                }
-            },
-            "required": ["report_type", "content"]
-        })
-    }
-    
-    async fn execute(
-        &self,
-        args: Value,
-    ) -> Result<ToolResult, ToolError> {
-        // TODO: 实现report工具执行逻辑
-        // 1. 获取父Agent信息
-        // 2. 解析汇报参数
-        // 3. 根据汇报类型构建消息
-        // 4. 发送汇报消息
-        // 5. 返回结果
-    }
-}
-```
-
-## 7. 消息处理流程
-
-### 7.1 消息路由器
-
-```rust
-/// Agent消息路由器
-pub struct AgentMessageRouter {
-    /// 消息接收队列
-    rx: mpsc::Receiver<InterAgentMessage>,
-    
-    /// Agent管理器
-    agent_manager: Arc<AgentManager>,
-    
-    /// 等待回复的回调
-    pending_responses: Arc<RwLock<HashMap<String, oneshot::Sender<InterAgentMessage>>>>,
-}
-
-impl AgentMessageRouter {
-    /// 启动消息路由循环
-    pub async fn run(mut self) {
-        // TODO: 实现消息路由循环
-        // 持续接收并处理消息
-        while let Some(msg) = self.rx.recv().await {
-            self.handle_message(msg).await;
-        }
-    }
-    
-    /// 处理单条消息
-    async fn handle_message(
-        &self,
-        msg: InterAgentMessage,
-    ) {
-        // TODO: 实现单条消息处理逻辑
-        // 1. 存储消息到Session
-        // 2. 检查是否有等待的回调
-        // 3. 触发目标Agent处理
-    }
-    
-    /// 发送消息并等待回复
-    pub async fn send_and_wait(
-        &self,
-        msg: InterAgentMessage,
-        timeout: Duration,
-    ) -> Result<InterAgentMessage, AgentError> {
-        // TODO: 实现发送消息并等待回复的逻辑
-        // 1. 创建等待通道
-        // 2. 注册等待回调
-        // 3. 发送消息
-        // 4. 等待回复或超时
-    }
-}
-```
-
-### 7.2 Agent消息处理
-
-```rust
-impl AgentManager {
-    /// 处理Agent的消息
-    pub async fn process_agent_message(
-        &self,
-        ulid: AgentUlid,
-    ) -> Result<(), AgentError> {
-        // TODO: 实现Agent消息处理逻辑
-        // 1. 获取Agent上下文和检查状态
-        // 2. 更新状态为运行中
-        // 3. 调用模型
-        // 4. 处理响应或错误
-    }
-}
-```
-
-## 8. 错误处理
-
-> **注意**: 所有模块错误类型统一在 `neco-core` 中汇总为 `AppError`。见 [TECH.md#5.3-统一错误类型设计](TECH.md#5.3-统一错误类型设计)。
->
-> `AgentError` 为模块内部错误，在模块边界通过 `From` 实现或映射函数转换为 `AppError::Agent`。
+> **注意**: 所有模块错误类型统一在 `neco-core` 的 `AppError` 中汇总。
 
 ```rust
 #[derive(Debug, Error)]
 pub enum AgentError {
-    #[error("Agent未找到")]
-    AgentNotFound,
+    #[error("Agent不存在: {0}")]
+    NotFound(AgentId),
     
-    #[error("父Agent未找到")]
+    #[error("父Agent不存在")]
     ParentNotFound,
     
     #[error("Agent定义未找到: {0}")]
-    AgentDefinitionNotFound(String),
+    DefinitionNotFound(String),
     
     #[error("提示词未找到: {0}")]
     PromptNotFound(String),
     
-    #[error("该Agent不能创建下级Agent")]
+    #[error("不能创建下级Agent")]
     CannotSpawnChildren,
     
     #[error("已达到最大下级Agent数量")]
     MaxChildrenReached,
     
     #[error("通信权限不足")]
-    CommunicationNotAllowed,
+    PermissionDenied,
     
     #[error("没有上级Agent")]
     NoParentAgent,
@@ -745,9 +688,6 @@ pub enum AgentError {
     
     #[error("工具错误: {0}")]
     Tool(#[from] ToolError),
-    
-    #[error("IO错误: {0}")]
-    Io(#[from] std::io::Error),
     
     #[error("超时")]
     Timeout,
@@ -763,4 +703,5 @@ pub enum AgentError {
 - [TECH.md](TECH.md) - 总体架构文档
 - [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块
 - [TECH-WORKFLOW.md](TECH-WORKFLOW.md) - 工作流模块
+- [TECH-TOOL.md](TECH-TOOL.md) - 工具模块
 - [TECH-PROMPT.md](TECH-PROMPT.md) - 提示词组件模块
