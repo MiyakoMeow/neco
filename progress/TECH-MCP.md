@@ -1,6 +1,6 @@
 # TECH-MCP: MCP模块
 
-/// 当前支持的协议版本
+/// 当前支持的协议版本（协议规范发布日期，见 8.1 版本历史）
 pub const CURRENT_PROTOCOL_VERSION: &str = "2025-11-25";
 
 本文档描述NeoCo项目的MCP（Model Context Protocol）模块设计。
@@ -707,6 +707,10 @@ impl Default for McpSecurityConfig {
         }
     }
 }
+
+// 安全配置说明：
+// 默认配置允许所有 Origin（allowed_origins 为空），适合本地开发环境。
+// 生产环境建议显式配置 allowed_origins 以增强安全性。
 
 /// Origin 验证器
 pub struct OriginValidator {
