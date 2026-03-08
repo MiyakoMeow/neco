@@ -2,6 +2,62 @@
 
 本文档描述Neco项目的上下文管理模块设计，采用领域驱动设计，分离领域模型与基础设施。
 
+> **核心理念**：Context Window 就是一块 Arena Allocator。管理上下文不是"写prompt"，而是内存管理。
+
+## 0. Arena Allocator 心智模型
+
+### 0.1 核心隐喻
+
+将 LLM 的上下文窗口想象成一块预先分配好的连续内存：
+
+| Arena Allocator | Context Window |
+|-----------------|----------------|
+| 固定大小的内存块 | 固定上限的 token 窗口 |
+| 指针只往前推 (bump) | 只能在末尾追加消息 |
+| 连续内存块，无碎片 | 前缀稳定，KV Cache 命中 |
+| 批量释放而非逐个回收 | 按区间压缩，而非单条消息 |
+
+### 0.2 三条铁律
+
+```mermaid
+graph TB
+    subgraph "Context Window 铁律"
+        T1[铁律一: 固定上限<br/>128K token 不可扩展] --> T2[铁律二: 前缀改变代价灾难<br/>KV Cache 完全失效]
+        T2 --> T3[铁律三: 注意力不均匀<br/>两端热，中间冷]
+    end
+```
+
+**铁律一**：固定上限。128K token 就是 128K，是最稀缺的资源。
+
+**铁律二**：前缀改变是灾难性的。KV Cache 匹配从第一个 token 逐一比对，第一个不同之后全部 cache miss。
+
+**铁律三**：注意力不均匀。LLM 对开头和末尾 token 注意力最强，中间会衰减（Lost in the Middle）。
+
+### 0.3 五条设计原则
+
+| 原则 | Arena 对应 | 上下文工程实践 |
+|------|------------|---------------|
+| Append-Only AMAP | 指针只往前推 | 在末尾追加 user/assistant/tool_result，不在中间插入 |
+| Demand Paging | 按需分配对象 | 技能按需加载，不预装到 system prompt |
+| Spatial Locality | 相邻分配 | 相关信息物理相邻，指南附着在 tool_result 上 |
+| Goldilocks Zone | 最佳 arena 大小 | 维持 40-70% 使用率 |
+| 批量释放 | reset 而非 free | 按区间压缩，不逐条删除 |
+
+### 0.4 Pruning 和 RAG 是补救手段
+
+```text
+原则（布局）                    补救手段（trick）
+─────────────────────────────────────────────────
+Append-only → 前缀稳定         Pruning → 布局失效后的止损
+Demand Paging → 不浪费空间     RAG → 信息被 prune 后的恢复
+Spatial Locality → 注意力集中  
+Goldilocks Zone → 信噪比最优   
+```
+
+**核心原则**：先把布局做对，补救手段自然用得少。
+
+---
+
 ## 1. 模块概述
 
 上下文管理模块负责：
@@ -44,23 +100,36 @@ graph LR
 
 ### 2.1 压缩触发条件
 
+> **设计原则**：Pruning 是布局失效后的止损操作，不是核心策略。
+
 ```mermaid
 graph TD
     A[检查上下文大小] --> B{超过阈值?}
-    B -->|是| C[触发压缩]
     B -->|否| D[继续正常流程]
-    C --> E[调用压缩模型]
-    E --> F[生成摘要]
-    F --> G[替换历史消息]
+    B -->|是| E{Agent自觉?}
+    E -->|是| F[Layer A: Agent主动压缩<br/>tag起点 → squash为summary]
+    E -->|否| G[Layer B: 系统Pruning<br/>安全网]
+    F --> H[高质量压缩<br/>Agent知道signal vs noise]
+    G --> I[三阶段Pruning]
     
-    H[手动触发] --> C
+    I --> I1[Stage 1: Soft Trim<br/>缩减大tool_result]
+    I1 --> I2[Stage 2: Hard Clear<br/>替换为占位符]
+    I2 --> I3[Stage 3: 分级压缩<br/>按事件类型差异化]
 ```
+
+**两层压缩模型：**
+
+| Layer | 触发条件 | 压缩质量 | 说明 |
+|-------|---------|---------|------|
+| Layer A (Agent主动) | Agent自觉判断 | 高 | Agent判断"这段研究/调试已完成" → tag起点 → squash为summary |
+| Layer B (系统Pruning) | 布局失效 | 低 | 安全网，理想情况下永不触发 |
 
 **触发方式：**
 
 | 方式 | 触发条件 | 说明 |
 |-----|---------|------|
-| 自动触发 | 上下文大小 > 窗口×阈值 | 默认90% |
+| Agent主动 | Agent调用 context::compact | Agent自觉管理内存 |
+| 自动触发 | 上下文大小 > 窗口×阈值(默认90%) | 触发 Layer B |
 | 手动触发 | /compact命令 | 用户主动 |
 
 ## 3. 核心Trait定义
@@ -209,7 +278,44 @@ sequenceDiagram
 
 ## 5. 上下文观测
 
-### 5.1 观测接口
+### 5.1 Goldilocks Zone
+
+> 维持 40-70% 使用率是最佳状态。
+
+```mermaid
+graph LR
+    subgraph "Usage Zone"
+        L1[0-20%<br/>太空<br/>预装太多无关信息]
+        L2[20-40%<br/>偏瘦]
+        L3[40-70%<br/>Goldilocks Zone<br/>最佳状态]
+        L4[70-90%<br/>偏满]
+        L5[90-100%<br/>太满<br/>Pruning频繁触发]
+    end
+```
+
+| 区域 | 使用率 | 问题 |
+|------|-------|------|
+| 太空 | 0-20% | 预装了太多无关信息，Agent在噪声中迷失 |
+| Goldilocks | 40-70% | 信噪比最优，有足够空间给工具调用 |
+| 太满 | 90%+ | Pruning频繁触发，Agent变成金鱼 |
+
+### 5.2 Context Dashboard
+
+Agent 通过 context::observe 工具可以看到上下文仪表盘：
+
+```text
+[Context Dashboard]
+• Usage:           78.2% (100k/128k)
+• Steps since tag: 35 (last: 'auth-refactor')
+• Pruning status:  Stage 1 approaching
+• Est. turns left: ~12
+```
+
+Agent 可根据此信息主动决定：
+- 78% 使用率 → 决定主动压缩
+- 12% 使用率 → 继续工作
+
+### 5.3 观测接口定义
 
 ```rust
 #[async_trait]
@@ -248,18 +354,29 @@ pub struct ContextStats {
     pub total_tokens: usize,
     pub usage_percent: f64,
     pub role_counts: HashMap<Role, usize>,
+    pub steps_since_tag: usize,
+    pub last_tag: Option<String>,
+    pub pruning_stage: Option<PruningStage>,
+    pub estimated_turns_left: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PruningStage {
+    Stage1SoftTrim,
+    Stage2HardClear,
+    Stage3分级压缩,
 }
 ```
 
-### 5.2 context::observe 工具
+### 5.4 context::observe 工具
 
 ```rust
-pub struct ObserveTool {
+pub struct ContextObserveTool {
     observer: Arc<dyn ContextObserver>,
 }
 
 #[async_trait]
-impl ToolExecutor for ObserveTool {
+impl ToolExecutor for ContextObserveTool {
     fn definition(&self) -> &ToolDefinition {
         // [TODO] 实现工具定义
         // 1. 定义工具ID和描述

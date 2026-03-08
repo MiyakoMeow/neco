@@ -61,7 +61,9 @@ pub struct ChatRequest<'a> {
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
-    pub tools: Option<Vec<ToolDefinition>>,
+    /// 工具定义列表（provider-neutral 抽象）
+    /// 由工具注册表统一管理，与具体 LLM Provider 无关
+    pub tools: Option<Vec<crate::tool::ToolDefinition>>,
     pub tool_choice: Option<ToolChoice>,
     pub response_format: Option<ResponseFormat>,
     pub stop: Option<Vec<String>>,
@@ -174,14 +176,87 @@ pub trait ModelClient: Send + Sync {
 ### 4.1 消息类型
 
 ```rust
-/// 聊天消息
+/// 聊天消息（Model层使用，无id）
 #[derive(Debug, Clone)]
-#[serde(tag = "role")]
-pub enum ModelMessage<'a> {
-    System { content: &'a str },
-    User { content: &'a str },
-    Assistant { content: &'a str, tool_calls: Option<Vec<ToolCall>> },
-    Tool { tool_call_id: &'a str, content: &'a str },
+pub struct ModelMessage<'a> {
+    pub role: Role,
+    pub content: Cow<'a, str>,
+    pub tool_calls: Option<&'a [ToolCall]>,
+    pub tool_call_id: Option<&'a str>,
+}
+
+impl<'a> ModelMessage<'a> {
+    /// 验证消息状态组合是否合法
+    pub fn validate(&self) -> Result<(), MessageValidationError> {
+        match self.role {
+            Role::Tool => {
+                if self.tool_call_id.is_none() {
+                    return Err(MessageValidationError { message: "Tool message must have tool_call_id".into() });
+                }
+                if self.tool_calls.is_some() {
+                    return Err(MessageValidationError { message: "Tool message cannot have tool_calls".into() });
+                }
+            }
+            Role::User => {
+                if self.tool_call_id.is_some() {
+                    return Err(MessageValidationError { message: "User message cannot have tool_call_id".into() });
+                }
+                if self.tool_calls.is_some() {
+                    return Err(MessageValidationError { message: "User message cannot have tool_calls".into() });
+                }
+            }
+            Role::Assistant => {
+                if self.tool_call_id.is_some() {
+                    return Err(MessageValidationError { message: "Assistant message cannot have tool_call_id".into() });
+                }
+            }
+            Role::System => {
+                if self.tool_calls.is_some() {
+                    return Err(MessageValidationError { message: "System message cannot have tool_calls".into() });
+                }
+                if self.tool_call_id.is_some() {
+                    return Err(MessageValidationError { message: "System message cannot have tool_call_id".into() });
+                }
+            }
+        }
+        Ok(())
+    }
+    
+    /// 创建用户消息
+    pub fn user(content: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            role: Role::User,
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+    
+    /// 创建助手消息（可包含工具调用）
+    pub fn assistant(content: impl Into<Cow<'a, str>>, tool_calls: Option<&'a [ToolCall]>) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: content.into(),
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+    
+    /// 创建工具结果消息
+    pub fn tool(content: impl Into<Cow<'a, str>>, tool_call_id: &'a str) -> Self {
+        Self {
+            role: Role::Tool,
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id),
+        }
+    }
+}
+
+/// 消息验证错误
+#[derive(Debug, Clone)]
+pub struct MessageValidationError {
+    pub message: String,
 }
 ```
 
@@ -194,18 +269,6 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
-}
-```
-
-### 4.3 工具定义
-
-```rust
-/// 工具定义
-#[derive(Debug, Clone)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
 }
 ```
 

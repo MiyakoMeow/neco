@@ -23,8 +23,8 @@ classDiagram
     }
     
     class AgentId {
-        +Ulid session
-        +Ulid agent
+        +session: Ulid
+        +agent: Ulid
         +new_root(session_id) AgentId
         +new_child(parent) AgentId
         +session_id() SessionId
@@ -50,7 +50,7 @@ classDiagram
 | 标识符 | 生成时机 | 结构 | 校验 |
 |--------|---------|------|------|
 | `SessionId` | 创建Session时 | `SessionId(Ulid)` | 26位Ulid |
-| `AgentId` | Agent实例化时 | `{session: Ulid, agent: Ulid}` | 双Ulid |
+| `AgentId` | Agent实例化时 | `{ session: Ulid, agent: Ulid }` | 双Ulid |
 | `MessageId` | 消息添加时 | `MessageId(u64)` | 原子自增 |
 | `NodeId` | 工作流定义时 | `NodeId(String)` | kebab-case |
 
@@ -387,23 +387,57 @@ pub struct HierarchyMeta {
     pub children_map: HashMap<AgentId, Vec<AgentId>>,
 }
 
-/// Agent状态
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// Agent状态（运行时使用）
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentState {
     Idle,
     Running,
-    WaitingForTool,
-    WaitingForUser,
+    Waiting(WaitingReason),      // 等待原因：工具调用或用户输入
     Completed,
-    Error(AgentErrorInfo),
+    Failed(FailureReason),       // 失败原因及错误信息
+}
+
+/// Agent状态（持久化DTO - 格式稳定）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentStateDto {
+    pub state: AgentStateKind,
+    pub reason_kind: Option<ReasonKind>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentErrorInfo {
-    pub code: String,
-    pub message: String,
-    pub recoverable: bool,
+pub enum AgentStateKind {
+    Idle,
+    Running,
+    Waiting,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReasonKind {
+    ToolCall,
+    UserInput,
+    Error,
+    Recoverable,
+    Unrecoverable,
+}
+
+/// 等待原因
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WaitingReason {
+    ToolCall,     // 等待工具执行结果
+    UserInput,    // 等待用户输入
+}
+
+/// 失败原因
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FailureReason {
+    Error(String),        // 错误信息
+    Recoverable(String),  // 可恢复的错误
+    Unrecoverable(String) // 不可恢复的错误
 }
 ```
 
