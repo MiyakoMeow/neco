@@ -447,7 +447,7 @@ pub struct SpawnAgentTool {
 impl ToolExecutor for SpawnAgentTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolUlid("multi-agent::spawn".into()),
+            id: ToolId("multi-agent::spawn".into()),
             description: "生成一个下级Agent来执行特定任务".into(),
             schema: json!({
                 "type": "object",
@@ -499,7 +499,7 @@ pub struct SendMessageTool {
 impl ToolExecutor for SendMessageTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolUlid("multi-agent::send".into()),
+            id: ToolId("multi-agent::send".into()),
             description: "向指定Agent发送消息".into(),
             schema: json!({
                 "type": "object",
@@ -548,7 +548,7 @@ pub struct ReportTool {
 impl ToolExecutor for ReportTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolUlid("multi-agent::report".into()),
+            id: ToolId("multi-agent::report".into()),
             description: "向上级Agent汇报任务进度或结果".into(),
             schema: json!({
                 "type": "object",
@@ -634,8 +634,8 @@ pub enum AgentEvent {
     Created { id: AgentUlid, parent_ulid: Option<AgentUlid> },
     StateChanged { id: AgentUlid, old: AgentState, new: AgentState },
     MessageAdded { id: AgentUlid, message_id: MessageId },
-    ToolCalled { id: AgentUlid, tool_ulid: ToolUlid },
-    ToolResult { id: AgentUlid, tool_ulid: ToolUlid, success: bool },
+    ToolCalled { id: AgentUlid, tool_ulid: ToolId },
+    ToolResult { id: AgentUlid, tool_ulid: ToolId, success: bool },
     Completed { id: AgentUlid, output: String },
     Error { id: AgentUlid, error: String },
 }
