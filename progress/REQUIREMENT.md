@@ -69,7 +69,7 @@
 
 ### Session管理
 
-- 存储在`~/.local/neco/(session_id)/(agent_ulid).toml`文件。该文件存储所有的上下文内容。
+- 存储在`~/.local/neco/(session_id)/agents/(agent_id).toml`文件。该文件存储所有的上下文内容。
 - **Session ID与Agent ULID的关系**：
   - Session ID是顶级容器的ULID，在创建Session时生成
   - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成（第一个Agent除外，其使用Session ID）
@@ -80,14 +80,13 @@
 
 - 使用TOML存储消息内容：
 
-- 参考：`(agent_ulid).toml`。不同Agent使用不同文件。
+- 参考：`(agent_id).toml`。不同Agent使用不同文件。
 
 ```toml
 # Agent配置
-prompts = ["base"]
-
-# Agent层级关系（用于SubAgent模式）
-parent_ulid = "01HF..."  # 上级Agent的ULID，最上层Agent此字段省略不填
+[agent]
+definition_id = "coder"
+parent_id = "01HF..."  # 上级Agent的ID，最上层Agent此字段省略
 
 # Agent消息列表
 [[messages]]
@@ -104,7 +103,7 @@ role = "assistant"
 content = "xxx"
 ```
 
-- 通过`parent_ulid`字段可以恢复完整的Agent树形结构。
+- 通过`parent_id`字段可以恢复完整的Agent树形结构。
 
 ### MCP
 
@@ -254,7 +253,7 @@ Neco系统中存在**两个独立的层次结构**，它们在不同层面运作
 
 - **工作流的节点Agent同时也是节点内的最上级Agent**。
   - **节点Agent的ULID与节点Session ID相同**（遵循前述Session ID与Agent ULID关系规则）。
-  - 消息存储路径为`~/.local/neco/(workflow_session_id)/(node_session_id).toml`（通用路径格式见前述Session管理部分，此处workflow_session_id对应通用格式中的session_id，node_session_id对应agent_ulid）。
+  - 消息存储路径为`~/.local/neco/(workflow_session_id)/agents/(node_session_id).toml`（通用路径格式见前述Session管理部分，此处workflow_session_id对应通用格式中的session_id，node_session_id对应agent_id）。
 
 ### 模块化提示词与工具，以及按需加载
 
@@ -458,17 +457,20 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 ### Agent定义
 
 - 路径：`agents/xxx.md`
-- 单个Markdown文件即为一个Agent定义。
-- 该Markdown文件的内容即为该Agent的提示词。
+- 单个Markdown文件即为一个Agent定义，使用YAML frontmatter定义元数据，Markdown内容作为提示词。
 
 #### Agent头部信息
 
 ```yaml
-# （可选）激活的提示词组件。按顺序激活。
-# 如果未定义此字段，默认只加载`base`组件
+---
+id: coder
+name: 编码助手
+model_group: frontier
 prompts:
   - base
-  - multi-agent 
+  - multi-agent
+---
+# Agent 提示词内容...
 ```
 
 ### 工作流定义

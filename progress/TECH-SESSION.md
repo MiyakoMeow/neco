@@ -23,8 +23,8 @@ classDiagram
     }
     
     class AgentId {
-        +Ulid session
-        +Ulid agent
+        +session: Ulid
+        +agent: Ulid
         +new_root(session_id) AgentId
         +new_child(parent) AgentId
         +session_id() SessionId
@@ -50,7 +50,7 @@ classDiagram
 | 标识符 | 生成时机 | 结构 | 校验 |
 |--------|---------|------|------|
 | `SessionId` | 创建Session时 | `SessionId(Ulid)` | 26位Ulid |
-| `AgentId` | Agent实例化时 | `{session: Ulid, agent: Ulid}` | 双Ulid |
+| `AgentId` | Agent实例化时 | `{ session: Ulid, agent: Ulid }` | 双Ulid |
 | `MessageId` | 消息添加时 | `MessageId(u64)` | 原子自增 |
 | `NodeId` | 工作流定义时 | `NodeId(String)` | kebab-case |
 
@@ -393,17 +393,9 @@ pub struct HierarchyMeta {
 pub enum AgentState {
     Idle,
     Running,
-    WaitingForTool,
-    WaitingForUser,
+    Waiting,
     Completed,
-    Error(AgentErrorInfo),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentErrorInfo {
-    pub code: String,
-    pub message: String,
-    pub recoverable: bool,
+    Failed,
 }
 ```
 

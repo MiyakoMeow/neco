@@ -57,7 +57,7 @@ graph TB
 | MCP | `mcp::server_name` | `mcp::context7` |
 | 多智能体 | `multi-agent::action` | `multi-agent::spawn` |
 | 上下文 | `context::action` | `context::observe` |
-| 工作流 | `workflow::option` | `workflow::approve` |
+| 工作流 | `workflow::option` | `workflow::pass`, `workflow::approve` |
 | 激活 | `activate::type` | `activate::skill` |
 
 ## 3. 工具接口设计
@@ -223,9 +223,9 @@ impl DefaultToolRegistry {
         registry.register(ActivateSkillTool);
         registry.register(ActivateMcpTool);
         
-        // 5. 工作流工具：workflow::approve, workflow::reject
-        registry.register(WorkflowApproveTool);
-        registry.register(WorkflowRejectTool);
+        // 5. 工作流工具：workflow::pass, workflow::option
+        registry.register(WorkflowOptionTool);
+        registry.register(WorkflowPassTool);
 
         // 注意：MCP和Skill外部工具在运行时动态注册
 

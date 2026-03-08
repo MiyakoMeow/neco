@@ -174,14 +174,13 @@ pub trait ModelClient: Send + Sync {
 ### 4.1 消息类型
 
 ```rust
-/// 聊天消息
+/// 聊天消息（Model层使用，无id）
 #[derive(Debug, Clone)]
-#[serde(tag = "role")]
-pub enum ModelMessage<'a> {
-    System { content: &'a str },
-    User { content: &'a str },
-    Assistant { content: &'a str, tool_calls: Option<Vec<ToolCall>> },
-    Tool { tool_call_id: &'a str, content: &'a str },
+pub struct ModelMessage<'a> {
+    pub role: Role,
+    pub content: Cow<'a, str>,
+    pub tool_calls: Option<&'a [ToolCall]>,
+    pub tool_call_id: Option<&'a str>,
 }
 ```
 
@@ -194,18 +193,6 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
-}
-```
-
-### 4.3 工具定义
-
-```rust
-/// 工具定义
-#[derive(Debug, Clone)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
 }
 ```
 
