@@ -387,9 +387,9 @@ pub struct HierarchyMeta {
     pub children_map: HashMap<AgentId, Vec<AgentId>>,
 }
 
-/// Agent状态
+/// Agent状态（持久化格式稳定）
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(tag = "state", content = "reason", rename_all = "lowercase")]
 pub enum AgentState {
     Idle,
     Running,

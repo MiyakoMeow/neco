@@ -784,7 +784,8 @@ pub enum IdError {
 ~/.local/neco/           # 数据目录
 └── {session_id}/        # Session目录
     ├── session.toml     # Session元数据
-    └── {agent_id}.toml  # Agent消息
+    └── agents/
+        └── {agent_id}.toml  # Agent消息
 ```
 
 > 详细目录结构定义见 [TECH-CONFIG.md#21-配置目录结构](TECH-CONFIG.md#21-配置目录结构)

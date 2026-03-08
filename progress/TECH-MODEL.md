@@ -61,7 +61,9 @@ pub struct ChatRequest<'a> {
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
-    pub tools: Option<Vec<serde_json::Value>>, // 工具定义由工具注册表动态提供
+    /// 工具定义列表（provider-neutral 抽象）
+    /// 由工具注册表统一管理，与具体 LLM Provider 无关
+    pub tools: Option<Vec<crate::tool::ToolDefinition>>,
     pub tool_choice: Option<ToolChoice>,
     pub response_format: Option<ResponseFormat>,
     pub stop: Option<Vec<String>>,
@@ -181,6 +183,62 @@ pub struct ModelMessage<'a> {
     pub content: Cow<'a, str>,
     pub tool_calls: Option<&'a [ToolCall]>,
     pub tool_call_id: Option<&'a str>,
+}
+
+impl<'a> ModelMessage<'a> {
+    /// 验证消息状态组合是否合法
+    pub fn validate(&self) -> Result<(), MessageValidationError> {
+        match self.role {
+            Role::Tool => {
+                ensure!(self.tool_call_id.is_some(), "Tool message must have tool_call_id");
+                ensure!(self.tool_calls.is_none(), "Tool message cannot have tool_calls");
+            }
+            Role::User | Role::Assistant => {
+                ensure!(self.tool_call_id.is_none(), "User/Assistant message cannot have tool_call_id");
+            }
+            Role::System => {
+                ensure!(self.tool_calls.is_none(), "System message cannot have tool_calls");
+                ensure!(self.tool_call_id.is_none(), "System message cannot have tool_call_id");
+            }
+        }
+        Ok(())
+    }
+    
+    /// 创建用户消息
+    pub fn user(content: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            role: Role::User,
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+    
+    /// 创建助手消息（可包含工具调用）
+    pub fn assistant(content: impl Into<Cow<'a, str>>, tool_calls: Option<&'a [ToolCall]>) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: content.into(),
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+    
+    /// 创建工具结果消息
+    pub fn tool(content: impl Into<Cow<'a, str>>, tool_call_id: &'a str) -> Self {
+        Self {
+            role: Role::Tool,
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id),
+        }
+    }
+}
+
+/// 消息验证错误
+#[derive(Debug, Clone)]
+pub struct MessageValidationError {
+    pub message: String,
 }
 ```
 
