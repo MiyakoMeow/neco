@@ -531,6 +531,49 @@ impl ToolExecutor for WorkflowTransitionTool {
     }
 }
 
+/// 无条件转场工具 - 对应需求文档的 workflow::pass
+pub struct PassTool {
+    runtime: Arc<RwLock<WorkflowRuntime>>,
+    node_ulid: NodeUlid,
+}
+
+#[async_trait]
+impl ToolExecutor for PassTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId::new("workflow", "pass"),
+            description: "无条件转场到下一节点，不增加计数器".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "传递给下一节点的消息（可选）"
+                    }
+                },
+                "required": []
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // 无条件转场，不增加任何计数器
+        // 1. 从args中解析message（可选）
+        // 2. 获取runtime的write lock
+        // 3. 直接触发后续节点，不增加计数器
+        // 4. 发布NodeTransition事件
+        // 5. 返回转场成功的ToolResult
+        unimplemented!()
+    }
+}
+
 /// 注册工作流工具
 pub fn register_workflow_tools(
     registry: &mut dyn ToolRegistry,

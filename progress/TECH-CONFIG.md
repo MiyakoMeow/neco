@@ -374,7 +374,13 @@ flowchart LR
 **合并规则：**
 - 高优先级配置覆盖低优先级相同键
 - 数组类型采用替换而非合并
+  - 如需追加而非替换，使用特殊语法 `"+<item>"`（例如 `models = ["+new-model"]`）
 - 嵌套对象采用深度合并
+
+**格式优先级：**
+- TOML格式（`.toml`）始终优先于YAML格式（`.yaml`）
+- 整体优先级：`neoco.toml` > `neoco.<tag>.toml` > `neoco.yaml` > `neoco.<tag>.yaml`
+  - 带标签的配置按`<tag>`数字/字母顺序加载，后加载的覆盖先加载的
 
 ## 5. 配置加载器
 

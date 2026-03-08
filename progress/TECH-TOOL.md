@@ -292,6 +292,7 @@ impl ToolRegistry for DefaultToolRegistry {
 | `fs::write` | 写入文件（完全覆盖） | 10秒 |
 | `fs::edit` | 编辑文件（基于verify） | 10秒 |
 | `fs::delete` | 删除文件 | 5秒 |
+| `fs::list` / `fs::ls` | 读取目录内容 | 5秒 |
 
 ### 4.2 fs::read 实现
 
@@ -550,6 +551,7 @@ impl ToolExecutor for FileDeleteTool {
 |------|------|------|
 | `context::observe` | 观测上下文状态，获取 Dashboard | 5秒 |
 | `context::compact` | 主动压缩上下文（Layer A） | 30秒 |
+| `question::ask` | 向用户提问（仅限TUI非no-ask模式） | 30秒 |
 
 ### 5.1.2 context::observe
 

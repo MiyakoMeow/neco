@@ -141,11 +141,19 @@ pub enum AgentState {
     Failed,
 }
 
+/// Agent模式 - 对应需求文档的mode字段
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentMode {
+    Primary,   // 主Agent，直接与用户对话
+    Subagent,  // 子Agent，由上级Agent创建
+}
+
 /// Agent领域模型
 pub struct Agent {
     id: AgentUlid,
     parent_ulid: Option<AgentUlid>,
     definition_id: String,
+    mode: AgentMode,  // primary 或 subagent
     state: AgentState,
     model_group: Option<String>,
     system_prompt: Option<String>,
