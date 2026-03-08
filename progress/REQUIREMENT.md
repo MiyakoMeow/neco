@@ -551,7 +551,7 @@ mode:
 
 - 工作流根路径：`workflows/xxx/`
 
-- 类似配置目录，可以单独为工作流配置`neoco.toml`、`prompts`、`agents`、`skills`等。`等。
+- 类似配置目录，可以单独为工作流配置`neoco.toml`、`prompts`、`agents`、`skills`等。
 
 #### 定义格式
 
