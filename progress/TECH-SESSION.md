@@ -228,23 +228,109 @@ pub struct SessionMeta {
 /// Agent定义（静态配置）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentDefinition {
-    pub id: String,
+    /// Agent标识，默认为文件名
+    pub id: Option<String>,
+    /// Agent描述
+    pub description: Option<String>,
+    /// 运行模式：subagent / [subagent, primary] / primary
+    pub mode: Option<AgentMode>,
+    /// 模型配置，支持两种格式：
+    /// - 字符串："anthropic/claude-sonnet-4-20250514"
+    /// - 对象：ModelConfig { provider, name, temperature }
+    pub model: Option<ModelConfig>,
+    /// 温度参数（单独指定时优先）
+    pub temperature: Option<f64>,
+    /// 模型组，与model同时存在时优先使用model_group
+    pub model_group: String,
+    /// 提示词列表
+    pub prompts: Vec<String>,
+    /// 工具列表（字段保留但解析时忽略）
+    pub tools: Vec<String>,
+    /// MCP服务器列表
+    pub mcp_servers: Vec<String>,
+    /// 技能列表
+    pub skills: Vec<String>,
+}
+
+/// 模型配置（支持两种格式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModelConfig {
+    /// 字符串形式：provider/name
+    String(String),
+    /// 对象形式：完整配置
+    Object(ModelConfigObj),
+}
+
+/// 模型配置对象
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelConfigObj {
+    pub provider: String,
+    pub name: String,
+    pub temperature: Option<f64>,
+}
+
+/// Agent运行模式
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AgentMode {
+    /// 单个模式：subagent 或 primary
+    Single(AgentModeType),
+    /// 数组模式：不能为空
+    Multiple(Vec<SubAgentMode>),
+}
+
+/// Agent模式类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentModeType {
+    #[serde(rename = "primary")]
+    Primary,
+    #[serde(rename = "subagent")]
+    SubAgent,
+}
+
+/// 子Agent模式配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubAgentMode {
     pub name: String,
     pub description: Option<String>,
-    pub model_group: String,
-    pub prompts: Vec<String>,
-    pub tools: Vec<String>,
-    pub mcp_servers: Vec<String>,
-    pub skills: Vec<String>,
 }
 
 impl AgentDefinition {
     pub fn from_file(path: &Path) -> Result<Self, AgentDefinitionError> {
-        // [TODO] 实现要点说明
+        // TODO: 实现要点
         // 1. 读取文件内容
         // 2. 解析YAML头部 (--- delimited)
         // 3. 提取配置字段
         // 4. 返回AgentDefinition
+        unimplemented!()
+    }
+
+    /// 获取实际使用的模型组
+    /// 优先级：model_group > model > 默认
+    pub fn resolve_model_group(&self) -> &str {
+        // TODO: 实现要点
+        // 1. 如果 model_group 不为空，返回 model_group
+        // 2. 否则从 model 字段提取 provider（字符串取第一段/对象取provider字段）
+        // 3. 都为空时返回 "default"
+        unimplemented!()
+    }
+
+    /// 获取实际使用的模型名称
+    pub fn resolve_model_name(&self) -> Option<&str> {
+        // TODO: 实现要点
+        // 1. 如果 model 为 None，返回 None
+        // 2. 字符串形式：split('/') 取第二段
+        // 3. 对象形式：返回 name 字段
+        unimplemented!()
+    }
+
+    /// 获取实际使用的温度参数
+    pub fn resolve_temperature(&self) -> Option<f64> {
+        // TODO: 实现要点
+        // 1. 优先从 ModelConfig::Object 的 temperature 字段获取
+        // 2. 其次从独立的 temperature 字段获取
+        // 3. 都为空时返回 None（使用模型默认）
         unimplemented!()
     }
 }
