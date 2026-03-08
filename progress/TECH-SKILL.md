@@ -105,8 +105,8 @@ impl SkillUlid {
         Ok(Self(Ulid::from_string(s)?))
     }
     
-    pub fn as_str(&self) -> String {
-        self.0.encode()
+    pub fn as_str(&self) -> &str {
+        self.0.encode().as_str()
     }
 }
 
