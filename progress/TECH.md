@@ -270,7 +270,7 @@ graph TD
 | `AgentUlid` | `struct AgentUlid { session: Ulid, agent: Ulid }` | 双Ulid结构。session字段直接标识所属Session，agent字段标识唯一Agent实例。查询Agent所属Session可直接从AgentUlid.session获取，无需通过SessionManager索引 |
 | `MessageId` | `struct MessageId(u64)` | 原子自增，Session范围唯一（保持u64） |
 | `NodeUlid` | `struct NodeUlid(Ulid)` | 26位Ulid字符串 |
-| `ToolId` | `struct ToolId(String)` | namespace::name 格式（如 `fs::read`） |
+| `ToolId` | `struct ToolId(Vec<String>)` | namespace::name 格式（如 `["fs", "read"]`） |
 | `SkillUlid` | `struct SkillUlid(Ulid)` | 26位Ulid字符串 |
 
 ### 3.2 统一消息系统

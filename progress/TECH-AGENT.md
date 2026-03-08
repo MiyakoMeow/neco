@@ -447,7 +447,7 @@ pub struct SpawnAgentTool {
 impl ToolExecutor for SpawnAgentTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("multi-agent::spawn".into()),
+            id: ToolId::new("multi-agent", "spawn"),
             description: "生成一个下级Agent来执行特定任务".into(),
             schema: json!({
                 "type": "object",
@@ -499,7 +499,7 @@ pub struct SendMessageTool {
 impl ToolExecutor for SendMessageTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("multi-agent::send".into()),
+            id: ToolId::new("multi-agent", "send"),
             description: "向指定Agent发送消息".into(),
             schema: json!({
                 "type": "object",
@@ -548,7 +548,7 @@ pub struct ReportTool {
 impl ToolExecutor for ReportTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("multi-agent::report".into()),
+            id: ToolId::new("multi-agent", "report"),
             description: "向上级Agent汇报任务进度或结果".into(),
             schema: json!({
                 "type": "object",

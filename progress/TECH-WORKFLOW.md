@@ -494,7 +494,7 @@ pub struct WorkflowTransitionTool {
 impl ToolExecutor for WorkflowTransitionTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("workflow::option".into()),
+            id: ToolId::new("workflow", "option"),
             description: "控制工作流节点之间的转换".into(),
             schema: json!({
                 "type": "object",
