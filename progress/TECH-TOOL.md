@@ -207,6 +207,25 @@ impl ToolId {
     }
 }
 
+/// 运行模式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RunMode {
+    #[default]
+    /// 命令行模式
+    Cli,
+    /// TUI交互模式
+    Tui,
+    /// 守护进程模式
+    Daemon,
+}
+
+/// 资源调度器
+pub trait ResourceScheduler: Send + Sync {
+    fn can_execute(&self, level: ResourceLevel) -> bool;
+    async fn acquire(&self, level: ResourceLevel) -> Result<(), ToolError>;
+    fn release(&self, level: ResourceLevel);
+}
+
 /// 3.3 默认工具注册表实现
 
 ```rust
@@ -214,13 +233,21 @@ impl ToolId {
 pub struct DefaultToolRegistry {
     tools: RwLock<HashMap<ToolId, Arc<dyn ToolExecutor>>>,
     timeouts: RwLock<HashMap<String, Duration>>,
+    run_mode: RwLock<RunMode>,
+    resource_scheduler: Option<Arc<dyn ResourceScheduler>>,
 }
 
 impl DefaultToolRegistry {
     pub async fn new() -> Self {
+        Self::new_with_scheduler(None).await
+    }
+
+    pub async fn new_with_scheduler(scheduler: Option<Arc<dyn ResourceScheduler>>) -> Self {
         let mut registry = Self {
             tools: RwLock::new(HashMap::new()),
             timeouts: RwLock::new(HashMap::new()),
+            run_mode: RwLock::new(RunMode::default()),
+            resource_scheduler: scheduler,
         };
 
         // 注册内置工具（按优先级排序）
@@ -270,6 +297,12 @@ impl DefaultToolRegistry {
 impl ToolRegistry for DefaultToolRegistry {
     async fn register(&self, tool: Arc<dyn ToolExecutor>) {
         let def = tool.definition();
+        
+        // 根据运行模式过滤工具
+        if !self.should_register_for_mode(def.category) {
+            return;
+        }
+        
         let mut tools = self.tools.write().await;
         tools.insert(def.id.clone(), tool);
     }
@@ -301,7 +334,99 @@ impl ToolRegistry for DefaultToolRegistry {
         self.tools.read().await.keys().cloned().collect()
     }
 }
-```
+
+/// 工具执行器封装器（添加资源级别调度控制）
+pub struct ToolExecutorWrapper {
+    inner: Arc<dyn ToolExecutor>,
+    scheduler: Arc<dyn ResourceScheduler>,
+}
+
+impl ToolExecutorWrapper {
+    pub fn new(inner: Arc<dyn ToolExecutor>, scheduler: Arc<dyn ResourceScheduler>) -> Self {
+        Self { inner, scheduler }
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for ToolExecutorWrapper {
+    fn definition(&self) -> &ToolDefinition {
+        self.inner.definition()
+    }
+
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        let level = self.definition().capabilities.resource_level;
+        
+        // 资源级别调度控制
+        self.scheduler.acquire(level).await?;
+        
+        let result = self.inner.execute(context, args).await;
+        
+        self.scheduler.release(level);
+        
+        result
+    }
+}
+
+/// 资源调度器默认实现
+pub struct DefaultResourceScheduler {
+    semaphores: RwLock<HashMap<ResourceLevel, Arc<Semaphore>>>,
+}
+
+impl DefaultResourceScheduler {
+    pub fn new() -> Self {
+        let mut semaphores = HashMap::new();
+        semaphores.insert(ResourceLevel::Low, Arc::new(Semaphore::new(usize::MAX)));
+        semaphores.insert(ResourceLevel::Medium, Arc::new(Semaphore::new(10)));
+        semaphores.insert(ResourceLevel::High, Arc::new(Semaphore::new(1)));
+        
+        Self {
+            semaphores: RwLock::new(semaphores),
+        }
+    }
+}
+
+impl Default for DefaultResourceScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResourceScheduler for DefaultResourceScheduler {
+    fn can_execute(&self, level: ResourceLevel) -> bool {
+        let semaphores = self.semaphores.read().unwrap();
+        semaphores.get(&level)
+            .map(|s| s.available_permits() > 0)
+            .unwrap_or(false)
+    }
+
+    async fn acquire(&self, level: ResourceLevel) -> Result<(), ToolError> {
+        let semaphores = self.semaphores.read().unwrap();
+        let semaphore = semaphores.get(&level)
+            .ok_or_else(|| ToolError::Execution(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Unknown resource level: {:?}", level)
+            ).into()))?;
+        
+        // TODO: 使用 tokio::sync::Semaphore 获取许可
+        // permit 会作为资源持有者，在 drop 时自动释放
+        let _permit = semaphore.acquire().await
+            .map_err(|_| ToolError::Execution("Failed to acquire resource permit".into()))?;
+        
+        // 持有 _permit 直到方法结束（资源级别调度控制）
+        Ok(())
+    }
+
+    fn release(&self, level: ResourceLevel) {
+        let semaphores = self.semaphores.read().unwrap();
+        if let Some(semaphore) = semaphores.get(&level) {
+            semaphore.release();
+        }
+    }
+}
 
 ## 4. 文件系统工具
 
@@ -311,6 +436,7 @@ impl ToolRegistry for DefaultToolRegistry {
 |------|------|------|
 | `fs::read` | 读取文件内容 | 5秒 |
 | `fs::write` | 写入文件（完全覆盖） | 10秒 |
+| `fs::append` | 追加文件内容 | 10秒 |
 | `fs::edit` | 编辑文件（基于verify） | 10秒 |
 | `fs::delete` | 删除文件 | 5秒 |
 | `fs::list` / `fs::ls` | 读取目录内容 | 5秒 |
@@ -412,6 +538,47 @@ impl ToolExecutor for FileWriteTool {
             // 3. 检查父目录是否存在，不存在则创建
         // 4. 使用原子写入模式：写入临时文件后rename
         // 5. 返回写入成功的结果
+        unimplemented!()
+    }
+}
+```
+
+### 4.3.1 fs::append 实现（追加写入）
+
+```rust
+pub struct FileAppendTool;
+    
+#[async_trait]
+impl ToolExecutor for FileAppendTool {
+    fn definition(&self) -> &ToolDefinition {
+        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+            id: ToolId::new("fs", "append"),
+            description: "追加文件内容".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(10),
+            category: ToolCategory::Common,
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现文件追加写入逻辑
+        // 1. 从args解析path和content
+        // 2. 验证路径安全性（同fs::write）
+        // 3. 打开文件并追加内容
+        // 4. 返回写入成功的结果
         unimplemented!()
     }
 }

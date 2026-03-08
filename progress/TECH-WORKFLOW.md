@@ -79,8 +79,9 @@ pub struct WorkflowParams(pub HashMap<String, Value>);
 /// 节点定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeDefinition {
-    pub id: NodeUlid,
-    pub agent_ulid: Option<AgentUlid>,
+    pub id: String,  // 使用kebab-case字符串ID，如"write-prd"
+    #[serde(default)]
+    pub agent: Option<String>,  // Agent标识，默认使用id作为agent标识
     #[serde(default)]
     pub new_session: bool,
 }
@@ -103,44 +104,16 @@ pub struct Requirement {
 /// 边定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EdgeDefinition {
-    pub from: NodeUlid,
-    pub to: NodeUlid,
+    pub from: String,  // 节点字符串ID
+    pub to: String,    // 节点字符串ID，"END"表示工作流结束
     #[serde(default)]
-    pub select: Option<Vec<SelectOption>>,
+    pub select: Option<Vec<SelectOption>>,  // select触发时计数器+1
     #[serde(default)]
-    pub require: Option<Vec<Requirement>>,
+    pub require: Option<Vec<Requirement>>,  // require要求计数器>0
 }
 
-/// 节点ID（强类型ULID）
-/// 
-/// 节点ID采用ULID格式，确保跨工作流的一致性命名。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct NodeUlid(pub Ulid);
-
-impl NodeUlid {
-    pub fn new() -> Self {
-        Self(Ulid::new())
-    }
-    
-    pub fn from_string(s: &str) -> Result<Self, IdError> {
-        Ok(Self(Ulid::from_string(s)?))
-    }
-    
-    pub fn as_str(&self) -> &str {
-        self.0.encode().as_str()
-    }
-}
-
-// 自定义反序列化实现
-impl<'de> Deserialize<'de> for NodeUlid {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Self::from_string(&s).map_err(|e| serde::de::Error::custom(e))
-    }
-}
+// 节点ID使用字符串（kebab-case），如"write-prd"
+// 不再使用ULID，保持与需求文档一致
 ```
 
 ### 3.2 工作流运行时（动态状态）
@@ -151,14 +124,15 @@ impl<'de> Deserialize<'de> for NodeUlid {
 pub struct WorkflowRuntime {
     pub session_ulid: SessionUlid,
     definition: Arc<WorkflowDefinition>,
-    node_states: DashMap<NodeUlid, NodeRuntimeState>,
+    node_states: DashMap<String, NodeRuntimeState>,
     counters: DashMap<CounterKey, u32>,
     variables: DashMap<VariableKey, Value>,
-    active_nodes: DashSet<NodeUlid>,
-    transition_messages: DashMap<NodeUlid, String>,
+    active_nodes: DashSet<String>,
+    transition_messages: DashMap<String, String>,
     status: WorkflowStatus,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    last_progress_at: DateTime<Utc>,                 // 最后进度时间，用于死锁检测
 }
 
 /// 计数器键（强类型）
@@ -188,47 +162,58 @@ impl WorkflowRuntime {
     ) -> Self {
         // TODO: 实现工作流运行时初始化
         // 1. 接收session_ulid和definition作为参数
-        // 2. 初始化空的active_nodes HashSet<NodeUlid>
-        // 3. 初始化空的node_states HashMap<NodeUlid, NodeRuntimeState>
+        // 2. 初始化空的active_nodes HashSet<String>
+        // 3. 初始化空的node_states HashMap<String, NodeRuntimeState>
         // 4. 初始化空的counters HashMap<String, u32>
-        // 5. 初始化空的transition_messages DashMap<NodeUlid, String>
+        // 5. 初始化空的transition_messages DashMap<String, String>
         // 6. 设置status为WorkflowStatus::Ready
         // 7. 设置created_at和updated_at为当前UTC时间
+        // 8. 设置last_progress_at为当前UTC时间（用于死锁检测）
         unimplemented!()
     }
     
-    pub fn start_node(&mut self, node_ulid: NodeUlid, agent_ulid: AgentUlid) {
+    pub fn start_node(&mut self, node_id: &str, agent_ulid: AgentUlid) {
         // TODO: 实现节点启动逻辑
         // 1. 检查节点是否已在active_nodes中
         // 2. 创建NodeRuntimeState::Running { agent_ulid }
         // 3. 将状态插入node_states
-        // 4. 将node_ulid加入active_nodes
-        // 5. 更新updated_at为当前时间
+        // 4. 将node_id加入active_nodes
+        // 5. 更新updated_at和last_progress_at为当前时间
         unimplemented!()
     }
     
-    pub fn complete_node(&mut self, node_ulid: &NodeUlid, output: String) {
+    pub fn complete_node(&mut self, node_id: &str, output: String) {
         // TODO: 实现节点完成逻辑
         // 1. 更新node_states中该节点的状态为Success { output }
-        // 2. 从active_nodes HashSet中移除该node_ulid
-        // 3. 更新updated_at为当前时间
+        // 2. 从active_nodes HashSet中移除该node_id
+        // 3. 更新updated_at和last_progress_at为当前时间
         todo!()
     }
     
     pub fn increment_counter(&mut self, option: &str) {
-        // TODO: 实现计数器递增逻辑
+        // TODO: 实现计数器递增逻辑（select触发时调用）
         // 1. 使用CounterKey包装option
         // 2. 使用counters.entry(key).or_insert(0)获取或创建计数器
         // 3. 对获取的可变引用执行加1操作
+        // 4. 更新last_progress_at为当前时间
         unimplemented!()
     }
     
     pub fn get_counter(&self, option: &str) -> u32 {
-        // TODO: 实现获取计数器值逻辑
+        // TODO: 实现获取计数器值逻辑（require评估时调用）
         // 1. 使用CounterKey包装option
         // 2. 调用counters.get(key)查找计数器
         // 3. 如果Some(v)返回*v，否则返回0
         unimplemented!()
+    }
+    
+    pub fn check_deadlock(&self, timeout_minutes: u64) -> bool {
+        // TODO: 死锁检测：检查是否超过指定时间无进度
+        // 1. 获取当前UTC时间
+        // 2. 计算当前时间与last_progress_at的差值
+        // 3. 如果差值超过timeout_minutes分钟，返回true（检测到死锁）
+        // 4. 否则返回false
+        todo!()
     }
 }
 
@@ -258,6 +243,30 @@ pub enum WorkflowStatus {
 ```rust
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
+
+/// 工作流Session存储设计
+/// 
+/// 工作流Session存储工作流运行时状态，包括：
+/// 
+/// 1. **计数器（select/require）**
+///    - `counters: DashMap<CounterKey, u32>`
+///    - select触发时：调用`increment_counter(option)`使计数器+1
+///    - require评估时：调用`get_counter(option)`获取计数器值，要求>0
+///    - 计数器在工作流全局作用域内共享，不同边的相同选项名共享同一计数器
+/// 
+/// 2. **全局变量**
+///    - `variables: DashMap<VariableKey, Value>`
+///    - 存储工作流级别的共享数据，如`initial_input`等
+///    - 可通过`@params.<param_name>`在边条件中引用workflow_params
+/// 
+/// 3. **节点执行上下文**
+///    - `node_states: DashMap<String, NodeRuntimeState>`：节点状态（Waiting/Running/Success/Failed/Skipped）
+///    - `active_nodes: DashSet<String>`：当前活动节点集合
+///    - `transition_messages: DashMap<String, String>`：节点转场时传递的消息
+/// 
+/// 4. **死锁检测**
+///    - `last_progress_at: DateTime<Utc>`：记录最后进度时间
+///    - 超过5分钟（DEADLOCK_TIMEOUT_MINUTES）无进度时触发中断
 
 /// 工作流仓储接口
 #[async_trait]
@@ -295,28 +304,28 @@ pub enum WorkflowEvent {
     },
     NodeStarted {
         session_ulid: SessionUlid,
-        node_ulid: NodeUlid,
+        node_id: String,
         agent_ulid: AgentUlid,
     },
     NodeCompleted {
         session_ulid: SessionUlid,
-        node_ulid: NodeUlid,
+        node_id: String,
         output: String,
     },
     NodeFailed {
         session_ulid: SessionUlid,
-        node_ulid: NodeUlid,
+        node_id: String,
         error: String,
     },
     NodeTransitionIntent {
         session_ulid: SessionUlid,
-        node_ulid: NodeUlid,
+        node_id: String,
         message: Option<String>,
     },
     EdgeTriggered {
         session_ulid: SessionUlid,
-        from: NodeUlid,
-        to: NodeUlid,
+        from: String,
+        to: String,
         option: Option<String>,
     },
     WorkflowCompleted {
@@ -325,6 +334,10 @@ pub enum WorkflowEvent {
     WorkflowFailed {
         session_ulid: SessionUlid,
         reason: String,
+    },
+    DeadlockDetected {
+        session_ulid: SessionUlid,
+        timeout_minutes: u64,
     },
 }
 
@@ -367,7 +380,7 @@ impl WorkflowEngine {
     pub async fn handle_node_complete(
         &self,
         runtime: &mut WorkflowRuntime,
-        node_ulid: NodeUlid,
+        node_id: &str,
         output: String,
     ) -> Result<(), WorkflowError> {
         // TODO: 实现节点完成处理
@@ -382,24 +395,25 @@ impl WorkflowEngine {
     pub fn find_start_nodes(
         &self,
         definition: &WorkflowDefinition,
-    ) -> Vec<NodeUlid> {
+    ) -> Vec<String> {
         // TODO: 查找起始节点
         // 1. 创建HashSet收集所有有入边的节点ID
-        // 2. 遍历所有edges，将target（to）加入HashSet
+        // 2. 遍历所有edges，将to字段加入HashSet
         // 3. 遍历所有nodes，返回不在HashSet中的节点（无入边的节点）
+        // 4. 返回节点ID字符串列表
         todo!()
     }
     
     pub fn evaluate_edges(
         &self,
         runtime: &WorkflowRuntime,
-        current_node: &NodeUlid,
-    ) -> Vec<NodeUlid> {
+        current_node: &str,
+    ) -> Vec<String> {
         // TODO: 评估边的条件以确定下一个节点
         // 1. 查找定义中从current_node出发的所有边
         // 2. 对每条边调用evaluate_requirement评估条件
         // 3. 收集所有条件满足的边的target节点
-        // 4. 返回目标节点ID列表
+        // 4. 返回目标节点ID字符串列表
         todo!()
     }
 }
@@ -454,24 +468,26 @@ sequenceDiagram
 ### 5.1 条件语法
 
 ```toml
+# select：触发时计数器+1，可多次累加
 [[edges]]
 from = "review-prd"
 to = "write-prd"
 select = [{ option = "reject" }]  # 触发时 counters.reject += 1
 
+# require：要求计数器>0才能执行
 [[edges]]
 from = "write-prd"
 to = "write-tech-doc"
 require = [
-  { option = "approve_prd", min_count = 1 }  # 需要 counters.approve_prd > 0
+  { option = "approve_prd", min_count = 1 }  # 需要 counters.approve_prd >= 1
 ]
 
-# 支持参数引用
+# 参数引用：使用 @params.<param_name> 格式
 [[edges]]
 from = "review-prd"
 to = "final-approve"
 require = [
-  { option = "@params.min_approvers", min_count = 1, param_ref = "min_approvers" }  # 引用workflow_params
+  { option = "@params.min_approvers", min_count = 1 }  # 引用workflow_params.min_approvers
 ]
 ```
 
@@ -502,7 +518,7 @@ impl WorkflowEngine {
 ```rust
 pub struct WorkflowTransitionTool {
     runtime: Arc<RwLock<WorkflowRuntime>>,
-    node_ulid: NodeUlid,
+    node_id: String,
 }
 
 #[async_trait]
@@ -550,7 +566,7 @@ impl ToolExecutor for WorkflowTransitionTool {
 /// 无条件转场工具 - 对应需求文档的 workflow::pass
 pub struct PassTool {
     runtime: Arc<RwLock<WorkflowRuntime>>,
-    node_ulid: NodeUlid,
+    node_id: String,
 }
 
 #[async_trait]
@@ -598,7 +614,7 @@ impl ToolExecutor for PassTool {
 pub async fn register_workflow_tools(
     registry: &dyn ToolRegistry,
     runtime: Arc<RwLock<WorkflowRuntime>>,
-    node_ulid: NodeUlid,
+    node_id: &str,
 ) {
     // TODO: 注册工作流相关工具
     // 1. 注册 workflow 工具（WorkflowTransitionTool）
@@ -655,13 +671,13 @@ to = "review-prd"
 [[edges]]
 from = "review-prd"
 to = "write-prd"
-select = ["reject"]
+select = [{ option = "reject" }]  # 触发时 counters.reject += 1
 
 [[edges]]
 from = "review-prd"
 to = "write-tech-doc"
 require = [
-  { option = "approve_prd", min_count = 1 }
+  { option = "approve_prd", min_count = 1 }  # 需要 counters.approve_prd >= 1
 ]
 
 [[edges]]
@@ -671,7 +687,7 @@ to = "review-tech-doc"
 [[edges]]
 from = "review-tech-doc"
 to = "write-tech-doc"
-select = ["reject"]
+select = [{ option = "reject" }]
 
 [[edges]]
 from = "review-tech-doc"
@@ -687,7 +703,7 @@ to = "review-impl"
 [[edges]]
 from = "review-impl"
 to = "write-impl"
-select = ["reject"]
+select = [{ option = "reject" }]
 
 [[edges]]
 from = "review-impl"
@@ -738,11 +754,15 @@ pub trait WorkflowControl: Send + Sync {
 
 ## 9. 错误处理
 
-```rust
+/// 死锁检测超时时间（分钟）
+/// 
+/// 超过此时间无进度（无节点完成、无计数器变化）时，触发死锁检测中断
+pub const DEADLOCK_TIMEOUT_MINUTES: u64 = 5;
+
 #[derive(Debug, Error)]
 pub enum WorkflowError {
     #[error("节点未找到: {0}")]
-    NodeNotFound(NodeUlid),
+    NodeNotFound(String),
     
     #[error("没有起始节点")]
     NoStartNode,
@@ -753,8 +773,8 @@ pub enum WorkflowError {
     #[error("工作流已完成")]
     WorkflowCompleted,
     
-    #[error("死锁检测：超过5分钟无进度")]
-    DeadlockDetected,
+    #[error("死锁检测：超过{0}分钟无进度")]
+    DeadlockDetected(u64),
     
     #[error("存储错误: {0}")]
     Storage(#[from] StorageError),

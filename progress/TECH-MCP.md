@@ -115,39 +115,64 @@ impl ToolExecutor for McpToolWrapper {
 
 ### 3.3 工具定义
 
+MCP工具采用**按需加载**模式，通过 `activate` 工具激活。
+
 | 工具 | 功能 | 超时 |
 |------|------|------|
-| `mcp::server_name` | 调用MCP服务器工具 | 60秒 |
+| `mcp::context7` | 调用context7-mcp服务器工具 | 60秒 |
+| `mcp::figma` | 调用Figma MCP服务器工具 | 60秒 |
+| `mcp::<server_name>` | 调用指定MCP服务器工具（动态生成） | 60秒 |
 
-### 3.4 工具注册
+> 注：工具名称 `xxx` 对应配置文件 `mcp_servers.xxx`。配置名称中的特殊字符（如 `-`）会映射为下划线（如 `my-tool` → `mcp::my_tool`）。
+
+### 3.4 按需加载机制
+
+MCP采用**按需加载**模式，不在启动时初始化所有MCP服务器，而是通过 `activate` 工具动态激活。
 
 ```rust
-pub async fn register_mcp_tools(
+pub enum ActivateContent {
+    Mcp { server_name: String },
+    Skill { skill_id: SkillUlid },
+}
+
+pub async fn activate_mcp(
     manager: &McpManager,
     registry: &mut dyn ToolRegistry,
     server_name: &str,
-) -> Result<usize, McpError> {
+) -> Result<ActivateResult, McpError> {
     // [TODO] 实现要点说明
-    // 1. 根据 server_name 获取服务器配置
-    // 2. 创建连接（stdio或http方式）
-    // 3. 发送 initialize 请求进行协议握手
-    // 4. 发送 tools/list 获取可用工具列表
-    // 5. 为每个工具创建 McpToolWrapper
-    // 6. 将工具包装器注册到 ToolRegistry
-    // 7. 返回注册的工具数量
-
-    // 错误处理策略：
-    // - 连接失败：立即返回错误，不注册任何工具
-    // - 部分工具注册失败：记录失败工具，继续注册其他工具
-    // - 返回成功注册的工具数量（可能为0）
-    // - 所有工具都失败：返回错误，包含失败详情
+    // 1. 检查该MCP服务器是否已激活（已注册工具）
+    // 2. 如果已激活，返回已激活的工具列表
+    // 3. 如果未激活，执行以下步骤：
+    //    a. 根据 server_name 获取服务器配置
+    //    b. 创建连接（stdio或http方式）
+    //    c. 发送 initialize 请求进行协议握手
+    //    d. 发送 tools/list 获取可用工具列表
+    //    e. 为每个工具创建 McpToolWrapper（工具名格式：mcp::<server_name>::<tool_name>）
+    //    f. 将工具包装器注册到 ToolRegistry
+    //    g. 缓存连接以便复用
+    // 4. 返回激活结果，包括：
+    //    - 激活的服务器名称
+    //    - 注册的工具数量
+    //    - 工具定义列表（用于提示Agent）
+    
+    // 连接管理策略：
+    // - 激活时创建连接，保持长连接
+    // - 工具调用复用已有连接
+    // - 定期心跳保活（30秒间隔）
+    // - 连接断开时自动重连（最多3次）
     unimplemented!()
 }
-```
 
-## 4. 传输实现
+pub struct ActivateResult {
+    pub server_name: String,
+    pub tools_registered: usize,
+    pub tool_definitions: Vec<ToolDefinition>,
+}
 
-### 4.1 Stdio传输
+### 3.5 传输实现
+
+#### 3.5.1 Stdio传输
 
 ```rust
 pub async fn connect_stdio(
@@ -164,7 +189,7 @@ pub async fn connect_stdio(
 }
 ```
 
-### 4.2 HTTP传输
+#### 3.5.2 HTTP传输
 
 ```rust
 pub async fn connect_http(
@@ -346,7 +371,7 @@ pub enum DisconnectReason {
 ### Cargo.toml 配置
 
 ```toml
-rmcp = { version = "1.1", features = [
+rmcp = { version = "1.1.0", features = [
     "client",
     "transport-child-process",
     "transport-streamable-http-client-reqwest",

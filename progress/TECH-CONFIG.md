@@ -68,6 +68,18 @@ NeoCo 支持多级配置目录，按优先级从高到低：
 └── workflows/
 ```
 
+### 2.2 Agent查找优先级
+
+工作流中的Agent定义查找优先级（从高到低）：
+
+1. **最高优先级**：`workflows/<workflow_id>/agents/<agent_id>.md`（工作流特定配置）
+2. **次优先**：`.neoco/agents/<agent_id>.md`（当前项目 .neoco）
+3. **次优先**：`.agents/agents/<agent_id>.md`（当前项目 .agents）
+4. **次后备**：`~/.config/neoco/agents/<agent_id>.md`（全局主配置）
+5. **最后后备**：`~/.agents/agents/<agent_id>.md`（全局通用配置）
+
+> 注：工作流特定配置优先级最高，体现"工作流目录 > 配置目录"规则
+
 ## 3. 配置数据结构
 
 ### 3.1 完整配置
@@ -83,6 +95,11 @@ pub struct Config {
 }
 
 /// 模型组配置
+/// 格式示例：
+/// [model_groups.frontier]
+/// models = ["zhipuai/glm-4.7"]
+/// [model_groups.smart]
+/// models = ["zhipuai/glm-4.7?reasoning_effort=high"]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelGroups(HashMap<String, ModelGroup>);
 
@@ -110,20 +127,14 @@ impl std::ops::Deref for ModelGroups {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelGroup {
-    pub models: Vec<ModelRef>,
+    /// 模型列表，支持字符串数组格式
+    /// 格式：["provider/model", "provider/model?param=value"]
+    /// 追加语法：["+new-model"] 表示追加而非替换
+    pub models: Vec<String>,
 }
 
-/// 模型引用（支持参数）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelRef {
-    pub provider: String,
-    pub name: String,
-    #[serde(default)]
-    pub params: HashMap<String, Value>,
-}
-
-impl ModelRef {
-    pub fn parse(s: &str) -> Result<Self, ConfigError> {
+impl ModelGroup {
+    pub fn parse_model_string(s: &str) -> Result<(&str, HashMap<String, String>), ConfigError> {
         // 格式：provider/model?param=value
         // TODO(#??): 实现解析逻辑
         unimplemented!()
@@ -158,6 +169,18 @@ impl std::ops::Deref for ModelGroupRef {
 }
 
 /// 模型提供商配置
+/// 格式示例：
+/// [model_providers.zhipuai]
+/// type = "openai"
+/// name = "ZhipuAI"
+/// base = "https://open.bigmodel.cn/api/paas/v4"
+/// api_key_env = "ZHIPU_API_KEY"
+/// 
+/// [model_providers.minimax-cn]
+/// type = "openai"
+/// name = "MiniMax (CN)"
+/// base = "https://api.minimaxi.com/v1"
+/// api_key_envs = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelProviders(HashMap<String, ModelProvider>);
 
@@ -184,13 +207,32 @@ pub struct ModelProvider {
     #[serde(rename = "type")]
     pub provider_type: ProviderType,
     pub name: String,
-    pub base_url: Url,
-    pub api_key: ApiKeyConfig,
+    /// API基础URL
+    pub base: String,
+    /// API密钥（环境变量名）
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    /// API密钥列表（多个环境变量，轮询使用）
+    #[serde(default, rename = "api_key_envs")]
+    pub api_key_envs: Vec<String>,
+    /// 直接嵌入的API密钥（不推荐）
+    #[serde(default)]
+    pub api_key: Option<String>,
     #[serde(default)]
     pub default_params: HashMap<String, Value>,
     #[serde(default)]
     pub retry: RetryConfig,
-    pub timeout: Duration,
+    #[serde(default)]
+    pub timeout: Option<Duration>,
+}
+
+impl ModelProvider {
+    /// 获取API密钥，按优先级：api_key_env > api_key_envs > api_key
+    pub fn resolve_api_key(&self) -> Result<SecretString, ConfigError> {
+        // TODO(#??): 实现解析逻辑
+        // 优先级：api_key_env > api_key_envs > api_key
+        unimplemented!()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,30 +243,6 @@ pub enum ProviderType {
     Anthropic,
     #[serde(rename = "openrouter")]
     OpenRouter,
-}
-
-/// API密钥配置
-/// 
-/// 使用 zeroize crate 确保密钥在内存在放时自动清零，防止内存泄露
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "source", rename_all = "snake_case")]
-pub enum ApiKeyConfig {
-    Env { name: String },
-    EnvList { names: Vec<String> },
-    Direct { key: SecretString },
-}
-
-impl ApiKeyConfig {
-    pub fn resolve(&self) -> Result<SecretString, ConfigError> {
-        // 实现要点：
-        // 1. 根据 ApiKeyConfig 类型（Env/EnvList/Direct）获取 API 密钥
-        // 2. Env 类型：从指定名称的环境变量读取
-        // 3. EnvList 类型：遍历多个环境变量名，返回第一个存在的值
-        // 4. Direct 类型：直接返回嵌入的密钥（注意：生产环境避免使用）
-        // 5. 正确处理密钥不存在的情况，返回对应的 ConfigError
-        // 6. 使用 zeroize::Zeroize 确保密钥在Drop时自动清零
-        unimplemented!()
-    }
 }
 
 /// 重试配置
@@ -255,6 +273,17 @@ impl Default for RetryConfig {
 }
 
 /// MCP服务器配置
+/// 格式示例（本地stdio形式）：
+/// [mcp_servers.context7]
+/// command = "npx"
+/// args = ["-y", "@upstash/context7-mcp"]
+/// env = { MY_ENV_VAR = "MY_ENV_VALUE" }
+/// 
+/// 格式示例（HTTP形式）：
+/// [mcp_servers.figma]
+/// url = "https://mcp.figma.com/mcp"
+/// bearer_token_env = "FIGMA_OAUTH_TOKEN"
+/// http_headers = { "X-Figma-Region" = "us-east-1" }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct McpServers(HashMap<String, McpServerConfig>);
 
@@ -278,26 +307,24 @@ impl std::ops::Deref for McpServers {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerConfig {
-    pub transport: McpTransportConfig,
+    /// Stdio模式：命令
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Stdio模式：命令参数
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+    /// Stdio模式：环境变量
     #[serde(default)]
     pub env: HashMap<String, String>,
-}
-
-/// MCP传输配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum McpTransportConfig {
-    Stdio {
-        command: String,
-        args: Vec<String>,
-    },
-    Http {
-        url: Url,
-        #[serde(default)]
-        headers: HashMap<String, String>,
-        #[serde(default)]
-        bearer_token: Option<SecretString>,
-    },
+    /// HTTP模式：URL
+    #[serde(default)]
+    pub url: Option<String>,
+    /// HTTP模式：Bearer Token环境变量名
+    #[serde(default, rename = "bearer_token_env")]
+    pub bearer_token_env: Option<String>,
+    /// HTTP模式：自定义请求头
+    #[serde(default, rename = "http_headers")]
+    pub http_headers: HashMap<String, String>,
 }
 ```
 
@@ -400,7 +427,7 @@ flowchart LR
 **合并规则：**
 - 高优先级配置覆盖低优先级相同键
 - 数组类型采用替换而非合并
-  - 字符串数组：如需追加而非替换，使用特殊语法 `+<item>`（例如 `models = [+new-model]`）
+  - 字符串数组：如需追加而非替换，使用特殊语法 `"+<item>"`（例如 `models = ["+new-model"]`）
   - 对象数组：使用 TOML 内联表语法追加对象（例如 `models = [+{ provider = "openai", name = "gpt-5.2" }]`）
   - 转义：以 `+` 开头的字符串值需使用 `++` 前缀表示字面值（例如 `models = [++my-value]` 表示值为 `+my-value`）
 - 嵌套对象采用深度合并
@@ -527,8 +554,8 @@ impl ConfigValidator {
     fn validate_providers(config: &Config) -> Result<(), ConfigError> {
         // [TODO] 实现要点说明
         // 1. 遍历所有模型提供商配置
-        // 2. 调用 provider.api_key.resolve() 验证 API 密钥是否可获取
-        // 3. 验证 base_url 是否有有效的主机名（host_str() 不为 None）
+        // 2. 调用 provider.resolve_api_key() 验证 API 密钥是否可获取（优先级：api_key_env > api_key_envs > api_key）
+        // 3. 验证 base 是否有有效的主机名
         // 4. 返回对应的验证错误信息
         unimplemented!()
     }
@@ -549,52 +576,58 @@ impl ConfigValidator {
 ```toml
 # neoco.toml
 
+# 模型组定义（字符串数组格式）
 [model_groups.frontier]
-models = [{ provider = "zhipuai", name = "glm-4.7" }]
+models = ["zhipuai/glm-4.7"]
 
 [model_groups.smart]
-models = [{ provider = "zhipuai", name = "glm-4.7", params = { reasoning_effort = "high" } }]
+models = ["zhipuai/glm-4.7?reasoning_effort=high"]
+
+[model_groups.review]
+models = ["zhipuai/glm-4.7?reasoning_effort=high&temperature=0.1"]
 
 [model_groups.balanced]
-models = [
-    { provider = "zhipuai", name = "glm-4.7" },
-    { provider = "minimax-cn", name = "MiniMax-M2.5" }
-]
+models = ["zhipuai/glm-4.7", "minimax-cn/MiniMax-M2.5"]
 
 [model_groups.fast]
-models = [{ provider = "zhipuai", name = "glm-4.7-flashx" }]
+models = ["zhipuai/glm-4.7-flashx"]
 
+[model_groups.image]
+models = ["zhipuai/glm-4.6v"]
+
+# 模型提供商配置（扁平结构）
 [model_providers.zhipuai]
 type = "openai"
 name = "ZhipuAI"
-base_url = "https://open.bigmodel.cn/api/paas/v4"
-api_key = { source = "env", name = "ZHIPU_API_KEY" }
-timeout = { secs = 60, nanos = 0 }
+base = "https://open.bigmodel.cn/api/paas/v4"
+api_key_env = "ZHIPU_API_KEY"
 
-[model_providers.zhipuai.retry]
-max_retries = 3
+[model_providers.zhipuai-coding-plan]
+type = "openai"
+name = "ZhipuAI Coding Plan"
+base = "https://open.bigmodel.cn/api/coding/paas/v4"
+api_key_env = "ZHIPU_API_KEY"
 
 [model_providers.minimax-cn]
 type = "openai"
 name = "MiniMax (CN)"
-base_url = "https://api.minimaxi.com/v1"
-api_key = { source = "env_list", names = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"] }
+base = "https://api.minimaxi.com/v1"
+api_key_envs = ["MINIMAX_API_KEY", "MINIMAX_API_KEY_2"]
 
+# MCP服务器配置（本地stdio形式，扁平结构）
 [mcp_servers.context7]
-env = { MY_ENV_VAR = "MY_ENV_VALUE" }
-
-[mcp_servers.context7.transport]
-type = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
+env = { MY_ENV_VAR = "MY_ENV_VALUE" }
 
+# MCP服务器配置（HTTP形式）
 [mcp_servers.figma]
-
-[mcp_servers.figma.transport]
-type = "http"
 url = "https://mcp.figma.com/mcp"
-headers = { "X-Figma-Region" = "us-east-1" }
-bearer_token = { source = "env", name = "FIGMA_OAUTH_TOKEN" }
+bearer_token_env = "FIGMA_OAUTH_TOKEN"
+http_headers = { "X-Figma-Region" = "us-east-1" }
+
+# 数组追加语法示例
+# models = ["+new-model"]  # 追加而非替换
 
 [system]
 [system.storage]

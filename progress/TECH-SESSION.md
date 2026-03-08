@@ -166,6 +166,35 @@ pub struct SessionMetadata {
     pub custom: HashMap<String, Value>,
 }
 
+/// 工作流Session状态
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorkflowState {
+    /// 计数器：select触发时+1，require检查计数>0
+    #[serde(default)]
+    pub counters: HashMap<String, u32>,
+    /// 全局变量：边转场时更新
+    #[serde(default)]
+    pub variables: HashMap<String, String>,
+}
+
+impl WorkflowState {
+    pub fn increment_counter(&mut self, option: &str) {
+        *self.counters.entry(option.to_string()).or_insert(0) += 1;
+    }
+
+    pub fn get_counter(&self, option: &str) -> u32 {
+        self.counters.get(option).copied().unwrap_or(0)
+    }
+
+    pub fn set_variable(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.variables.insert(key.into(), value.into());
+    }
+
+    pub fn get_variable(&self, key: &str) -> Option<&String> {
+        self.variables.get(key)
+    }
+}
+
 /// Session领域模型（不含storage字段）
 pub struct Session {
     id: SessionUlid,
@@ -174,6 +203,7 @@ pub struct Session {
     hierarchy: AgentHierarchy,
     id_allocator: MessageIdAllocator,
     metadata: SessionMetadata,
+    workflow_state: Option<WorkflowState>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -185,6 +215,12 @@ impl Session {
     ) -> Self {
         let id = SessionUlid::new();
         let root_agent_ulid = AgentUlid::new_root(&id);
+
+        // 工作流类型时初始化workflow_state
+        let workflow_state = match &session_type {
+            SessionType::Workflow { workflow_id: _ } => Some(WorkflowState::default()),
+            _ => None,
+        };
         
         Self {
             id: id.clone(),
@@ -193,6 +229,7 @@ impl Session {
             hierarchy: AgentHierarchy::new(root_agent_ulid),
             id_allocator: MessageIdAllocator::new(1),
             metadata,
+            workflow_state,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -204,8 +241,11 @@ impl Session {
     pub fn hierarchy(&self) -> &AgentHierarchy { &self.hierarchy }
     pub fn id_allocator(&self) -> &MessageIdAllocator { &self.id_allocator }
     pub fn metadata(&self) -> &SessionMetadata { &self.metadata }
+    pub fn workflow_state(&self) -> Option<&WorkflowState> { self.workflow_state.as_ref() }
+    pub fn workflow_state_mut(&mut self) -> Option<&mut WorkflowState> { self.workflow_state.as_mut() }
     pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
     pub fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
+    pub fn is_workflow(&self) -> bool { self.workflow_state.is_some() }
     
     pub fn hierarchy_mut(&mut self) -> &mut AgentHierarchy { &mut self.hierarchy }
     
@@ -235,6 +275,7 @@ pub struct SessionMeta {
     pub session_type: SessionType,
     pub root_agent_ulid: AgentUlid,
     pub next_message_id: u64,
+    pub workflow_state: Option<WorkflowState>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub metadata: SessionMetadata,
@@ -390,6 +431,7 @@ impl AgentDefinition {
 #[derive(Debug, Clone)]
 pub struct Agent {
     pub id: AgentUlid,
+    pub session_ulid: SessionUlid,
     pub parent_ulid: Option<AgentUlid>,
     pub definition_id: String,
     pub messages: Vec<Message>,
@@ -402,14 +444,36 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn new(
+    pub fn new_root(
         id: AgentUlid,
-        parent_ulid: Option<AgentUlid>,
+        session_ulid: SessionUlid,
         definition_id: String,
     ) -> Self {
         Self {
             id,
-            parent_ulid,
+            session_ulid,
+            parent_ulid: None,
+            definition_id,
+            messages: Vec::new(),
+            state: AgentState::Idle,
+            active_tools: Vec::new(),
+            active_mcp: Vec::new(),
+            active_skills: Vec::new(),
+            created_at: Utc::now(),
+            last_activity: Utc::now(),
+        }
+    }
+
+    pub fn new_child(
+        id: AgentUlid,
+        session_ulid: SessionUlid,
+        parent_ulid: AgentUlid,
+        definition_id: String,
+    ) -> Self {
+        Self {
+            id,
+            session_ulid,
+            parent_ulid: Some(parent_ulid),
             definition_id,
             messages: Vec::new(),
             state: AgentState::Idle,
@@ -739,6 +803,105 @@ graph TD
     A3 --> A7
 ```
 
+### 3.5 工作流双层Session结构
+
+> **重要概念**：工作流Session（Workflow-Level） + 节点Session（Node-Level）双层结构
+
+```mermaid
+graph TB
+    subgraph "工作流层（Workflow-Level）"
+        W[工作流Session<br/>workflow_session_id]
+        W_counters[counters: HashMap&lt;String, u32&gt;]
+        W_vars[variables: HashMap&lt;String, String&gt;]
+    end
+    
+    subgraph "节点层（Node-Level）"
+        N1[节点Session 1<br/>node_session_id_1]
+        N2[节点Session 2<br/>node_session_id_2]
+        N3[节点Session 3<br/>node_session_id_3]
+    end
+    
+    subgraph "Agent树（每个节点内）"
+        A_root[根Agent<br/>parent_ulid: None]
+        A_child1[子Agent 1<br/>parent_ulid: root]
+        A_child2[子Agent 2<br/>parent_ulid: root]
+    end
+    
+    W --> N1
+    W --> N2
+    W --> N3
+    
+    N1 --> A_root
+    A_root --> A_child1
+    A_root --> A_child2
+```
+
+**关键区别**：
+
+| 维度 | 工作流层 | 节点层 |
+|------|----------|--------|
+| **作用** | 任务编排 | 任务执行 |
+| **结构** | DAG图（节点+边） | Agent树（parent_ulid） |
+| **存储** | counters、variables | Agent消息历史 |
+| **关系** | 边条件控制节点转换 | parent_ulid控制Agent协作 |
+| **示例** | `select: { option: "approve" }` | 上级Agent创建下级Agent |
+
+**节点Agent定位**：
+
+- 工作流的节点Agent同时也是节点内的最上级Agent
+- 节点Agent的ULID与节点Session ID相同
+- 消息存储路径：`~/.local/neoco/(workflow_session_id)/agents/(node_session_id).toml`
+
+```rust
+/// 工作流Session（顶级）
+pub struct WorkflowSession {
+    id: SessionUlid,
+    workflow_id: String,
+    state: WorkflowState,  // counters + variables
+    nodes: Vec<NodeSession>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+/// 节点Session（工作流子Session）
+pub struct NodeSession {
+    id: SessionUlid,
+    workflow_id: SessionUlid,  // 指向工作流Session
+    node_id: String,           // 节点定义ID
+    root_agent_ulid: AgentUlid,
+    hierarchy: AgentHierarchy,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl WorkflowSession {
+    pub fn new(workflow_id: String) -> Self {
+        // TODO: 实现要点
+        // 1. 创建工作流Session ID
+        // 2. 初始化WorkflowState（counters、variables）
+        // 3. 返回WorkflowSession
+        unimplemented!()
+    }
+
+    pub fn transition(&mut self, from: &str, to: &str, option: Option<&str>) -> Result<(), WorkflowError> {
+        // TODO: 实现边转场逻辑
+        // 1. 如果有option，调用 workflow_state.increment_counter(option)
+        // 2. 检查目标边的require条件
+        // 3. 更新 current_phase 变量
+        // 4. 返回成功或错误
+        unimplemented!()
+    }
+
+    pub fn check_requirement(&self, edge: &Edge) -> bool {
+        // TODO: 实现require条件检查
+        // 1. 遍历edge.require中的每个条件
+        // 2. 检查对应counter是否 > min_count
+        // 3. 所有条件满足返回true
+        unimplemented!()
+    }
+}
+```
+
 ## 4. 存储设计
 
 ### 4.1 存储后端接口
@@ -768,41 +931,41 @@ pub trait StorageBackend: Send + Sync {
 ```text
 ~/.local/neoco/
 └── {session_id}/
-    ├── session.toml          # Session元数据
-    ├── hierarchy.toml        # Agent层级关系（使用TOML格式，与需求文档一致）
     └── agents/
-        └── {agent_id}.toml  # Agent消息文件
+        └── {agent_id}.toml  # Agent消息文件，包含parent_ulid恢复树形结构
 ```
 
-**Session元数据（session.toml）：**
+> **注意**：不强制要求单独的session.toml，Session元数据可嵌入Agent文件中或使用其他简化方案。
+
+**Agent消息（{agent_id}.toml）：**
 
 ```toml
 [id]
-session_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
+ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # Agent ULID
 
 [session]
-type = "workflow"
+session_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # 根Agent使用Session ULID
+session_type = "workflow"  # direct / tui / workflow
 created_at = "2026-03-04T10:00:00Z"
 updated_at = "2026-03-04T10:30:00Z"
+
+[agent]
+definition_id = "coder"
+# parent_ulid 字段 - 最上层Agent省略此字段，子Agent包含上级Agent的ULID
+parent_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
+state = "running"
 
 [metadata]
 user_id = "user123"
 working_dir = "/home/user/projects"
 
+# 工作流Session字段（仅工作流Session根节点包含）
 [workflow]
 workflow_id = "prd"
-```
-
-**Agent消息（{agent_ulid}.toml）：**
-
-```toml
-[id]
-ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # 根Agent使用Session ULID
-
-[agent]
-definition_id = "coder"
-# parent_ulid 字段省略 - 根Agent无parent，反序列化时为 None
-state = "running"
+# 计数器：select触发时+1，require检查计数>0
+counters = { approve_prd = 0, approve_tech = 0 }
+# 全局变量
+variables = { last_artifact = "..." }
 
 [[messages]]
 id = 1
@@ -841,6 +1004,64 @@ timestamp = "2026-03-04T10:01:06Z"
 prompt_tokens = 100
 completion_tokens = 50
 total_tokens = 150
+```
+
+### 4.3 工作流Session设计（双层结构）
+
+> 工作流Session存储计数器、全局变量；节点Session存储节点执行上下文
+
+```text
+~/.local/neoco/
+└── {workflow_session_id}/           # 工作流Session根目录
+    ├── workflow.toml                # 工作流元数据（可选，简化设计）
+    └── agents/
+        ├── {workflow_session_id}.toml  # 工作流根Agent（也是第一个节点Agent）
+        │   # 包含workflow字段：counters、variables
+        └── {node_session_id}.toml      # 节点Session（后续节点Agent）
+            # 无workflow字段，复用工作流的counters/variables
+```
+
+**工作流根Agent（{workflow_session_id}.toml）：**
+
+```toml
+[id]
+ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
+
+[session]
+session_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
+session_type = "workflow"
+
+[agent]
+definition_id = "write-prd"
+# 根Agent无parent_ulid
+parent_ulid = null
+state = "running"
+
+[workflow]
+workflow_id = "prd"
+# 计数器：select触发时对应选项+1
+counters = { approve_prd = 0, reject = 0 }
+# 全局变量：边转场时更新
+variables = { last_artifact = "", current_phase = "write-prd" }
+```
+
+**节点Agent（{node_session_id}.toml）：**
+
+```toml
+[id]
+ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9B"
+
+[session]
+session_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # 指向工作流Session
+session_type = "workflow"
+
+[agent]
+definition_id = "review-prd"
+# 父Agent ULID - 可恢复完整Agent树形结构
+parent_ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
+state = "waiting"
+
+# 无workflow字段 - 共享工作流根Agent的counters/variables
 ```
 
 ## 5. Session生命周期

@@ -38,7 +38,7 @@ graph TB
 | 原则 | Arena 对应 | 上下文工程实践 |
 |------|------------|---------------|
 | Append-Only AMAP | 指针只往前推 | 在末尾追加 user/assistant/tool_result，不在中间插入 |
-| Demand Paging | 按需分配对象 | 技能按需加载，不预装到 system prompt |
+| Demand Paging | 按需分配对象 | 技能按需加载，不预装到 system prompt | 保持前缀稳定：按需加载确保追加顺序不变，KV Cache 匹配从第一个 token 逐一比对，前缀不变才能命中 cache |
 | Spatial Locality | 相邻分配 | 相关信息物理相邻，指南附着在 tool_result 上 |
 | Goldilocks Zone | 最佳 arena 大小 | 维持 40-70% 使用率 |
 | 批量释放 | reset 而非 free | 按区间压缩，不逐条删除 |
@@ -121,7 +121,7 @@ graph TD
 
 | Layer | 触发条件 | 压缩质量 | 说明 |
 |-------|---------|---------|------|
-| Layer A (Agent主动) | Agent自觉判断 | 高 | Agent判断"这段研究/调试已完成" → tag起点 → squash为summary |
+| Agent主动 | 上下文大小 ≥ 窗口×90% 且 Agent自觉判断"已完成" | 高 | Agent判断"这段研究/调试已完成" → tag起点 → squash为summary，局限性：Agent可能误判何时算"已完成"，导致压缩过早或过晚 |
 | Layer B (系统Pruning) | 布局失效 | 低 | 安全网，理想情况下永不触发 |
 
 **触发方式：**
@@ -129,7 +129,7 @@ graph TD
 | 方式 | 触发条件 | 说明 |
 |-----|---------|------|
 | Agent主动 | Agent调用 context::compact | Agent自觉管理内存 |
-| 自动触发 | 上下文大小 > 窗口×阈值(默认90%) | 触发 Layer B |
+| 自动触发 | 上下文大小 ≥ 窗口×90% | 达到模型上下文窗口的90%时自动触发 |
 | 手动触发 | /compact命令 | 用户主动 |
 
 ## 3. 核心Trait定义

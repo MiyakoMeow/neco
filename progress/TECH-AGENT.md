@@ -391,12 +391,16 @@ sequenceDiagram
         &self,
         parent_ulid: AgentUlid,
         definition_id: String,
+        model_override: Option<String>,
+        model_group_override: Option<String>,
+        prompts_override: Option<Vec<String>>,
     ) -> Result<AgentUlid, AgentError> {
         // TODO: 实现子Agent创建逻辑
         // 1. 验证父Agent存在
         // 2. 在Session中创建子Agent
-        // 3. 发布AgentCreated事件
-        // 4. 返回AgentUlid
+        // 3. 应用model/model_group/prompts覆盖（如果提供）
+        // 4. 发布AgentCreated事件
+        // 5. 返回AgentUlid
         unimplemented!()
     }
 ```
@@ -512,20 +516,31 @@ impl ToolExecutor for SpawnAgentTool {
             schema: json!({
                 "type": "object",
                 "properties": {
-                    "agent_id": {
+                    "definition_id": {
                         "type": "string",
-                        "description": "要生成的Agent标识"
+                        "description": "要生成的Agent定义标识（来自配置目录或工作流目录的agents定义）"
                     },
                     "task": {
                         "type": "string",
                         "description": "分配给下级Agent的任务描述"
                     },
+                    "model": {
+                        "type": "string",
+                        "description": "覆盖使用的模型（可选）。\n子Agent默认继承父Agent的model配置，\n可通过此参数覆盖继承的值。\n\n格式：\n- 字符串形式：'anthropic/claude-sonnet-4-20250514'\n- 与model_group同时存在时，model_group优先"
+                    },
                     "model_group": {
                         "type": "string",
                         "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值。\n\n层级继承语义：\n- 如果不提供此参数，子Agent使用父Agent的model_group\n- 如果提供此参数，子Agent使用指定的model_group，忽略继承值\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
+                    },
+                    "prompts": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "覆盖使用的提示词组件列表（可选）。\n子Agent默认继承父Agent的prompts，\n可通过此参数覆盖继承的值。"
                     }
                 },
-                "required": ["agent_id", "task"]
+                "required": ["definition_id", "task"]
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),

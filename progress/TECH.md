@@ -157,7 +157,7 @@ sequenceDiagram
 |-------|------|----------|
 | `neoco-core` | 核心类型、强类型ID、事件系统、领域接口 | - |
 | `neoco-config` | 配置管理、类型安全配置结构 | neoco-core |
-| `neoco-model` | 模型调用服务、故障转移 | neoco-core |
+| `neoco-model` | 模型调用服务、故障转移 | neoco-core, **async-openai 0.33.0** |
 | `neoco-session` | Session领域模型、Agent领域模型、仓库接口 | neoco-core |
 | `neoco-storage` | 存储后端实现（文件系统） | neoco-core, neoco-session |
 | `neoco-mcp` | MCP客户端 | neoco-core |
@@ -267,7 +267,7 @@ graph TD
 | 类型 | 结构 | 校验规则 |
 |------|------|----------|
 | `SessionUlid` | `struct SessionUlid(Ulid)` | 26位Ulid字符串 |
-| `AgentUlid` | `struct AgentUlid { session: Ulid, agent: Ulid }` | 双Ulid结构。session字段直接标识所属Session，agent字段标识唯一Agent实例。查询Agent所属Session可直接从AgentUlid.session获取，无需通过SessionManager索引 |
+| `AgentUlid` | `struct AgentUlid { session: Ulid, agent: Ulid }` | 双Ulid结构。<br>- **第一个Agent（最上层）**：使用Session ULID（session与agent字段相同）<br>- **后续Agent**：生成独立ULID（session字段标识所属Session，agent字段标识唯一Agent实例）<br>查询Agent所属Session可直接从AgentUlid.session获取，无需通过SessionManager索引 |
 | `MessageId` | `struct MessageId(u64)` | 原子自增，Session范围唯一（保持u64） |
 | `NodeUlid` | `struct NodeUlid(Ulid)` | 26位Ulid字符串 |
 | `ToolId` | `struct ToolId(Vec<String>)` | namespace::name 格式（如 `["fs", "read"]`） |
@@ -1159,6 +1159,25 @@ NeoCo提供两种扩展Agent能力的机制：**提示词组件(Prompt Component
 | 二进制大小 | <20MB | OpenFang ~32MB |
 | 工具超时 | 默认30s | 可配置 |
 | 上下文上限 | 模型限制 | - |
+
+### 12.1.1 性能目标与安全平衡
+
+> 16层安全体系会带来一定的性能开销，设计时需在安全与性能间取得平衡。
+
+| 安全层级 | 潜在性能影响 | 优化策略 |
+|---------|------------|---------|
+| L1 WASM沙箱 | 燃料计量开销 | 批量计量、缓存编译 |
+| L2 Merkle哈希链 | 每消息额外哈希计算 | 异步批量计算 |
+| L3 污点追踪 | 数据流标记开销 | 仅追踪敏感路径 |
+| L4 Ed25519签名 | 签名验证延迟 | 预验证、缓存会话密钥 |
+| L5 SSRF防护 | DNS/IP查询 | 本地缓存黑名单 |
+| L6-16 其他层级 | 较小 | 异步执行、无感保护 |
+
+**平衡原则**：
+- 关键安全检查（如L5 SSRF、L12 Prompt注入）必须同步执行
+- 非关键检查（如L2 哈希链审计）可异步批量执行
+- 安全缓存（如L7 OFP会话密钥）减少重复认证开销
+- 性能敏感路径（如高频工具调用）采用延迟加载安全检查
 
 ### 12.2 优化策略
 

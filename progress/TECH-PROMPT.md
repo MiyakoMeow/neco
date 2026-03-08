@@ -33,10 +33,15 @@ sequenceDiagram
 ```text
 # prompts/ 子目录结构
 .neoco/prompts/
-├── base.md              # 基础提示词
+├── base.md              # 基础提示词（无头部信息，base即为name）
 ├── multi-agent.md       # 多智能体提示词
 └── custom.md           # 自定义提示词
 ```
+
+**提示词组件格式规范：**
+- 单个Markdown文件即为一个提示词组件
+- **无头部信息**，`xxx.md` 的文件名即为这个提示词组件的 `name`
+- 不应有Markdown标题（如 `# 标题`），组件内容直接从正文开始
 
 ### 2.2 组件类型
 
@@ -46,18 +51,27 @@ sequenceDiagram
 | `multi-agent` | 可创建子Agent时 | Agent可以生成下级 |
 | `multi-agent-child` | 作为子Agent时 | Agent有上级 |
 
+### 2.3 配置目录优先级
+
+配置目录支持多级查找，按优先级从高到低：
+
+1. **当前项目配置**：`.neoco/` 目录（项目根目录下）
+2. **当前项目配置**：`.agents/` 目录（项目根目录下）
+3. **主配置目录**：`~/.config/neoco`
+4. **通用配置目录**：`~/.agents/`
+
+> 注：工作流目录下的配置优先级最高，体现"工作流目录 > 配置目录"规则
+
 ## 3. 提示词内容
 
 ### 3.1 base 提示词
-
-```markdown
-# base 提示词组件
 
 你是NeoCo，一个原生支持多智能体协作的AI助手。
 
 ## 可用工具
 
 - activate: 激活额外能力
+- context: 上下文观测
 - fs: 文件系统操作
 - mcp: MCP服务器工具
 - multi-agent: 多智能体协作
@@ -67,12 +81,8 @@ sequenceDiagram
 
 - 谨慎使用文件写入操作
 - 遇到错误时先尝试理解原因再重试
-```
 
 ### 3.2 multi-agent 提示词
-
-```markdown
-# multi-agent 提示词组件
 
 你有能力生成下级Agent来协助完成任务。
 
@@ -84,7 +94,6 @@ sequenceDiagram
 ## 创建下级Agent
 
 使用 `multi-agent::spawn` 工具
-```
 
 ## 4. Agent配置
 
@@ -94,6 +103,34 @@ prompts:
   - base
   - multi-agent
 ```
+
+### 4.1 提示词合并规则
+
+Agent的最终提示词由以下两部分组成：
+
+1. **Markdown正文内容**：Agent文件中的Markdown主体内容作为基础提示词
+2. **prompts组件列表**：frontmatter中定义的`prompts`列表，按顺序追加
+
+**合并公式：**
+```
+最终提示词 = Markdown正文 + prompts列表项[0] + prompts列表项[1] + ...
+```
+
+**示例：**
+
+```yaml
+---
+prompts:
+  - base
+  - multi-agent
+---
+# Agent 提示词内容...
+```
+
+实际加载时：
+1. 首先加载Markdown正文：`# Agent 提示词内容...`
+2. 追加 `base` 提示词组件内容
+3. 追加 `multi-agent` 提示词组件内容
 
 ## 5. 接口规范
 
