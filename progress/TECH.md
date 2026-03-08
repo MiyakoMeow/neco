@@ -24,14 +24,12 @@ graph TB
     
     subgraph "应用编排层 Application Orchestration"
         SessionMgr[Session管理]
-        Workflow[工作流引擎]
         AgentMgr[Agent引擎]
     end
     
     subgraph "领域模型层 Domain Model"
         SessionDomain[Session领域]
         AgentDomain[Agent领域]
-        WorkflowDomain[Workflow领域]
         ToolDomain[工具领域]
     end
     
@@ -58,11 +56,9 @@ graph TB
     Agent --> SessionMgr
     
     SessionMgr --> AgentMgr
-    SessionMgr --> Workflow
     
     AgentMgr --> SessionDomain
     AgentMgr --> AgentDomain
-    Workflow --> WorkflowDomain
     
     AgentDomain --> ModelService
     AgentDomain --> ToolDomain
@@ -72,7 +68,6 @@ graph TB
     
     SessionDomain --> Storage
     AgentDomain --> Storage
-    WorkflowDomain --> Storage
     
     Config --> SessionMgr
     Config --> AgentMgr
@@ -89,7 +84,6 @@ graph LR
     subgraph "领域模型（不含外部依赖）"
         DM1[Session<br/>无storage字段]
         DM2[Agent<br/>无model_client]
-        DM3[Workflow<br/>无executor]
     end
     
     subgraph "基础设施（外部依赖）"
@@ -104,7 +98,6 @@ graph LR
     
     DM1 -.-> DI
     DM2 -.-> DI
-    DM3 -.-> DI
     DI --> INF1
     DI --> INF2
     DI --> INF3
@@ -164,7 +157,6 @@ sequenceDiagram
 | `neoco-skill` | Skills管理 | neoco-core |
 | `neoco-context` | 上下文管理（压缩+观测） | neoco-core |
 | `neoco-agent` | Agent引擎、Agent生命周期 | neoco-core, neoco-session, neoco-model |
-| `neoco-workflow` | 工作流引擎 | neoco-core, neoco-session |
 | `neoco-tool` | 工具执行器、工具注册表 | neoco-core |
 | `neoco-ui` | 用户接口 | neoco-core |
 | `neoco` | 主入口 | 所有上述crate |
@@ -181,14 +173,12 @@ graph TD
     
     subgraph "Application Orchestration"
         agent[neoco-agent]
-        workflow[neoco-workflow]
         session[neoco-session]
     end
     
     subgraph "Domain Model"
         session_domain[Session领域]
         agent_domain[Agent领域]
-        workflow_domain[Workflow领域]
     end
     
     subgraph "Service Layer"
@@ -214,7 +204,6 @@ graph TD
     ui --> agent
     
     session --> session_domain
-    workflow --> workflow_domain
     agent --> agent_domain
     
     agent --> model
@@ -228,7 +217,6 @@ graph TD
     session_domain --> storage
     session_domain --> core
     agent_domain --> core
-    workflow_domain --> core
     
     config --> core
     model --> core
@@ -245,7 +233,6 @@ graph TD
 |------|---------|----------|
 | neoco-core | 通用类型系统 | SessionUlid, AgentUlid, MessageId, Event |
 | neoco-session | 会话与Agent管理 | Session, Agent, Hierarchy |
-| neoco-workflow | 工作流编排 | WorkflowDef, NodeRuntime |
 | neoco-tool | 工具执行 | ToolExecutor, ToolRegistry |
 | neoco-model | LLM调用 | ModelClient, ChatRequest |
 
@@ -253,7 +240,6 @@ graph TD
 
 > 详细数据结构定义见各功能模块文档：
 > - [TECH-SESSION.md](TECH-SESSION.md) - Session、Agent、Message、存储结构
-> - [TECH-WORKFLOW.md](TECH-WORKFLOW.md) - 工作流、节点、边定义
 > - [TECH-CONFIG.md](TECH-CONFIG.md) - 配置数据结构
 > - [TECH-TOOL.md](TECH-TOOL.md) - 工具、ToolCall定义
 > - [TECH-CONTEXT.md](TECH-CONTEXT.md) - 上下文观测结构
@@ -272,25 +258,6 @@ graph TD
 | `NodeUlid` | `struct NodeUlid(Ulid)` | 26位Ulid字符串 |
 | `ToolId` | `struct ToolId(Vec<String>)` | namespace::name 格式（如 `["fs", "read"]`，渲染为 `fs::read`） |
 | `SkillUlid` | `struct SkillUlid(Ulid)` | 26位Ulid字符串 |
-
-### 3.2 节点Agent与Session关系
-
-> 工作流的节点Agent同时也是节点内的最上级Agent。节点Agent的ULID与节点Session ID相同。
-
-这一设计简化了层级关系：
-- 查询Agent所属Session可直接从 `AgentUlid.session` 获取
-- 工作流节点Session与节点Agent共享同一ULID
-
-### 3.3 Agent定义查找优先级
-
-Agent定义文件查找顺序（优先级从高到低）：
-1. `workflows/<workflow_id>/agents/<agent_id>.md`（工作流特定配置）
-2. `.neoco/agents/<agent_id>.md`（当前项目）
-3. `.agents/agents/<agent_id>.md`（当前项目）
-4. `~/.config/neoco/agents/<agent_id>.md`（全局主配置）
-5. `~/.agents/agents/<agent_id>.md`（全局通用配置）
-
-> 注：工作流特定配置优先级最高，体现"工作流目录 > 配置目录"规则
 
 ### 3.2 统一消息系统
 
@@ -369,56 +336,7 @@ sequenceDiagram
     end
 ```
 
-### 4.2 工作流执行流程
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant Workflow as 工作流引擎
-    participant NodeMgr as 节点管理
-    participant Session as Session管理
-    participant Agent as 节点Agent
-    participant Edge as 边控制器
-
-    User->>Workflow: 启动工作流
-    Workflow->>Workflow: 加载workflow.toml
-    Workflow->>Session: 创建Workflow Session
-    
-    Workflow->>NodeMgr: 查找起始节点
-    
-    loop 节点执行
-        NodeMgr->>Session: 创建Node Session
-        NodeMgr->>Agent: 启动节点Agent
-        
-        alt new_session = true
-            Agent->>Agent: 创建新上下文
-        else new_session = false
-            Agent->>Session: 恢复已有上下文
-        end
-        
-        Agent->>Agent: 执行节点任务
-        
-        alt 调用转场工具
-            Agent->>Edge: workflow::option(msg)
-            Edge->>Workflow: 更新计数器
-        end
-        
-        Agent-->>NodeMgr: 节点完成
-        
-        NodeMgr->>Edge: 评估出边
-        Edge->>Edge: 检查require条件
-        
-        alt 条件满足
-            Edge-->>Workflow: 触发下一节点
-        else 多个分支
-            Edge-->>Workflow: 并行触发
-        end
-    end
-    
-    Workflow-->>User: 工作流完成
-```
-
-### 4.3 模型调用与故障转移流程
+### 4.2 模型调用与故障转移流程
 
 ```mermaid
 sequenceDiagram
@@ -546,7 +464,6 @@ sequenceDiagram
 pub enum Event {
     Session(SessionEvent),
     Agent(AgentEvent),
-    Workflow(WorkflowEvent),
     Tool(ToolEvent),
     System(SystemEvent),
 }
@@ -571,17 +488,6 @@ pub enum AgentEvent {
     Error { id: AgentUlid, error: String },
 }
 
-/// Workflow领域事件
-#[derive(Debug, Clone)]
-pub enum WorkflowEvent {
-    Started { session_ulid: SessionUlid, definition_id: String },
-    NodeStarted { session_ulid: SessionUlid, node_ulid: NodeUlid },
-    NodeCompleted { session_ulid: SessionUlid, node_ulid: NodeUlid, result: String },
-    Transition { session_ulid: SessionUlid, from: NodeUlid, to: NodeUlid },
-    Completed { session_ulid: SessionUlid },
-    Failed { session_ulid: SessionUlid, error: String },
-}
-
 /// Tool领域事件
 #[derive(Debug, Clone)]
 pub enum ToolEvent {
@@ -604,7 +510,6 @@ pub enum SystemEvent {
 |----------|------|
 | `SessionEvent` | Session创建、更新、删除 |
 | `AgentEvent` | Agent创建、状态变更、消息、工具调用 |
-| `WorkflowEvent` | 工作流启动、节点执行、转场、完成 |
 | `ToolEvent` | 工具注册、执行、错误 |
 | `SystemEvent` | 系统错误、关闭 |
 
@@ -641,10 +546,6 @@ pub enum AppError {
     /// Agent相关错误
     #[error("Agent错误: {0}")]
     Agent(#[from] AgentError),
-    
-    /// 工作流相关错误
-    #[error("工作流错误: {0}")]
-    Workflow(#[from] WorkflowError),
     
     /// 模型相关错误
     #[error("模型错误: {0}")]
@@ -685,7 +586,6 @@ impl AppError {
         match self {
             Self::Session(e) => e.is_retryable(),
             Self::Agent(e) => e.is_recoverable(),
-            Self::Workflow(e) => e.is_retryable(),
             Self::Model(e) => e.is_retryable(),
             Self::Tool(e) => e.is_retryable(),
             Self::Config(_) | Self::Storage(_) | Self::Mcp(e) => e.is_retryable(),
@@ -694,12 +594,12 @@ impl AppError {
     }
     
     /// 检查错误是否面向用户
-    /// - 用户相关错误：Session、Agent、Workflow、Config、Id
+    /// - 用户相关错误：Session、Agent、Config、Id
     /// - 系统内部错误：Model、Tool、Storage、MCP、Context、Skill
     pub fn is_user_facing(&self) -> bool {
         matches!(
             self,
-            Self::Session(_) | Self::Agent(_) | Self::Workflow(_) | Self::Config(_) | Self::Id(_)
+            Self::Session(_) | Self::Agent(_) | Self::Config(_) | Self::Id(_)
         )
     }
 }
@@ -753,7 +653,6 @@ pub enum IdError {
 | Session | `SessionError` | neoco-session |
 | Storage | `StorageError` | neoco-storage |
 | Agent | `AgentError` | neoco-agent |
-| Workflow | `WorkflowError` | neoco-workflow |
 | Model | `ModelError` | neoco-model |
 | Tool | `ToolError` | neoco-tool |
 | Config | `ConfigError` | neoco-config |
@@ -779,26 +678,22 @@ pub enum IdError {
 ├── prompts/
 ├── skills/
 ├── agents/
-└── workflows/
 
 .agents/                  # 当前项目 .agents
 ├── prompts/
 ├── skills/
 ├── agents/
-└── workflows/
 
 ~/.config/neoco/           # 全局主配置
 ├── neoco.toml            # 主配置
 ├── prompts/
 ├── skills/
 ├── agents/
-└── workflows/
 
 ~/.agents/               # 全局通用配置
 ├── prompts/
 ├── skills/
 ├── agents/
-└── workflows/
 
 ~/.local/neoco/           # 数据目录
 └── {session_id}/        # Session目录
@@ -818,7 +713,6 @@ pub enum IdError {
 | 模型调用错误 | 自动重试3次 → 故障转移 | 指数退避(1s, 2s, 4s) |
 | 工具调用错误 | 返回给Agent决定 | Agent决定重试/跳过/终止 |
 | 配置错误 | 启动时panic | 修复配置后重启 |
-| 工作流错误 | 根据配置决定 | 死锁检测(5分钟) |
 | 存储错误 | 记录日志，返回错误 | 手动修复 |
 
 ### 7.2 错误传播
@@ -829,14 +723,12 @@ graph TD
         Model[模型错误]
         Tool[工具错误]
         Config[配置错误]
-        Workflow[工作流错误]
     end
     
     subgraph "错误转换"
         E1[ModelError]
         E2[ToolError]
         E3[ConfigError]
-        E4[WorkflowError]
     end
     
     subgraph "统一错误"
@@ -846,7 +738,6 @@ graph TD
     Model --> E1
     Tool --> E2
     Config --> E3
-    Workflow --> E4
     
     E1 --> App
     E2 --> App
@@ -872,11 +763,6 @@ graph TB
             A2[Agent 1.2]
         end
         
-        subgraph "工作流任务"
-            W1[节点1]
-            W2[节点2]
-        end
-        
         subgraph "IO任务"
             I1[模型请求]
             I2[MCP调用]
@@ -886,12 +772,9 @@ graph TB
     
     S1 --> A1
     S1 --> A2
-    S1 --> W1
-    S1 --> W2
     
     A1 --> I1
     A1 --> I2
-    W1 --> I3
 ```
 
 ### 8.2 同步原语使用
@@ -900,7 +783,6 @@ graph TB
 |-----|------|------|
 | Session消息ID分配 | `AtomicU64` | 原子自增，无锁 |
 | Agent状态变更 | `RwLock<AgentState>` | 多读单写 |
-| 工作流计数器 | `Mutex<HashMap>` | 多线程安全 |
 | Session缓存 | `Arc<RwLock<Session>>` | 共享可变 |
 | 配置热重载 | `RwLock<Config>` | 读取频繁，写入少 |
 
@@ -1105,7 +987,6 @@ graph TB
 ```rust
 pub trait NeoCoKernel: Send + Sync {
     fn agent_engine(&self) -> Arc<dyn AgentEngine>;
-    fn workflow_engine(&self) -> Arc<dyn WorkflowEngine>;
     fn tool_registry(&self) -> Arc<dyn ToolRegistry>;
     fn context_manager(&self) -> Arc<dyn ContextManager>;
     fn config(&self) -> Arc<Config>;
