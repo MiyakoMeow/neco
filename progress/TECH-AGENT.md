@@ -53,7 +53,7 @@ graph TB
 ```mermaid
 graph TB
     subgraph "Session"
-        S[Session Root<br/>AgentId.session = SessionId]
+        S[Session Root<br/>AgentUlid.session = SessionUlid]
     end
     
     subgraph "Agent Hierarchy"

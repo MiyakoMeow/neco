@@ -722,11 +722,11 @@ impl MessageBuilder {
 ```mermaid
 graph TD
     subgraph "Session"
-        S[Session Root<br/>SessionId = AgentId.session]
+        S[Session Root<br/>SessionUlid = AgentUlid.session]
     end
     
     subgraph "Agent Hierarchy"
-        A1[Agent 1<br/>id.session = SessionId<br/>id.agent = RootUlid]
+        A1[Agent 1<br/>id.session = SessionUlid<br/>id.agent = RootUlid]
         A2[Agent 1.1<br/>parent = Agent 1]
         A3[Agent 1.2<br/>parent = Agent 1]
         A4[Agent 1.3<br/>parent = Agent 1]
