@@ -803,8 +803,7 @@ workflow_id = "prd"
 
 ```toml
 [id]
-session = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"
-agent = "01HF8X5JQC8ZXJ3YKZ0J9K2D9A"
+ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # 根Agent使用Session ULID
 
 [agent]
 definition_id = "coder"

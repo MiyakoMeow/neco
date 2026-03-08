@@ -204,6 +204,12 @@ impl Agent {
 ### 3.3 Agent引擎核心
 
 > **注意**：Agent引擎不直接持有领域模型，通过仓储接口访问
+>
+> **mode字段创建约束（不变量）**：
+> - 根Agent（直接与用户对话的Session Root Agent）：固定为 `Primary` 模式
+> - 子Agent（由 `spawn_child` 创建）：固定为 `Subagent` 模式
+>
+> 此约束确保基于模式做权限或行为分流时不会出现语义漂移。
 
 ```rust
 /// Agent引擎（应用层）

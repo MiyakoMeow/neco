@@ -208,11 +208,12 @@ impl DefaultToolRegistry {
         };
 
         // 注册内置工具（按优先级排序）
-        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete
+        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::list/fs::ls
         registry.register(FileReadTool);
         registry.register(FileWriteTool);
         registry.register(FileEditTool);
         registry.register(FileDeleteTool);
+        registry.register(FileListTool);
         
         // 2. 上下文工具：context::observe
         // 依赖注入方式：通过工厂函数或服务容器获取实例
@@ -495,7 +496,56 @@ pub fn verify_line_content_with_config(
 }
 ```
 
-### 4.5 fs::delete 实现
+### 4.5 fs::list / fs::ls 实现
+
+```rust
+pub struct FileListTool;
+    
+#[async_trait]
+impl ToolExecutor for FileListTool {
+    fn definition(&self) -> &ToolDefinition {
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "list"),
+                description: "列出目录内容（可使用fs::ls别名）".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "目录路径（默认为当前工作目录）"
+                    },
+                    "include_hidden": {
+                        "type": "boolean",
+                        "description": "是否包含隐藏文件（默认false）",
+                        "default": false
+                    }
+                },
+                "required": []
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(5),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现目录列表逻辑
+        // 1. 从args解析path（可选，默认为context.working_dir）
+        // 2. 验证路径安全性（同fs::read）
+        // 3. 调用std::fs::read_dir读取目录
+        // 4. 构建目录条目列表：名称、类型、大小、修改时间
+        // 5. 根据include_hidden过滤隐藏文件
+        // 6. 返回目录内容
+        unimplemented!()
+    }
+}
+```
+
+### 4.6 fs::delete 实现
 
 ```rust
 pub struct FileDeleteTool;
@@ -611,7 +661,60 @@ impl ToolExecutor for ContextObserveTool {
 }
 ```
 
-### 5.1.3 context::compact
+### 5.1.3 question::ask
+
+```rust
+pub struct QuestionAskTool;
+
+#[async_trait]
+impl ToolExecutor for QuestionAskTool {
+    fn definition(&self) -> &ToolDefinition {
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("question", "ask"),
+                description: "向用户提问（仅限TUI非no-ask模式）".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "要询问用户的问题"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "等待用户响应的超时时间（秒），默认30秒",
+                        "default": 30
+                    }
+                },
+                "required": ["question"]
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(30),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // TODO: 实现向用户提问逻辑
+        // 1. 从args解析question和timeout
+        // 2. 检查当前运行模式是否为TUI且非no-ask模式
+        // 3. 向用户显示问题并等待响应
+        // 4. 返回用户的响应内容
+        // 5. 超时时返回超时错误
+        unimplemented!()
+    }
+}
+```
+
+**执行约束：**
+- 仅在TUI交互模式下可用，且未启用 `--no-ask` 参数
+- 在CLI或Agent模式下调用时返回 `ToolError::Execution` 错误
+- 超时时间可通过timeout参数配置，默认30秒
+
+### 5.1.4 context::compact
 
 ```rust
 impl ContextCompactTool {

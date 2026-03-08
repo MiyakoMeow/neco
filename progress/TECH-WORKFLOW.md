@@ -542,7 +542,7 @@ impl ToolExecutor for PassTool {
     fn definition(&self) -> &ToolDefinition {
         static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
             id: ToolId::new("workflow", "pass"),
-            description: "无条件转场到下一节点，不增加计数器".into(),
+            description: "记录无条件转场意图，不直接触发后续节点（由引擎统一评估）".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -564,12 +564,15 @@ impl ToolExecutor for PassTool {
         context: &ToolContext,
         args: Value,
     ) -> Result<ToolResult, ToolError> {
-        // 无条件转场，不增加任何计数器
+        // 记录转场意图，不直接触发后续节点
         // 1. 从args中解析message（可选）
         // 2. 获取runtime的write lock
-        // 3. 直接触发后续节点，不增加计数器
-        // 4. 发布NodeTransition事件
-        // 5. 返回转场成功的ToolResult
+        // 3. 将message存入runtime的转场消息存储（不触发后续节点）
+        // 4. 发布NodeTransitionIntent事件（而非NodeTransition）
+        // 5. 返回转场意图已记录的结果
+        //
+        // 注意：后续节点的触发统一由引擎在handle_node_complete()中处理，
+        // 这样可以避免同一条出边的双重调度风险。
         unimplemented!()
     }
 }
