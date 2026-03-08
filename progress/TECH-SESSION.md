@@ -341,36 +341,6 @@ impl AgentDefinition {
         unimplemented!()
     }
 }
-}
-
-    /// 获取实际使用的模型组
-    /// 优先级：model_group > model > 默认
-    pub fn resolve_model_group(&self) -> &str {
-        // TODO: 实现要点
-        // 1. 如果 model_group 不为空，返回 model_group
-        // 2. 否则从 model 字段提取 provider（字符串取第一段/对象取provider字段）
-        // 3. 都为空时返回 "default"
-        unimplemented!()
-    }
-
-    /// 获取实际使用的模型名称
-    pub fn resolve_model_name(&self) -> Option<&str> {
-        // TODO: 实现要点
-        // 1. 如果 model 为 None，返回 None
-        // 2. 字符串形式：split('/') 取第二段
-        // 3. 对象形式：返回 name 字段
-        unimplemented!()
-    }
-
-    /// 获取实际使用的温度参数
-    pub fn resolve_temperature(&self) -> Option<f64> {
-        // TODO: 实现要点
-        // 1. 优先从 ModelConfig::Object 的 temperature 字段获取
-        // 2. 其次从独立的 temperature 字段获取
-        // 3. 都为空时返回 None（使用模型默认）
-        unimplemented!()
-    }
-}
 
 /// Agent运行时状态
 #[derive(Debug, Clone)]
