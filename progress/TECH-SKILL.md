@@ -78,9 +78,21 @@ flowchart LR
 ---
 name: rust-coding-assistant
 description: 提供Rust语言最佳实践、unsafe代码检查等能力
-tags:
-  - rust
-  - security
+version: "1.0.0"
+author: NeoCo Team
+license: MIT
+compatibility:
+  neoco: ">=0.1.0"
+  agentskills: ">=1.0.0"
+metadata:
+  tags:
+    - rust
+    - security
+  category: coding
+  difficulty: intermediate
+  environments:
+    - rustup
+    - cargo
 ---
 
 # 技能指令内容
@@ -140,11 +152,49 @@ pub struct ActivatedSkill {
     pub tools: Vec<ToolDefinition>,
 }
 
+/// Skill元数据结构 - 兼容 agentskills.io 规范
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillMetadata {
+    /// 技能版本 (语义化版本)
     pub version: String,
+    /// 作者信息
     pub author: Option<String>,
-    pub tags: Vec<String>,
+    /// 许可证 (SPDX 表达式)
+    pub license: Option<String>,
+    /// 兼容性声明
+    pub compatibility: Option<SkillCompatibility>,
+    /// 标准化元数据容器
+    pub metadata: SkillMetadataContainer,
+    /// 依赖项
     pub dependencies: Vec<String>,
+}
+
+/// 兼容性声明
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillCompatibility {
+    /// NeoCo 版本要求
+    pub neoco: Option<String>,
+    /// agentskills.io 规范版本要求
+    pub agentskills: Option<String>,
+    /// 其他平台兼容性
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, String>,
+}
+
+/// 标准元数据容器
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SkillMetadataContainer {
+    /// 标签
+    pub tags: Vec<String>,
+    /// 分类
+    pub category: Option<String>,
+    /// 难度等级
+    pub difficulty: Option<String>,
+    /// 支持的环境
+    pub environments: Option<Vec<String>>,
+    /// 扩展字段
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 pub struct SkillResources {
@@ -191,7 +241,7 @@ pub struct Skill {
     pub name: String,
     pub description: String,
     pub content: String,
-    pub tags: Vec<String>,
+    pub metadata: SkillMetadata,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -306,6 +356,11 @@ pub enum SkillError {
     ActivationFailed(String),
 }
 ```
+
+---
+
+*文档版本：0.4.0*
+*最后更新：2026-03-08*
 
 ---
 

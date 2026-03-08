@@ -132,14 +132,10 @@ pub trait MessageRepository: Send + Sync {
 
 ```rust
 /// Agent状态
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AgentState {
-    Idle,
-    Running,
-    Waiting,
-    Completed,
-    Failed,
-}
+/// 
+/// 详细定义见 TECH-SESSION.md:521
+/// 此处引用 session 模块中的统一定义
+pub use crate::session::AgentState;
 
 /// Agent模式 - 对应需求文档的mode字段
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -869,9 +865,12 @@ impl AgentError {
 
 ---
 
+*文档版本：0.4.0*
+*最后更新：2026-03-08*
+
 *关联文档：*
 - [TECH.md](TECH.md) - 总体架构文档
-- [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块
+- [TECH-SESSION.md](TECH-SESSION.md) - Session管理模块（AgentState权威定义）
 - [TECH-WORKFLOW.md](TECH-WORKFLOW.md) - 工作流模块
 - [TECH-TOOL.md](TECH-TOOL.md) - 工具模块
 - [TECH-PROMPT.md](TECH-PROMPT.md) - 提示词组件模块

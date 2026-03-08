@@ -233,7 +233,7 @@ MCP协议基于JSON-RPC 2.0规范，主要消息类型包括：
     "id": 1,
     "method": "initialize",
     "params": {
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": "2025-11-25",
         "capabilities": {}
     }
 }
@@ -317,6 +317,462 @@ pub enum DisconnectReason {
     TransportError,
     Timeout,
     MaxRetriesExceeded,
+}
+```
+
+---
+
+## 8. 协议版本演进
+
+### 8.1 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|----------|
+| 2025-11-25 | 最新 | 支持 Resources v2、Prompts v2、Session恢复增强 |
+| 2024-11-05 | 稳定 | 初始版本，仅支持 Tools |
+
+## 9. Resources 组件
+
+Resources 允许 MCP 服务器暴露可读取的数据资源（如文件、数据库记录等）。
+
+### 9.1 资源数据结构
+
+```rust
+/// 资源定义
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Resource {
+    /// 资源 URI (如 file:///path/to/file)
+    pub uri: String,
+    /// 资源名称
+    pub name: String,
+    /// 资源描述
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// MIME 类型
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+/// 资源列表响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceList {
+    pub resources: Vec<Resource>,
+}
+
+/// 资源内容响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceContent {
+    pub uri: String,
+    pub mime_type: Option<String>,
+    /// base64 编码的内容
+    pub blob: String,
+}
+```
+
+### 9.2 核心方法
+
+| 方法 | 方向 | 说明 |
+|------|------|------|
+| `resources/list` | Client→Server | 获取可用资源列表 |
+| `resources/read` | Client→Server | 读取指定资源内容 |
+| `resources/subscribe` | Client→Server | 订阅资源变更通知 |
+| `resources/unsubscribe` | Client→Server | 取消订阅 |
+
+### 9.3 消息格式
+
+```json
+// resources/list 请求
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "resources/list",
+    "params": {}
+}
+
+// resources/list 响应
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "resources": [
+            {
+                "uri": "file:///home/user/README.md",
+                "name": "README",
+                "description": "项目说明文件",
+                "mimeType": "text/markdown"
+            }
+        ]
+    }
+}
+
+// resources/read 请求
+{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "resources/read",
+    "params": {
+        "uri": "file:///home/user/README.md"
+    }
+}
+```
+
+## 10. Prompts 组件
+
+Prompts 允许 MCP 服务器暴露预定义的提示词模板。
+
+### 10.1 提示词数据结构
+
+```rust
+/// 提示词参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptArgument {
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
+/// 提示词定义
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Prompt {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub arguments: Vec<PromptArgument>,
+}
+
+/// 提示词消息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptMessage {
+    pub role: String,
+    pub content: PromptContent,
+}
+
+/// 提示词内容
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PromptContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "resource")]
+    Resource { resource: String },
+}
+```
+
+### 10.2 核心方法
+
+| 方法 | 方向 | 说明 |
+|------|------|------|
+| `prompts/list` | Client→Server | 获取可用提示词列表 |
+| `prompts/get` | Client→Server | 获取指定提示词（含参数渲染） |
+
+### 10.3 消息格式
+
+```json
+// prompts/list 请求
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "prompts/list",
+    "params": {}
+}
+
+// prompts/get 请求
+{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "prompts/get",
+    "params": {
+        "name": "analyze-code",
+        "arguments": {
+            "file_path": "/src/main.rs"
+        }
+    }
+}
+```
+
+## 11. Session 管理
+
+### 11.1 MCP-Session-Id 机制
+
+MCP 协议通过 `MCP-Session-Id` HTTP 头支持有状态的会话管理。
+
+```rust
+/// MCP 会话状态
+#[derive(Debug, Clone)]
+pub struct McpSession {
+    pub id: SessionId,
+    pub server_capabilities: ServerCapabilities,
+    pub protocol_version: String,
+    pub created_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+}
+
+/// Session ID 类型
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SessionId(String);
+```
+
+### 11.2 Session 相关 HTTP 头
+
+| 头名称 | 方向 | 说明 |
+|--------|------|------|
+| `MCP-Session-Id` | Request/Response | 会话标识符 |
+| `MCP-Protocol-Version` | Request | 客户端支持的协议版本 |
+
+### 11.3 会话恢复
+
+```rust
+/// 恢复会话流程
+pub async fn restore_session(
+    &self,
+    session_id: &SessionId,
+) -> Result<McpSession, McpError> {
+    let mut params = serde_json::Map::new();
+    params.insert("protocolVersion".to_string(), serde_json::Value::String("2025-11-25".to_string()));
+    params.insert("sessionId".to_string(), serde_json::Value::String(session_id.as_str().to_string()));
+    
+    let request = Request::new("initialize", Value::Object(params));
+    let response = self.peer.send_request(request).await?;
+    
+    // 解析响应中的服务器能力
+    let result = response.result()
+        .map_err(|e| McpError::ProtocolError(e.to_string()))?;
+    
+    // 重建会话状态
+    let session = McpSession {
+        id: session_id.clone(),
+        server_capabilities: parse_server_capabilities(&result)?,
+        protocol_version: "2025-11-25".to_string(),
+        created_at: Utc::now(),
+        last_activity: Utc::now(),
+    };
+    
+    Ok(session)
+}
+```
+
+## 12. 错误处理标准化
+
+### 12.1 JSON-RPC 错误码映射
+
+```rust
+/// JSON-RPC 错误码
+pub mod jsonrpc {
+    // JSON-RPC 标准错误码
+    pub const PARSE_ERROR: i32 = -32700;
+    pub const INVALID_REQUEST: i32 = -32600;
+    pub const METHOD_NOT_FOUND: i32 = -32601;
+    pub const INVALID_PARAMS: i32 = -32602;
+    pub const INTERNAL_ERROR: i32 = -32603;
+    
+    // MCP 扩展错误码
+    pub const RESOURCE_NOT_FOUND: i32 = -32000;
+    pub const RESOURCE_NOT_READABLE: i32 = -32001;
+    pub const PROMPT_NOT_FOUND: i32 = -32002;
+    pub const PROMPT_ARGUMENTS_MISSING: i32 = -32003;
+    pub const TOOL_NOT_FOUND: i32 = -32004;
+    pub const TOOL_ARGUMENTS_INVALID: i32 = -32005;
+    pub const SESSION_NOT_INITIALIZED: i32 = -32006;
+    pub const SESSION_RESUME_FAILED: i32 = -32007;
+    pub const PROTOCOL_VERSION_MISMATCH: i32 = -32008;
+}
+```
+
+### 12.2 错误类型定义
+
+```rust
+#[derive(Debug, Error)]
+pub enum McpError {
+    // ... 现有错误 ...
+    
+    // JSON-RPC 标准错误
+    #[error("解析错误: {0}")]
+    ParseError(String),
+    
+    #[error("无效请求: {0}")]
+    InvalidRequest(String),
+    
+    #[error("方法未找到: {0}")]
+    MethodNotFound(String),
+    
+    #[error("无效参数: {0}")]
+    InvalidParams(String),
+    
+    #[error("内部错误: {0}")]
+    InternalError(String),
+    
+    // MCP 扩展错误
+    #[error("资源未找到: {0}")]
+    ResourceNotFound(String),
+    
+    #[error("资源不可读: {0}")]
+    ResourceNotReadable(String),
+    
+    #[error("提示词未找到: {0}")]
+    PromptNotFound(String),
+    
+    #[error("提示词参数缺失: {0}")]
+    PromptArgumentsMissing(String),
+    
+    #[error("工具未找到: {0}")]
+    ToolNotFound(String),
+    
+    #[error("工具参数无效: {0}")]
+    ToolArgumentsInvalid(String),
+    
+    #[error("会话未初始化")]
+    SessionNotInitialized,
+    
+    #[error("会话恢复失败: {0}")]
+    SessionResumeFailed(String),
+    
+    #[error("协议版本不匹配: 客户端={client}, 服务器={server}")]
+    ProtocolVersionMismatch { client: String, server: String },
+}
+
+impl McpError {
+    /// 转换为 JSON-RPC 错误响应
+    pub fn to_jsonrpc_error(&self) -> JsonRpcError {
+        let code = match self {
+            Self::ParseError(_) => jsonrpc::PARSE_ERROR,
+            Self::InvalidRequest(_) => jsonrpc::INVALID_REQUEST,
+            Self::MethodNotFound(_) => jsonrpc::METHOD_NOT_FOUND,
+            Self::InvalidParams(_) => jsonrpc::INVALID_PARAMS,
+            Self::InternalError(_) => jsonrpc::INTERNAL_ERROR,
+            Self::ResourceNotFound(_) => jsonrpc::RESOURCE_NOT_FOUND,
+            Self::ResourceNotReadable(_) => jsonrpc::RESOURCE_NOT_READABLE,
+            Self::PromptNotFound(_) => jsonrpc::PROMPT_NOT_FOUND,
+            Self::PromptArgumentsMissing(_) => jsonrpc::PROMPT_ARGUMENTS_MISSING,
+            Self::ToolNotFound(_) => jsonrpc::TOOL_NOT_FOUND,
+            Self::ToolArgumentsInvalid(_) => jsonrpc::TOOL_ARGUMENTS_INVALID,
+            Self::SessionNotInitialized => jsonrpc::SESSION_NOT_INITIALIZED,
+            Self::SessionResumeFailed(_) => jsonrpc::SESSION_RESUME_FAILED,
+            Self::ProtocolVersionMismatch { .. } => jsonrpc::PROTOCOL_VERSION_MISMATCH,
+            _ => jsonrpc::INTERNAL_ERROR,
+        };
+        
+        JsonRpcError {
+            code,
+            message: self.to_string(),
+            data: None,
+        }
+    }
+    
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            Self::Timeout | 
+            Self::ConnectionFailed(_) |
+            Self::SessionResumeFailed(_) |
+            Self::InternalError(_)
+        )
+    }
+}
+```
+
+## 13. 安全增强
+
+### 13.1 Origin 验证
+
+```rust
+/// MCP 服务器安全配置
+#[derive(Debug, Clone)]
+pub struct McpSecurityConfig {
+    /// 允许的 Origin 列表（空列表表示允许所有）
+    pub allowed_origins: Vec<String>,
+    /// 是否允许匿名 Origin
+    pub allow_null_origin: bool,
+    /// 是否启用 CORS
+    pub enable_cors: bool,
+}
+
+impl Default for McpSecurityConfig {
+    fn default() -> Self {
+        Self {
+            allowed_origins: Vec::new(),
+            allow_null_origin: false,
+            enable_cors: true,
+        }
+    }
+}
+
+/// Origin 验证器
+pub struct OriginValidator {
+    config: McpSecurityConfig,
+}
+
+impl OriginValidator {
+    pub fn validate(&self, origin: &Option<String>) -> Result<(), McpError> {
+        if origin.is_none() {
+            if self.config.allow_null_origin {
+                return Ok(());
+            }
+            return Err(McpError::SecurityError("Null origin not allowed".to_string()));
+        }
+        
+        let origin = origin.as_ref().unwrap();
+        
+        if !self.config.allowed_origins.is_empty() {
+            if !self.config.allowed_origins.iter().any(|o| o == origin) {
+                return Err(McpError::SecurityError(
+                    format!("Origin not allowed: {}", origin)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+}
+```
+
+### 13.2 协议版本头验证
+
+```rust
+/// 协议版本管理器
+pub struct ProtocolVersionManager {
+    pub min_version: String,
+    pub max_version: String,
+}
+
+impl Default for ProtocolVersionManager {
+    fn default() -> Self {
+        Self {
+            min_version: "2024-11-05".to_string(),
+            max_version: "2025-11-25".to_string(),
+        }
+    }
+}
+
+impl ProtocolVersionManager {
+    pub fn validate(&self, client_version: &str) -> Result<String, McpError> {
+        let client_date = client_version.parse::<NaiveDate>()
+            .map_err(|_| McpError::ProtocolVersionMismatch {
+                client: client_version.to_string(),
+                server: self.max_version.clone(),
+            })?;
+        
+        let min_date = NaiveDate::parse_from_str(&self.min_version, "%Y-%m-%d")
+            .unwrap_or(NaiveDate::from_ymd_opt(2024, 11, 5).unwrap());
+        let max_date = NaiveDate::parse_from_str(&self.max_version, "%Y-%m-%d")
+            .unwrap_or(NaiveDate::from_ymd_opt(2025, 11, 25).unwrap());
+        
+        if client_date < min_date {
+            return Err(McpError::ProtocolVersionMismatch {
+                client: client_version.to_string(),
+                server: self.max_version.clone(),
+            });
+        }
+        
+        if client_date <= max_date {
+            Ok(client_version.to_string())
+        } else {
+            Ok(self.max_version.clone())
+        }
+    }
 }
 ```
 

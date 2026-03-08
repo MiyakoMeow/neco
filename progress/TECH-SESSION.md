@@ -1110,48 +1110,115 @@ pub enum AgentDefinitionError {
 ### 8.1 Memory Trait 定义
 
 ```rust
-/// Memory后端接口
+// ============================================================
+// Memory 抽象层 (增强版)
+// ============================================================
+// 参考 ZeroClaw 的 Memory 抽象设计
+//
+// 架构说明:
+// - 向量搜索: 使用 Embedding 相似度匹配
+// - 关键词搜索: BM25 算法 (FTS5)
+// - 混合评分: 向量分数 * vector_weight + BM25分数 * keyword_weight
+// ============================================================
+
+/// Memory后端接口 (增强版)
 #[async_trait]
 pub trait Memory: Send + Sync {
+    // --- 基础 CRUD ---
+    
     async fn store(&self, entry: MemoryEntry) -> Result<(), MemoryError>;
     async fn recall(&self, query: &str, limit: usize) -> Result<Vec<MemoryEntry>, MemoryError>;
     async fn get(&self, key: &str) -> Result<Option<MemoryEntry>, MemoryError>;
     async fn delete(&self, key: &str) -> Result<(), MemoryError>;
     async fn clear(&self) -> Result<(), MemoryError>;
+    
+    // --- 向量搜索支持 ---
+    
+    /// 使用向量嵌入进行相似度搜索
+    async fn vector_search(
+        &self, 
+        query_embedding: &[f32], 
+        limit: usize,
+    ) -> Result<Vec<ScoredEntry>, MemoryError>;
+    
+    /// 存储带嵌入向量的记忆
+    async fn store_with_embedding(
+        &self, 
+        entry: MemoryEntry,
+        embedding: &[f32],
+    ) -> Result<(), MemoryError>;
+    
+    // --- 混合搜索支持 ---
+    
+    /// 混合搜索 (向量 + BM25)
+    async fn hybrid_search(
+        &self,
+        query: &str,
+        query_embedding: &[f32],
+        limit: usize,
+        vector_weight: f32,
+        keyword_weight: f32,
+    ) -> Result<Vec<ScoredEntry>, MemoryError>;
+    
+    // --- 索引管理 ---
+    
+    /// 重建索引 (FTS5 + 向量)
+    async fn reindex(&self) -> Result<(), MemoryError>;
 }
 
-/// 记忆条目
-pub struct MemoryEntry {
-    pub key: String,
-    pub content: String,
-    pub category: MemoryCategory,
-    pub importance: f32,
-    pub created_at: DateTime<Utc>,
-}
-
-/// 记忆分类
+/// 带评分的结果条目
 #[derive(Debug, Clone)]
-pub enum MemoryCategory {
-    Global,
-    Directory(PathBuf),
-    Session(SessionUlid),
+pub struct ScoredEntry {
+    pub entry: MemoryEntry,
+    pub score: f32,
+    pub vector_score: Option<f32>,
+    pub keyword_score: Option<f32>,
 }
 
+/// 嵌入向量提供者
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
+}
+
+/// 嵌入向量错误
 #[derive(Debug, Error)]
-pub enum MemoryError {
-    #[error("存储失败: {0}")]
-    StoreFailed(String),
-    #[error("检索失败: {0}")]
-    RecallFailed(String),
-    #[error("不存在: {0}")]
-    NotFound(String),
+pub enum EmbeddingError {
+    #[error("嵌入失败: {0}")]
+    EmbedFailed(String),
+    #[error("不支持的提供者: {0}")]
+    UnsupportedProvider(String),
+}
+
+/// Memory 后端配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemoryConfig {
+    pub backend: MemoryBackend,
+    pub auto_save: bool,
+    pub embedding_provider: String,
+    pub vector_weight: f32,
+    pub keyword_weight: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryBackend {
+    SQLite,
+    PostgreSQL,
+    Lucid,
+    Markdown,
+    None,
 }
 ```
 
 ---
+
+*文档版本：0.4.0*
+*最后更新：2026-03-08*
 
 *关联文档：*
 - [TECH.md](TECH.md) - 总体架构文档
 - [TECH-MODEL.md](TECH-MODEL.md) - 模型服务模块
 - [TECH-AGENT.md](TECH-AGENT.md) - 多智能体协作模块
 - [TECH-DATA-REFACTOR.md](TECH-DATA-REFACTOR.md) - 数据结构重构设计
+(End of file)
