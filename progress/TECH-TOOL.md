@@ -208,12 +208,13 @@ impl DefaultToolRegistry {
         };
 
         // 注册内置工具（按优先级排序）
-        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::list/fs::ls
+        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::list, fs::ls
         registry.register(FileReadTool);
         registry.register(FileWriteTool);
         registry.register(FileEditTool);
         registry.register(FileDeleteTool);
         registry.register(FileListTool);
+        registry.register(FileLsTool::new());  // fs::ls 别名
         
         // 2. 上下文工具：context::observe
         // 依赖注入方式：通过工厂函数或服务容器获取实例
@@ -239,6 +240,9 @@ impl DefaultToolRegistry {
         // 5. 工作流工具：workflow::pass, workflow::option
         registry.register(WorkflowOptionTool);
         registry.register(WorkflowPassTool);
+        
+        // 6. 上下文工具：question::ask
+        registry.register(QuestionAskTool);
 
         // 注意：MCP和Skill外部工具在运行时动态注册
 
@@ -498,15 +502,18 @@ pub fn verify_line_content_with_config(
 
 ### 4.5 fs::list / fs::ls 实现
 
+> **别名实现方案**：采用双注册方案。`fs::list` 和 `fs::ls` 分别注册为独立工具，但共享同一执行逻辑。
+
 ```rust
+/// 文件列表工具（主工具 fs::list）
 pub struct FileListTool;
-    
+
 #[async_trait]
 impl ToolExecutor for FileListTool {
     fn definition(&self) -> &ToolDefinition {
             static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
                 id: ToolId::new("fs", "list"),
-                description: "列出目录内容（可使用fs::ls别名）".into(),
+                description: "列出目录内容".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -541,6 +548,52 @@ impl ToolExecutor for FileListTool {
         // 5. 根据include_hidden过滤隐藏文件
         // 6. 返回目录内容
         unimplemented!()
+    }
+}
+
+/// fs::ls 别名工具 - 复用 FileListTool 的执行逻辑
+pub struct FileLsTool(FileListTool);
+
+impl FileLsTool {
+    pub fn new() -> Self {
+        Self(FileListTool)
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for FileLsTool {
+    fn definition(&self) -> &ToolDefinition {
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "ls"),
+                description: "列出目录内容（fs::list 的别名）".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "目录路径（默认为当前工作目录）"
+                    },
+                    "include_hidden": {
+                        "type": "boolean",
+                        "description": "是否包含隐藏文件（默认false）",
+                        "default": false
+                    }
+                },
+                "required": []
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(5),
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // 委托给 FileListTool 执行
+        self.0.execute(context, args).await
     }
 }
 ```

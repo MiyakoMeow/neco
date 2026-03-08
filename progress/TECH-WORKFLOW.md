@@ -147,6 +147,7 @@ pub struct WorkflowRuntime {
     counters: DashMap<CounterKey, u32>,
     variables: DashMap<VariableKey, Value>,
     active_nodes: DashSet<NodeUlid>,
+    transition_messages: DashMap<NodeUlid, String>,
     status: WorkflowStatus,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -297,6 +298,11 @@ pub enum WorkflowEvent {
         session_ulid: SessionUlid,
         node_ulid: NodeUlid,
         error: String,
+    },
+    NodeTransitionIntent {
+        session_ulid: SessionUlid,
+        node_ulid: NodeUlid,
+        message: Option<String>,
     },
     EdgeTriggered {
         session_ulid: SessionUlid,
@@ -578,14 +584,15 @@ impl ToolExecutor for PassTool {
 }
 
 /// 注册工作流工具
-pub fn register_workflow_tools(
-    registry: &mut dyn ToolRegistry,
+pub async fn register_workflow_tools(
+    registry: &dyn ToolRegistry,
     runtime: Arc<RwLock<WorkflowRuntime>>,
     node_ulid: NodeUlid,
 ) {
     // TODO: 注册工作流相关工具
     // 1. 注册 workflow 工具（WorkflowTransitionTool）
     // 2. 注册 pass 工具（PassTool）
+    // 注意：使用异步接口与 ToolRegistry 保持一致
     todo!()
 }
 ```

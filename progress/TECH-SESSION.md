@@ -807,7 +807,7 @@ ulid = "01HF8X5JQC8ZXJ3YKZ0J9K2D9Z"  # 根Agent使用Session ULID
 
 [agent]
 definition_id = "coder"
-parent_ulid = null  # 根Agent无parent
+# parent_ulid 字段省略 - 根Agent无parent，反序列化时为 None
 state = "running"
 
 [[messages]]
