@@ -225,26 +225,144 @@ pub struct SessionMeta {
 ### 3.2 Agent领域模型（分离配置与运行时）
 
 ```rust
-/// Agent定义（静态配置）
+/// Agent定义（统一结构，支持多种格式自动解析）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AgentDefinition {
-    pub id: String,
-    pub name: String,
+    /// Agent标识，默认为文件名
+    pub id: Option<String>,
+    /// Agent描述
     pub description: Option<String>,
-    pub model_group: String,
+    /// 运行模式：字符串 / 数组 / 解析后枚举
+    pub mode: AgentMode,
+    /// 模型值：字符串 / 对象 / 解析后结构
+    pub model: ModelValue,
+    /// 温度参数
+    pub temperature: Option<f64>,
+    /// 模型组（与model同时存在时优先使用）
+    pub model_group: Option<String>,
+    /// 提示词列表
     pub prompts: Vec<String>,
-    pub tools: Vec<String>,
+    /// MCP服务器列表
     pub mcp_servers: Vec<String>,
+    /// 技能列表
     pub skills: Vec<String>,
+    /// 额外字段（未定义的字段会自动收集到这里）
+    #[serde(flatten)]
+    pub extras: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// 模型值（支持多种格式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModelValue {
+    /// 字符串形式："provider/name"
+    String(String),
+    /// 对象形式：{ provider, name, temperature }
+    Object(ModelRef),
+    /// 未设置，使用模型默认配置
+    None,
+}
+
+impl Default for ModelValue {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// 模型引用（统一格式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRef {
+    pub provider: String,
+    pub name: String,
+    pub temperature: Option<f64>,
+}
+
+/// 运行模式（支持多种格式）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AgentMode {
+    /// 字符串形式："primary" / "subagent"
+    String(String),
+    /// 数组形式：["primary", "subagent"]（不能为空，空数组无效）
+    Array(Vec<String>),
+    /// 解析后形式
+    Parsed(AgentModeParsed),
+}
+
+impl Default for AgentMode {
+    fn default() -> Self {
+        Self::String("primary".to_string())
+    }
+}
+
+/// 解析后的运行模式
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentModeParsed {
+    Primary,
+    SubAgent,
+    Multiple(Vec<AgentModeParsed>),
 }
 
 impl AgentDefinition {
-    pub fn from_file(path: &Path) -> Result<Self, AgentDefinitionError> {
-        // [TODO] 实现要点说明
+    /// Agent文件解析结果
+    pub struct ParsedAgentFile {
+        /// Agent元数据定义
+        pub definition: AgentDefinition,
+        /// Markdown正文内容（作为提示词）
+        pub body: String,
+    }
+
+    pub fn from_file(path: &Path) -> Result<ParsedAgentFile, AgentDefinitionError> {
+        // TODO: 实现要点
         // 1. 读取文件内容
         // 2. 解析YAML头部 (--- delimited)
-        // 3. 提取配置字段
-        // 4. 返回AgentDefinition
+        // 3. 分离frontmatter和Markdown正文
+        // 4. 填充默认值（prompts等空Vec）
+        // 5. 返回ParsedAgentFile { definition, body }
+        // 6. 提示词合并规则：Markdown正文在前，prompts列表项在后追加
+        unimplemented!()
+    }
+}
+
+    /// 获取实际使用的模型组
+    /// 优先级：model_group > model.provider > 默认（由运行时决定）
+    pub fn resolve_model_group(&self) -> Option<&str> {
+        // TODO: 实现要点
+        // 1. 如果 model_group 不为空，返回 Some(model_group)
+        // 2. 否则从 model 字段提取 provider
+        //    - ModelValue::String: split('/') 取第一段
+        //    - ModelValue::Object: 取 provider 字段
+        // 3. 都为空时返回 None（表示由运行时决定默认模型）
+        unimplemented!()
+    }
+
+    /// 获取实际使用的模型名称
+    pub fn resolve_model_name(&self) -> Option<&str> {
+        // TODO: 实现要点
+        // 从 model 字段提取 name
+        // - ModelValue::String: split('/') 取第二段
+        // - ModelValue::Object: 取 name 字段
+        unimplemented!()
+    }
+
+    /// 获取实际使用的温度参数
+    /// 优先级：model对象内temperature > 外层temperature字段 > 模型默认
+    pub fn resolve_temperature(&self) -> Option<f64> {
+        // TODO: 实现要点
+        // 1. 优先从 model (Object) 的 temperature 获取
+        // 2. 其次从独立的 temperature 字段获取
+        // 3. 都为空时返回 None
+        unimplemented!()
+    }
+
+    /// 获取解析后的模式
+    pub fn resolve_mode(&self) -> AgentModeParsed {
+        // TODO: 实现要点
+        // - AgentMode::String: "primary"->Primary, "subagent"->SubAgent
+        // - AgentMode::Array: 转换为 Multiple([...])，空数组无效（返回Primary）
+        // - AgentMode::Parsed: 直接返回
+        // 注意：数组不能为空，空数组无效（等同于未设置，返回primary模式）
         unimplemented!()
     }
 }
@@ -328,13 +446,6 @@ impl AgentHierarchy {
         // TODO: 实现获取父节点
         // 1. 从parent_map中查找id对应的父AgentId
         // 2. 返回Some(AgentId)或None
-        unimplemented!()
-    }
-    
-    pub fn get_children(&self, id: &AgentId) -> Vec<AgentId> {
-        // TODO: 实现获取子节点列表
-        // 1. 从children_map中查找id对应的Vec<AgentId>
-        // 2. 返回子AgentId列表
         unimplemented!()
     }
     

@@ -459,19 +459,93 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 - 路径：`agents/xxx.md`
 - 单个Markdown文件即为一个Agent定义，使用YAML frontmatter定义元数据，Markdown内容作为提示词。
 
+**提示词合并规则：**
+- Markdown正文内容作为基础提示词
+- frontmatter中的`prompts`列表为追加的提示词组件
+- 最终提示词 = Markdown正文 + prompts列表项（按顺序追加）
+- 示例：
+  ```yaml
+  ---
+  prompts:
+    - base
+    - multi-agent
+  ---
+  # Agent 提示词内容...
+  ```
+  实际加载时：先加载Markdown正文，再依次追加prompts中定义的组件
+
 #### Agent头部信息
 
 ```yaml
 ---
-id: coder
-name: 编码助手
+description: Reviews code for quality and best practices
+mode: subagent
+model: anthropic/claude-sonnet-4-20250514
+temperature: 0.1
 model_group: frontier
 prompts:
   - base
   - multi-agent
+skills:
+  - rust-coding
+mcp_servers:
+  - filesystem
 ---
 # Agent 提示词内容...
 ```
+
+**model字段支持的两种格式：**
+
+```yaml
+# 格式1：字符串形式（简化写法）
+model: anthropic/claude-sonnet-4-20250514
+
+# 格式2：对象形式（完整配置）
+model:
+  provider: anthropic
+  name: claude-sonnet-4-20250514
+  temperature: 0.1
+
+# 注意：model_group 与 model 同时存在时，优先使用 model_group
+# 未设置model字段时：使用模型默认配置（由运行时决定具体模型）
+```
+
+**mode字段支持的格式：**
+
+```yaml
+# 格式1：字符串形式
+mode: primary      # 主Agent（默认）
+mode: subagent    # 子Agent
+
+# 格式2：数组形式（多个Agent类型）
+mode:
+  - primary       # 主Agent
+  - subagent      # 子Agent
+# 或
+mode:
+  - subagent     # 只有子Agent
+
+# 注意：数组不能为空，空数组无效（等同于未设置）
+```
+
+**字段说明：**
+
+| 字段 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `id` | 否 | 文件名 | Agent标识 |
+| `description` | 否 | (无) | Agent描述 |
+| `mode` | 否 | `primary` | `primary` / `subagent` / 数组（不能为空，如 `[subagent]` 或 `[primary, subagent]`） |
+| `model` | 否 | 使用 `model_group` | 模型配置，支持两种格式：<br>• 字符串：`"anthropic/claude-sonnet-4-20250514"`<br>• 对象：`{ provider, name, temperature }`<br>**与model_group同时存在时，优先使用model_group** |
+| `temperature` | 否 | 模型默认 | 温度参数（单独指定时优先） |
+| `model_group` | 否 | - | 模型组，**优先于model字段** |
+| `prompts` | 否 | `[]` | 提示词列表 |
+| `mcp_servers` | 否 | `[]` | MCP服务器列表 |
+| `skills` | 否 | `[]` | 技能列表 |
+| 其他字段 | 否 | - | 未定义的字段会被自动收集到extras中 |
+
+**关于 `tools` 字段：** Agent不直接定义tools，而是通过`skills`来获取工具能力。如需工具定义，请使用skills机制。
+
+**兼容现有格式：** 所有新增字段均为可选，不提供时使用默认值。
 
 ### 工作流定义
 
