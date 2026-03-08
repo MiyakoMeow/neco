@@ -119,6 +119,45 @@ impl std::fmt::Display for SkillName {
         write!(f, "{}", self.0)
     }
 }
+
+/// SkillUlid 运行时标识
+///
+/// [TODO+] SkillUlid架构设计（需与Session/Agent ULID保持一致）：
+/// - 定义：SkillUlid是Skill的内部运行时唯一标识，使用ULID生成
+/// - 用途：
+///   1. 在Session状态中追踪已激活的Skill实例
+///   2. 支持Skill的激活/停用记录和时间戳追踪
+///   3. 与Session ULID、Agent ULID形成完整的运行时标识体系
+/// - 存储方式：
+///   1. 存储在Session状态文件中，路径格式：~/.local/neoco/(session_ulid)/skills/(skill_ulid).toml
+///   2. 每个激活的Skill对应一个TOML文件，记录激活时间、状态等信息
+///   3. Session状态文件包含activated_skills集合，记录所有活跃Skill的SkillUlid
+/// - ULID分配时机：
+///   1. 当调用activate::skill工具激活Skill时分配
+///   2. 与Agent ULID分配策略一致（首次激活时生成）
+/// - 架构一致性：
+///   - Session ULID：顶级容器标识，对应整个会话
+///   - Agent ULID：Agent实例标识，同一Session可包含多个Agent
+///   - SkillUlid：Skill实例标识，同一Agent可激活多个Skill
+///   - 三者共同构成完整的运行时追踪体系
+///
+/// [TODO] 实现细节待TECH-SESSION.md完成后补充
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SkillUlid(ulid::Ulid);
+
+impl SkillUlid {
+    pub fn new() -> Self {
+        Self(ulid::Ulid::new())
+    }
+
+    pub fn from_string(s: &str) -> Result<Self, ulid::DecodeError> {
+        ulid::Ulid::from_string(s).map(Self)
+    }
+
+    pub fn as_str(&self) -> String {
+        self.0.to_string()
+    }
+}
 ```
 
 ### 4.2 SkillService Trait
@@ -233,7 +272,7 @@ impl SkillService {
     /// 加载Skill索引
     /// [TODO] 实现Skill索引加载
     /// 1. 扫描配置的skills目录（遵循配置目录优先级）
-    ///    - 优先级：.neoco/skills > .agents/skills > ~/.config/neoco/skills > ~/.agents/skills
+    ///    - 优先级：详见 [TECH.md#6-存储设计 第754-791行](TECH.md#6-存储设计)
     /// 2. 遍历顶层目录，每个有效目录视为一个Skill
     /// 3. 解析SKILL.md的YAML frontmatter提取元数据
     /// 4. 验证必需字段（name, description）
@@ -329,14 +368,9 @@ pub enum SkillError {
 
 ## 6. Skill目录位置
 
+> 配置目录优先级规则 **详见 [TECH.md#6-存储设计 第754-791行](TECH.md#6-存储设计)**
+
 Skills目录遵循配置目录优先级规则：
-
-> 配置目录优先级规则 **详见 [REQUIREMENT.md](../REQUIREMENT.md#配置目录优先级)**
-
-**目录扫描顺序：**
-- 从高优先级到低优先级扫描
-- 相同名称的Skill：高优先级覆盖低优先级
-- 支持工作流级别的skills配置（`workflows/xxx/skills/`）
 
 ## 7. activate工具
 

@@ -251,11 +251,12 @@ impl DefaultToolRegistry {
         };
 
         // 注册内置工具（按优先级排序）
-        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::list, fs::ls
+        // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::rm, fs::list, fs::ls
         registry.register(Arc::new(FileReadTool));
         registry.register(Arc::new(FileWriteTool));
         registry.register(Arc::new(FileEditTool));
         registry.register(Arc::new(FileDeleteTool));
+        registry.register(Arc::new(FileRmTool::new()));  // fs::rm 别名
         registry.register(Arc::new(FileListTool));
         registry.register(Arc::new(FileLsTool::new()));  // fs::ls 别名
         
@@ -432,18 +433,9 @@ impl ResourceScheduler for DefaultResourceScheduler {
 
 ### 4.1 工具定义
 
+> 工具超时配置 **详见 [TECH.md#12-性能设计 第1188-1193行](TECH.md#12-性能设计)**
+
 | 工具 | 功能 | 超时 |
-|------|------|------|
-| `fs::read` | 读取文件内容 | 10秒 |
-| `fs::write` | 写入文件（完全覆盖） | 10秒 |
-| `fs::append` | 追加文件内容 | 10秒 |
-| `fs::edit` | 编辑文件（基于verify） | 10秒 |
-| `fs::delete` | 删除文件 | 10秒 |
-| `fs::list` / `fs::ls` | 读取目录内容 | 10秒 |
-| `mcp::*` | MCP类工具 | 60秒 |
-| `skill::*` | Skill类工具 | 60秒 |
-| `context::observe` | 观测上下文状态，获取 Dashboard | 5秒 |
-| `context::compact` | 主动压缩上下文（Layer A） | 30秒 |
 
 ### 4.2 fs::read 实现
 
@@ -791,6 +783,7 @@ impl ToolExecutor for FileLsTool {
 ### 4.6 fs::delete 实现
 
 ```rust
+/// 文件删除工具（主工具 fs::delete）
 pub struct FileDeleteTool;
     
 #[async_trait]
@@ -837,6 +830,48 @@ impl ToolExecutor for FileDeleteTool {
         unimplemented!()
     }
 }
+
+/// fs::rm 别名工具 - 复用 FileDeleteTool 的执行逻辑
+pub struct FileRmTool(FileDeleteTool);
+
+impl FileRmTool {
+    pub fn new() -> Self {
+        Self(FileDeleteTool)
+    }
+}
+
+#[async_trait]
+impl ToolExecutor for FileRmTool {
+    fn definition(&self) -> &ToolDefinition {
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "rm"),
+                description: "删除文件（fs::delete 的别名）".into(),
+            schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要删除的文件路径"
+                    }
+                },
+                "required": []
+            }),
+            capabilities: ToolCapabilities::default(),
+            timeout: Duration::from_secs(10),
+            category: ToolCategory::Common,
+        });
+        &DEF
+    }
+    
+    async fn execute(
+        &self,
+        context: &ToolContext,
+        args: Value,
+    ) -> Result<ToolResult, ToolError> {
+        // 委托给 FileDeleteTool 执行
+        self.0.execute(context, args).await
+    }
+}
 ```
 
 ## 5. 上下文工具
@@ -845,11 +880,9 @@ impl ToolExecutor for FileDeleteTool {
 
 ### 5.1.1 工具定义
 
+> 工具超时配置 **详见 [TECH.md#12-性能设计 第1188-1193行](TECH.md#12-性能设计)**
+
 | 工具 | 功能 | 超时 |
-|------|------|------|
-| `context::observe` | 观测上下文状态，获取 Dashboard | 5秒 |
-| `context::compact` | 主动压缩上下文（Layer A） | 30秒 |
-| `tui::question` | 向用户提问（仅限TUI非no-ask模式） | 30秒 |
 
 ### 5.1.2 context::observe
 
@@ -881,7 +914,32 @@ impl ToolExecutor for ContextObserveTool {
                 "properties": {
                     "filter": {
                         "type": "object",
-                        "description": "可选的过滤条件"
+                        "description": "过滤条件",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "description": "按消息角色过滤：system, user, assistant, tool",
+                                "enum": ["system", "user", "assistant", "tool"]
+                            }
+                        }
+                    },
+                    "sort": {
+                        "type": "object",
+                        "description": "排序方式",
+                        "properties": {
+                            "by": {
+                                "type": "string",
+                                "description": "排序字段：id, timestamp, size",
+                                "enum": ["id", "timestamp", "size"],
+                                "default": "id"
+                            },
+                            "order": {
+                                "type": "string",
+                                "description": "排序方向：asc, desc",
+                                "enum": ["asc", "desc"],
+                                "default": "asc"
+                            }
+                        }
                     }
                 }
             }),
@@ -898,13 +956,35 @@ impl ToolExecutor for ContextObserveTool {
         args: Value,
     ) -> Result<ToolResult, ToolError> {
         // TODO: 实现上下文观测
-        // 1. 从 args 解析 filter 参数
+        // 1. 从 args 解析 filter 和 sort 参数
         // 2. 调用 ContextObserver 获取上下文状态
-        // 3. 构建 Dashboard 返回：
-        //    • Usage: xx% (used/total)
-        //    • Steps since tag: xx
-        //    • Pruning status: Stage X
-        //    • Est. turns left: ~xx
+        // 3. 构建详细 Dashboard 返回：
+        //
+        // === 统计信息 (Statistics) ===
+        // - 总消息数量 (total_messages)
+        // - 各角色消息数量 (system_count, user_count, assistant_count, tool_count)
+        // - 总上下文大小（字符数）(total_size)
+        // - 上下文使用率 (usage_percent)
+        // - 预估 token 数 (estimated_tokens)
+        //
+        // === 消息列表 (Messages) ===
+        // - ID: 消息唯一标识
+        // - Role: system/user/assistant/tool
+        // - Content: 消息内容摘要（截取前N个字符）
+        // - Size: 消息大小（字符数）
+        // - Timestamp: 时间戳
+        //
+        // === 内容分组 (Content Groups) ===
+        // - system: 系统提示词列表
+        // - user: 用户消息列表
+        // - assistant: 助手消息列表
+        // - tool: 工具返回内容列表
+        //
+        // === 过滤和排序 ===
+        // - 根据 filter.role 过滤特定角色的消息
+        // - 根据 sort.by 和 sort.order 进行排序（默认按ID升序）
+        //
+        // 4. 返回结构化的 JSON 格式结果
         unimplemented!()
     }
 }

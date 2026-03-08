@@ -328,6 +328,8 @@ pub struct ModelRef {
 
 ### 4.7 重试配置
 
+> 重试策略（3次，指数退避1s, 2s, 4s） **详见 [TECH.md#7-错误处理策略 第795-803行](TECH.md#7-错误处理策略)**
+
 ```rust
 /// 重试配置
 /// 
@@ -347,27 +349,13 @@ impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             max_retries: 3,
-            initial_backoff: Duration::from_secs(1),  // 1秒，对应需求文档的 1s, 2s, 4s 退避序列
+            initial_backoff: Duration::from_secs(1),
             backoff_multiplier: 2.0,
-            max_backoff: Duration::from_secs(4),       // 最大4秒，与退避序列最后一个值一致
+            max_backoff: Duration::from_secs(4),
         }
     }
 }
 ```
-
-#### 重试策略说明
-
-根据需求文档，本系统实现以下重试策略：
-
-- **重试次数**：最多 3 次重试
-- **退避策略**：指数退避
-  - 第 1 次重试：等待 **1 秒**
-  - 第 2 次重试：等待 **2 秒**
-  - 第 3 次重试：等待 **4 秒**
-- **可重试错误**：
-  - 速率限制 (Rate Limit)
-  - 超时 (Timeout)
-  - 服务器错误 (5xx)
 
 ## 5. 业务流程图
 

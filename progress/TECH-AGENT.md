@@ -272,8 +272,8 @@ impl Agent {
 | `definition_source` | AgentDefinitionSource | Agent定义来源：配置目录或工作流节点 |
 | `mode` | Vec\<AgentMode\> | 支持数组形式，如 [primary, subagent] |
 | `state` | AgentState | Agent当前状态 |
-| `model` | Option\<String\> | 具体模型（如 anthropic/claude-sonnet-4-20250514），优先级高于 model_group |
-| `model_group` | Option\<String\> | 模型组（如 claude-3-opus），当 model 未指定时使用 |
+| `model` | Option\<String\> | 具体模型（如 anthropic/claude-sonnet-4-20250514），**当 model_group 未指定时使用** |
+| `model_group` | Option\<String\> | 模型组（如 claude-3-opus），**优先级高于 model** |
 | `system_prompt` | Option\<String\> | Agent运行时使用的系统提示词，可覆盖或扩展定义中的默认提示词 |
 | `created_at` | DateTime\<Utc\> | Agent实例创建的时间戳 |
 | `updated_at` | DateTime\<Utc\> | Agent实例最后更新的时间戳（状态变更、属性修改等） |
@@ -432,7 +432,7 @@ sequenceDiagram
         // 1. 验证父Agent存在
         // 2. 在Session中创建子Agent
         // 3. 应用model/model_group/prompts覆盖（如果提供）
-        //    - model 优先级高于 model_group
+        //    - TODO: 优先级应为 model_group > model > 继承 > 默认（参考 REQUIREMENT.md 第539行）
         //    - 覆盖参数优先级高于继承值
         // 4. 发布AgentCreated事件
         // 5. 返回AgentUlid
@@ -471,15 +471,15 @@ sequenceDiagram
 
 ```
 Agent模型选择优先级（从高到低）：
-1. model 参数 - 具体模型标识，如 "anthropic/claude-sonnet-4-20250514"
-2. model_group 参数 - 模型组标识，如 "claude-3-opus"（在model未指定时使用）
+1. model_group 参数 - 模型组标识，如 "claude-3-opus"（**优先于 model**）
+2. model 参数 - 具体模型标识，如 "anthropic/claude-sonnet-4-20250514"（当 model_group 未指定时使用）
 3. 继承值 - 从父Agent继承的 model 或 model_group
 4. 默认值 - Agent定义中的默认模型配置
 ```
 
 **层级继承语义：**
 - 子Agent创建时，如果未提供 model_override 和 model_group_override，则自动继承父Agent的模型配置
-- 如果同时提供 model_override 和 model_group_override，model_override 优先级更高
+- 如果同时提供 model_override 和 model_group_override，model_group_override 优先级更高
 - model 和 model_group 的区别：model 指定具体模型，model_group 指定模型系列（便于批量切换）
 
 /// Agent执行结果
@@ -576,11 +576,11 @@ impl ToolExecutor for SpawnAgentTool {
                     },
                     "model": {
                         "type": "string",
-                        "description": "覆盖使用的具体模型（可选）。\n子Agent默认继承父Agent的model配置，\n可通过此参数覆盖继承的值。\n\n格式：\n- 字符串形式：'anthropic/claude-sonnet-4-20250514'\n- 优先级高于model_group：同时存在时，model优先于model_group"
+                        "description": "覆盖使用的具体模型（可选）。\n子Agent默认继承父Agent的model配置，\n可通过此参数覆盖继承的值。\n\n格式：\n- 字符串形式：'anthropic/claude-sonnet-4-20250514'\n- TODO: 优先级低于model_group：当model_group同时存在时，model_group优先（参考REQUIREMENT.md第539行）"
                     },
                     "model_group": {
                         "type": "string",
-                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n当model参数未指定时使用此参数。\n\n层级继承语义：\n- 如果不提供此参数且model也未指定，子Agent使用父Agent的model_group\n- 如果提供此参数且model未指定，子Agent使用指定的model_group\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
+                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n当model参数未指定时使用此参数。\n\n层级继承语义：\n- 如果不提供此参数且model也未指定，子Agent使用父Agent的model_group\n- 如果提供此参数且model未指定，子Agent使用指定的model_group\n- **优先级高于model**：与model同时存在时，model_group优先于model\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
                     },
                     "prompts": {
                         "type": "array",

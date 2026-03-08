@@ -124,6 +124,41 @@ graph TD
 | Agent主动 | 上下文大小 ≥ 窗口×90% 且 Agent自觉判断"已完成" | 高 | Agent判断"这段研究/调试已完成" → tag起点 → squash为summary，局限性：Agent可能误判何时算"已完成"，导致压缩过早或过晚 |
 | Layer B (系统Pruning) | 布局失效 | 低 | 安全网，理想情况下永不触发 |
 
+#### Layer A: Agent主动压缩机制
+
+> **设计意图**：让Agent像熟练的开发者一样，自觉管理内存。Agent最清楚哪些工作"已完成"，哪些是"待处理"。
+
+**触发流程**：
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant CM as ContextManager
+    participant MR as MessageRepository
+
+    Agent->>Agent: 判断当前任务是否"已完成"
+    Agent->>CM: context::compact(tag?)
+    CM->>MR: 获取消息列表
+    CM->>MR: 从tag位置截断
+    CM->>MR: 添加摘要消息
+    CM-->>Agent: CompactResult
+```
+
+**Agent判断"已完成"的信号**：
+- 任务目标达成（如：完成代码审查、修复bug、完成调研）
+- 进入等待用户反馈阶段
+- 主动调用 `context::compact` 工具
+
+**摘要生成**：
+- 使用轻量模型（关闭thinking，关闭工具）
+- 摘要长度限制：TODO+提示（建议原始大小的20-30%）
+- 保留关键决策、代码片段、错误教训
+
+**局限性**：
+- Agent可能误判何时算"已完成"
+- 压缩过早导致信息丢失
+- 压缩过晚导致频繁触发系统Pruning
+
 **触发方式：**
 
 | 方式 | 触发条件 | 说明 |
@@ -131,6 +166,64 @@ graph TD
 | Agent主动 | Agent调用 context::compact | Agent自觉管理内存 |
 | 自动触发 | 上下文大小 ≥ 窗口×90% | 达到模型上下文窗口的90%时自动触发，作为安全网 |
 | 手动触发 | /compact命令 | 用户主动 |
+
+#### Layer B: 三阶段系统Pruning
+
+> **设计意图**：作为安全网，在Agent未能及时压缩时自动触发。理想情况下永不触发。
+
+**三阶段执行策略**：
+
+| 阶段 | 触发条件 | 操作 | 压缩率 | 影响 |
+|------|---------|------|--------|------|
+| Stage 1: Soft Trim | 使用率 ≥ 85% | 缩减大型tool_result的内容，保留结构 | ~20-30% | 低，工具结果被截断 |
+| Stage 2: Hard Clear | 使用率 ≥ 92% | 将tool_result替换为占位符（类型+摘要） | ~40-50% | 中，仅保留摘要 |
+| Stage 3: 分级压缩 | 使用率 ≥ 97% | 按事件类型差异化处理 | ~60-70% | 高，按重要性分级 |
+
+**Stage 1: Soft Trim 策略**：
+- 识别大型tool_result（>1KB）
+- 保留前512字符 + 后256字符 + 中间省略提示
+- 保留JSON结构，截断长字符串值
+- TODO+提示：保留原始大小的30-50%
+
+**Stage 2: Hard Clear 策略**：
+- 将完整的tool_result替换为占位符
+- 格式：`[Tool: <tool_name> - <result_type> - <summary>]`
+- 保留工具调用结构，仅丢失执行结果详情
+- TODO+提示：适合需要恢复原始数据时使用RAG
+
+**Stage 3: 分级压缩 策略**：
+- 按事件类型分配保留优先级
+- 高优先级（保留）：错误信息、关键决策、用户确认
+- 中优先级（摘要）：文件修改、代码审查结果
+- 低优先级（删除）：重复性日志、调试输出
+
+**触发流程**：
+
+```mermaid
+sequenceDiagram
+    participant System
+    participant CM as ContextManager
+    participant MR as MessageRepository
+
+    loop 每轮模型调用前
+        System->>CM: check_usage()
+        CM->>CM: 计算使用率
+        alt 使用率 >= 97%
+            CM->>MR: Stage3分级压缩
+            Note over CM,MR: 删除低优先级，摘要中优先级
+        else 使用率 >= 92%
+            CM->>MR: Stage2 Hard Clear
+            Note over CM,MR: 替换为占位符
+        else 使用率 >= 85%
+            CM->>MR: Stage1 Soft Trim
+            Note over CM,MR: 缩减大型结果
+        end
+    end
+```
+
+**与Layer A的区别**：
+- Layer A：Agent主动，高质量，有语义理解
+- Layer B：系统自动，无语义，按规则执行
 
 ## 3. 核心Trait定义
 
@@ -282,22 +375,46 @@ sequenceDiagram
 
 > 维持 40-70% 使用率是最佳状态。
 
+**Core Metric**: usage_percent = total_tokens / context_window_size
+
 ```mermaid
 graph LR
     subgraph "Usage Zone"
-        L1[0-20%<br/>太空<br/>预装太多无关信息]
-        L2[20-40%<br/>偏瘦]
-        L3[40-70%<br/>Goldilocks Zone<br/>最佳状态]
-        L4[70-90%<br/>偏满]
-        L5[90-100%<br/>太满<br/>Pruning频繁触发]
+        L1[0-20%<br/>Too Empty<br/>Too much noise]
+        L2[20-40%<br/>Lean]
+        L3[40-70%<br/>Goldilocks Zone<br/>Optimal]
+        L4[70-90%<br/>Full]
+        L5[90-100%<br/>Too Full<br/>Pruning Triggered]
     end
 ```
 
-| 区域 | 使用率 | 问题 |
-|------|-------|------|
-| 太空 | 0-20% | 预装了太多无关信息，Agent在噪声中迷失 |
-| Goldilocks | 40-70% | 信噪比最优，有足够空间给工具调用 |
-| 太满 | 90%+ | Pruning频繁触发，Agent变成金鱼 |
+**Goldilocks Zone Metrics**:
+
+| Zone | Usage | Feature | Suggestion |
+|------|-------|---------|------------|
+| Empty | 0-20% | Too much irrelevant info | Check if system prompt is too verbose |
+| Lean | 20-40% | May lack context | Normal range, can continue |
+| **Goldilocks** | **40-70%** | **Best SNR, enough space** | **Keep in this range** |
+| Full | 70-90% | Space tight | Agent should consider compact |
+| Too Full | 90%+ | Pruning triggered | System pruning kicks in |
+
+**Why 40-70%?**
+- Enough space: Reserve 30-60K tokens for tool calls and responses
+- SNR: Avoid history diluting attention
+- Buffer: Leave room for unexpected big tasks
+- Compression: Higher quality summaries when compacting in this range
+
+**Usage Calculation**:
+```
+usage_percent = (total_tokens / context_window_size) * 100
+```
+- `total_tokens`: TODO: Calculate via TokenCounter
+- `context_window_size`: Actual model context window (e.g., 128K)
+
+**Dynamic Adjustment**:
+- Long tasks (code refactor): 60-70% acceptable, need more history
+- Short tasks (single Q&A): 30-50% recommended, fast closure
+- TODO: Adjust target zone based on task type
 
 ### 5.2 Context Dashboard
 
@@ -332,11 +449,41 @@ pub struct ContextFilter {
     pub min_id: Option<MessageId>,
     pub max_id: Option<MessageId>,
     pub with_tool_calls: Option<bool>,
+    pub sort_by: Option<SortBy>,  // TODO: 支持排序方式
+    pub sort_order: Option<SortOrder>,  // TODO: 升序/降序
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortBy {
+    Id,       // 按消息ID排序
+    Timestamp, // 按时间戳排序
+    Size,     // 按大小排序
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Asc,  // 升序（默认）
+    Desc, // 降序
 }
 
 pub struct ContextObservation {
-    pub messages: Vec<MessageSummary>,
+    pub messages: Vec<MessageSummary>,  // 消息列表（按sort参数排序，默认按ID升序）
     pub stats: ContextStats,
+    pub grouped: MessageGroups,  // TODO: 按角色分组的内容
+}
+
+pub struct MessageGroups {
+    pub system_prompts: Vec<GroupedMessage>,  // 系统提示词列表
+    pub user_messages: Vec<GroupedMessage>,   // 用户消息列表
+    pub assistant_messages: Vec<GroupedMessage>, // 助手消息列表
+    pub tool_results: Vec<GroupedMessage>,    // 工具返回列表
+}
+
+pub struct GroupedMessage {
+    pub id: MessageId,
+    pub content: String,  // 完整内容（不同于preview，是完整内容）
+    pub size_chars: usize,
+    pub size_tokens: usize,
 }
 
 pub struct MessageSummary {
@@ -369,6 +516,29 @@ pub enum PruningStage {
 ```
 
 ### 5.4 context::observe 工具
+
+**功能**：查看当前上下文的详细信息。
+
+**返回内容**（与REQUIREMENT.md一致）：
+1. **消息列表**：默认按ID升序，可通过`sort_by`参数覆盖
+2. **每条消息的类型**：system/user/assistant/tool
+3. **每条消息的大小**：字符数/预估token数
+4. **总消息数量**
+5. **总上下文大小**
+6. **分组内容**：
+   - 系统提示词列表（system_prompts）
+   - 用户消息列表（user_messages）
+   - 助手消息列表（assistant_messages）
+   - 工具返回列表（tool_results）
+7. **统计信息**：使用率、Pruning阶段、预估剩余轮次等
+
+**输出格式**：TODO+提示 - 格式化为结构化的表格或列表，便于阅读
+
+**过滤参数**：
+- `roles`: 按角色过滤（如只查看tool类型）
+- `sort_by`: 排序方式（id/timestamp/size）
+- `sort_order`: 升序/降序
+- `min_id`/`max_id`: 按ID范围过滤
 
 ```rust
 pub struct ContextObserveTool {

@@ -115,15 +115,9 @@ impl ToolExecutor for McpToolWrapper {
 
 ### 3.3 工具定义
 
+> 工具超时配置 **详见 [TECH.md#12-性能设计 第1188-1193行](TECH.md#12-性能设计)**
+
 MCP工具采用**按需加载**模式，通过 `activate` 工具激活。
-
-| 工具 | 功能 | 超时 |
-|------|------|------|
-| `mcp::context7` | 调用context7-mcp服务器工具 | 60秒 |
-| `mcp::figma` | 调用Figma MCP服务器工具 | 60秒 |
-| `mcp::<server_name>` | 调用指定MCP服务器工具（动态生成） | 60秒 |
-
-> 注：工具名称 `xxx` 对应配置文件 `mcp_servers.xxx`。配置名称中的特殊字符（如 `-`）会映射为下划线（如 `my-tool` → `mcp::my_tool`）。
 
 ### 3.4 按需加载机制
 

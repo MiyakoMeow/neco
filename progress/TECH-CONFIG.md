@@ -30,43 +30,9 @@ graph TB
 
 ### 2.1 配置目录结构
 
+> 配置目录优先级规则 **详见 [TECH.md#6-存储设计 第754-791行](TECH.md#6-存储设计)**
+
 NeoCo 支持多级配置目录，按优先级从高到低：
-
-1. **当前项目配置**：`.neoco/` 目录
-2. **当前项目配置**：`.agents/` 目录
-3. **主配置目录**：`~/.config/neoco/`
-4. **通用配置目录**：`~/.agents/`
-
-```
-# 优先级从高到低
-
-.neoco/                          # 当前项目 .neoco（最高）
-├── neoco.toml
-├── prompts/
-├── agents/
-├── skills/
-└── workflows/
-
-.agents/                        # 当前项目 .agents
-├── prompts/
-├── agents/
-├── skills/
-└── workflows/
-
-~/.config/neoco/                 # 主配置目录
-├── neoco.toml
-├── neoco.<tag>.toml
-├── prompts/
-├── agents/
-├── skills/
-└── workflows/
-
-~/.agents/                      # 通用配置目录（最低）
-├── prompts/
-├── agents/
-├── skills/
-└── workflows/
-```
 
 ### 2.2 Agent查找优先级
 

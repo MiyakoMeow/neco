@@ -13,64 +13,9 @@ Session管理模块负责管理对话Session的生命周期、消息存储和Age
 
 ### 2.1 标识符体系（强类型 - ULID Newtype模式）
 
+> ULID标识符体系 **详见 [TECH.md#3-核心数据类型系统 第263-274行](TECH.md#3-核心数据类型系统)**
+
 ```mermaid
-classDiagram
-    class SessionUlid {
-        +Ulid ulid
-        +new() SessionUlid
-        +from_string(&str) Result~SessionUlid~
-        +as_str() &str
-    }
-    
-    class AgentUlid {
-        +Ulid ulid
-        +new_root() AgentUlid
-        +new_child(parent: &AgentUlid) AgentUlid
-        +parent_ulid() Option<Ulid>
-    }
-    
-    class MessageId {
-        +u64 id
-        +next() Option~MessageId~
-        +as_u64() u64
-    }
-    
-    class NodeUlid {
-        +Ulid ulid
-        +new() NodeUlid
-        +from_string(&str) Result~NodeUlid~
-        +as_str() &str
-    }
-    
-    class ToolId {
-        +Vec<String> parts  // [namespace, name] 格式，如 ["fs", "read"]
-        +new(namespace, name) ToolId
-        +from_parts(&str, &str) Result~ToolId~
-        +namespace() &str
-        +name() &str
-    }
-    
-    class SkillUlid {
-        +Ulid ulid
-        +new() SkillUlid
-        +from_string(&str) Result~SkillUlid~
-        +as_str() &str
-    }
-    
-    SessionUlid --> AgentUlid : contains
-    SessionUlid --> MessageId : allocates
-```
-
-**标识符规则：**
-
-| 标识符 | 生成时机 | 结构 | 校验 |
-|--------|---------|------|------|
-| `SessionUlid` | 创建Session时 | `SessionUlid(Ulid)` | 26位Ulid |
-| `AgentUlid` | Agent实例化时 | 根Agent使用Session ULID，子Agent为新Ulid | 26位Ulid |
-| `MessageId` | 消息添加时 | `MessageId(u64)` | 原子自增（保持u64） |
-| `NodeUlid` | 工作流节点创建时 | `NodeUlid(Ulid)` | 26位Ulid |
-| `ToolId` | 工具注册时 | `ToolId(Vec<String>)` | namespace::name 格式（如 `["fs", "read"]`） |
-| `SkillUlid` | Skill加载时 | `SkillUlid(Ulid)` | 26位Ulid |
 
 ### 2.2 领域仓储接口（依赖反转）
 
@@ -927,6 +872,8 @@ pub trait StorageBackend: Send + Sync {
 ```
 
 ### 4.2 文件系统存储实现
+
+> 存储路径结构 **详见 [TECH.md#6-存储设计 第784-791行](TECH.md#6-存储设计)**
 
 ```text
 ~/.local/neoco/

@@ -112,7 +112,7 @@ impl CliInterface {
         // 2. 加载配置文件：
         //    - 如果提供--config参数，使用指定文件
         //    - 否则按优先级查找并合并所有配置文件：
-        //      1. {working_dir}/.neoco/neoco.toml → 2. {working_dir}/.agents/neoco.toml → 3. ~/.config/neoco/neoco.toml → 4. ~/.agents/neoco.toml
+        //      配置目录优先级 **详见 [TECH-CONFIG.md#2.1 配置目录结构](./TECH-CONFIG.md#21-配置目录结构)**
         //      其中 {working_dir} 默认为当前目录（"."）
         //      相对路径配置以 working_dir 为基准，绝对路径配置不受 working_dir 影响
         //      高优先级覆盖低优先级配置，嵌套对象深度合并
@@ -551,7 +551,49 @@ DELETE /api/v1/sessions/{session_id}
 }
 ```
 
-#### 5.3.5 错误响应格式
+#### 5.3.5 认证架构
+
+> [TODO+] 需求文档要求：默认无密钥，用户可以选择使用固定密钥
+> - 参考：REQUIREMENT.md "权限设计" 章节
+
+```rust
+pub struct AuthConfig {
+    // 固定密钥列表（可选配置）
+    // 配置方式：在 daemon 配置中指定 api_keys
+    // 默认：无密钥，不进行认证检查
+    pub api_keys: Vec<String>,
+}
+
+impl DaemonInterface {
+    pub async fn run(&self) -> Result<(), UiError> {
+        // [TODO+] 实现认证中间件
+        // 1. 从配置读取 api_keys（可选）
+        // 2. 如果配置了 api_keys：
+        //    - 检查请求 Authorization header
+        //    - 支持 Bearer Token 格式
+        //    - 密钥匹配则允许访问，否则返回 401 Unauthorized
+        // 3. 如果未配置 api_keys：
+        //    - 跳过认证检查，允许所有请求（默认无密钥模式）
+        // 4. 暂不实现：授权策略、跨域访问控制、速率限制
+        unimplemented!()
+    }
+}
+```
+
+**认证流程：**
+
+```mermaid
+flowchart LR
+    A[请求进入] --> B{已配置 api_keys?}
+    B -->|否| C[允许访问]
+    B -->|是| D{Authorization header?}
+    D -->|否| E[401 Unauthorized]
+    D -->|是| F{密钥匹配?}
+    F -->|否| E
+    F -->|是| C
+```
+
+#### 5.3.6 错误响应格式
 
 ```json
 {
@@ -591,17 +633,18 @@ pub enum UiError {
     BadRequest(String),
 }
 
-#[derive(Debug, Error)]
-pub enum ApiError {
-    #[error("Session未找到")]
-    SessionNotFound,
+    #[derive(Debug, Error)]
+    pub enum ApiError {
+        #[error("Session未找到")]
+        SessionNotFound,
 
-    // [TODO] 暂不实现：认证相关错误
-    // #[error("未授权访问: {0}")]
-    // Unauthorized(String),
+        // [TODO+] 需求文档要求：默认无密钥，用户可以选择使用固定密钥
+        // 参考 REQUIREMENT.md "权限设计" 章节
+        #[error("未授权访问: {0}")]
+        Unauthorized(String),
 
-    #[error("无效请求: {0}")]
-    BadRequest(String),
+        #[error("无效请求: {0}")]
+        BadRequest(String),
 
     #[error("冲突: {0}")]
     Conflict(String),
@@ -622,12 +665,12 @@ pub enum ApiError {
     BadGateway(String),
 }
 
-impl ApiError {
-    pub fn status_code(&self) -> u16 {
-        match self {
-            ApiError::SessionNotFound => 404,
-            // ApiError::Unauthorized(_) => 401,
-            ApiError::BadRequest(_) => 400,
+    impl ApiError {
+        pub fn status_code(&self) -> u16 {
+            match self {
+                ApiError::SessionNotFound => 404,
+                ApiError::Unauthorized(_) => 401,
+                ApiError::BadRequest(_) => 400,
             ApiError::Conflict(_) => 409,
             ApiError::NotFound(_) => 404,
             ApiError::RequestTimeout => 408,
@@ -640,7 +683,7 @@ impl ApiError {
     pub fn error_code(&self) -> &'static str {
         match self {
             ApiError::SessionNotFound => "SESSION_NOT_FOUND",
-            // ApiError::Unauthorized(_) => "UNAUTHORIZED",
+            ApiError::Unauthorized(_) => "UNAUTHORIZED",
             ApiError::BadRequest(_) => "BAD_REQUEST",
             ApiError::Conflict(_) => "CONFLICT",
             ApiError::NotFound(_) => "NOT_FOUND",

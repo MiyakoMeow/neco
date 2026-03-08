@@ -696,7 +696,14 @@ to = "review-prd"
 [[edges]]
 from = "review-prd"
 to = "write-prd"
-select = [{ option = "reject" }]  # 触发时 counters.reject += 1
+select = [{ option = "approve_prd" }, { option = "reject" }]  # 触发时计数器+1
+
+[[edges]]
+from = "write-prd"
+to = "write-tech-doc"
+require = [
+  { option = "approve_prd", min_count = 1 }  # 需要 counters.approve_prd >= 1
+]
 
 [[edges]]
 from = "review-prd"
@@ -752,7 +759,8 @@ graph LR
     
     WP --> RP
     RP -->|reject| WP
-    RP -->|approve_prd| WT
+    RP -->|approve_prd| WP
+    WP -.->|approve_prd| WT
     
     WT --> RT
     RT -->|reject| WT
