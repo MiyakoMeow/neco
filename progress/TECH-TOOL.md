@@ -434,12 +434,12 @@ impl ResourceScheduler for DefaultResourceScheduler {
 
 | 工具 | 功能 | 超时 |
 |------|------|------|
-| `fs::read` | 读取文件内容 | 5秒 |
+| `fs::read` | 读取文件内容 | 10秒 |
 | `fs::write` | 写入文件（完全覆盖） | 10秒 |
 | `fs::append` | 追加文件内容 | 10秒 |
 | `fs::edit` | 编辑文件（基于verify） | 10秒 |
-| `fs::delete` | 删除文件 | 5秒 |
-| `fs::list` / `fs::ls` | 读取目录内容 | 5秒 |
+| `fs::delete` | 删除文件 | 10秒 |
+| `fs::list` / `fs::ls` | 读取目录内容 | 10秒 |
 
 ### 4.2 fs::read 实现
 
@@ -472,7 +472,7 @@ pub mod fs {
                     "required": ["path"]
                 }),
                 capabilities: ToolCapabilities::default(),
-                timeout: Duration::from_secs(5),
+                timeout: Duration::from_secs(10),
                 category: ToolCategory::Common,
             });
             &DEF
@@ -716,7 +716,7 @@ impl ToolExecutor for FileListTool {
                 "required": []
             }),
             capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(10),
         });
         &DEF
     }
@@ -768,7 +768,7 @@ impl ToolExecutor for FileLsTool {
                 "required": []
             }),
             capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(10),
         });
         &DEF
     }
@@ -806,7 +806,7 @@ impl ToolExecutor for FileDeleteTool {
                 "required": []
             }),
             capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(10),
             category: ToolCategory::Common,
         });
         &DEF

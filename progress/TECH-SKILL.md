@@ -324,14 +324,9 @@ pub enum SkillError {
 
 ## 6. Skill目录位置
 
-Skills目录遵循配置目录优先级规则（详见 REQUIREMENT.md）：
+Skills目录遵循配置目录优先级规则：
 
-| 优先级 | 位置 | 说明 |
-|--------|------|------|
-| 1 | `.neoco/skills/` | 项目根目录下的Neoco配置 |
-| 2 | `.agents/skills/` | 项目根目录下的Agent配置 |
-| 3 | `~/.config/neoco/skills/` | 用户主配置目录 |
-| 4 | `~/.agents/skills/` | 通用Agent配置目录 |
+> 配置目录优先级规则 **详见 [REQUIREMENT.md](../REQUIREMENT.md#配置目录优先级)**
 
 **目录扫描顺序：**
 - 从高优先级到低优先级扫描

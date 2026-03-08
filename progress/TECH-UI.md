@@ -76,13 +76,8 @@ pub struct CliArgs {
     
     /// 指定配置文件路径（覆盖默认合并行为）
     /// 
-    /// 默认按以下优先级查找并合并所有配置文件（相对于 working_dir）：
-    /// 1. {working_dir}/.neoco/neoco.toml（当前项目，最高优先级）
-    /// 2. {working_dir}/.agents/neoco.toml（当前项目）
-    /// 3. ~/.config/neoco/neoco.toml（用户主配置，不受 working_dir 影响）
-    /// 4. ~/.agents/neoco.toml（通用配置，不受 working_dir 影响）
+    /// 配置文件优先级规则 **详见 [TECH-CONFIG.md](./TECH-CONFIG.md#21-配置目录结构)**
     /// 
-    /// 合并规则：高优先级配置覆盖低优先级的相同键，嵌套对象采用深度合并。
     /// 提供此参数将跳过默认合并，直接使用指定文件。
     #[arg(short = 'c', long, global = true)]
     config: Option<PathBuf>,
@@ -91,7 +86,7 @@ pub struct CliArgs {
     /// 
     /// 指定项目根目录，用于：
     /// 1. 查找配置文件：相对路径（.neoco/, .agents/）以此目录为基准
-    /// 2. 存储数据：Session数据默认存储于此目录下的数据目录中
+    /// 2. 存储数据：Session数据存储位置 **详见 [TECH-SESSION.md](./TECH-SESSION.md#session存储)**
     /// 
     /// 注意：绝对路径配置（~/.config/neoco/, ~/.agents/）不受此参数影响。
     #[arg(short = 'w', long, global = true, default_value = ".")]
@@ -431,27 +426,6 @@ pub struct DaemonInterface {
     config: DaemonConfig,
     session_manager: Arc<SessionManager>,
     workflow_engine: Arc<WorkflowEngine>,
-}
-
-pub struct DaemonConfig {
-    // 服务器绑定地址
-    pub host: String,
-    pub port: u16,
-
-    // TLS配置
-    pub tls: Option<TlsConfig>,
-
-    // [TODO] 暂不实现：认证相关配置
-    // pub auth: AuthConfig,
-
-    // [TODO] 暂不实现：速率限制
-    // pub rate_limit: RateLimitConfig,
-
-    // [TODO] 暂不实现：CORS配置
-    // pub cors: CorsConfig,
-
-    // 服务器配置
-    pub server: ServerConfig,
 }
 
 pub struct TlsConfig {

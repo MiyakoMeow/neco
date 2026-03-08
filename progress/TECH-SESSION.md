@@ -935,7 +935,7 @@ pub trait StorageBackend: Send + Sync {
         └── {agent_id}.toml  # Agent消息文件，包含parent_ulid恢复树形结构
 ```
 
-> **注意**：不强制要求单独的session.toml，Session元数据可嵌入Agent文件中或使用其他简化方案。
+> **注意**：不强制要求单独的session.toml，Session元数据可嵌入Agent文件中或使用其他简化方案。具体见 TECH.md 存储结构设计。
 
 **Agent消息（{agent_id}.toml）：**
 

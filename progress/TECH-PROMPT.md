@@ -70,12 +70,22 @@ sequenceDiagram
 
 ## 可用工具
 
-- activate: 激活额外能力
-- context: 上下文观测
-- fs: 文件系统操作
-- mcp: MCP服务器工具
-- multi-agent: 多智能体协作
-- question: 向用户提问
+- activate::skill: 激活额外skill能力
+- activate::mcp: 激活MCP服务器
+- context::observe: 上下文观测
+- context::compact: 上下文压缩
+- fs::read: 读取文件
+- fs::write: 写入文件
+- fs::edit: 编辑文件
+- fs::delete: 删除文件
+- fs::list: 列出目录
+- mcp::<server_name>: MCP服务器工具（动态格式）
+- multi-agent::spawn: 创建子Agent
+- multi-agent::send: 向子Agent发送消息
+- multi-agent::report: 获取子Agent报告
+- tui::question: 向用户提问
+- workflow::pass: 继续执行下一节点
+- workflow::option: 选择工作流分支
 
 ## 注意事项
 

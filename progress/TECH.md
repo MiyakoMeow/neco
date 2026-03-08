@@ -267,7 +267,7 @@ graph TD
 | 类型 | 结构 | 校验规则 |
 |------|------|----------|
 | `SessionUlid` | `struct SessionUlid(Ulid)` | 26位Ulid字符串 |
-| `AgentUlid` | `struct AgentUlid { session: Ulid, agent: Ulid }` | 双Ulid结构。<br>- **第一个Agent（最上层）**：使用Session ULID（session与agent字段相同）<br>- **后续Agent**：生成独立ULID（session字段标识所属Session，agent字段标识唯一Agent实例）<br>查询Agent所属Session可直接从AgentUlid.session获取，无需通过SessionManager索引 |
+| `AgentUlid` | `struct AgentUlid(Ulid)` | newtype模式。<br>- **根Agent**：使用Session ULID<br>- **子Agent**：生成新Ulid标识唯一Agent实例<br>// TODO: 具体实现细节见 [TECH-SESSION.md#31-结构定义](TECH-SESSION.md#31-结构定义) |
 | `MessageId` | `struct MessageId(u64)` | 原子自增，Session范围唯一（保持u64） |
 | `NodeUlid` | `struct NodeUlid(Ulid)` | 26位Ulid字符串 |
 | `ToolId` | `struct ToolId(Vec<String>)` | namespace::name 格式（如 `["fs", "read"]`） |
@@ -783,7 +783,7 @@ pub enum IdError {
 
 ~/.local/neoco/           # 数据目录
 └── {session_id}/        # Session目录
-    ├── session.toml     # Session元数据
+    ├── session.toml     # Session元数据（可选，详见 [TECH-SESSION.md#32-持久化结构](TECH-SESSION.md#32-持久化结构)）
     └── agents/
         └── {agent_id}.toml  # Agent消息
 ```
