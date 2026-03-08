@@ -54,14 +54,26 @@ pub struct ModelCapabilities {
 }
 
 /// 聊天完成请求
+///
+/// **注意：`max_tokens` 与 `max_completion_tokens` 为互斥参数：**
+/// - `max_tokens` 已废弃，仅用于向后兼容
+/// - `max_completion_tokens` 是推荐参数，适用于所有模型
+/// - o 系列推理模型（o1、o1-mini 等）**仅支持** `max_completion_tokens`，不支持 `max_tokens`
+/// - 同时设置两者时，`max_completion_tokens` 优先级更高
 #[derive(Debug, Clone)]
 pub struct ChatRequest<'a> {
     pub model: String,
     pub messages: Vec<ModelMessage<'a>>,
     pub stream: bool,
     pub temperature: Option<f64>,
+    /// 限制输出token数量（推荐）
+    /// - o 系列模型必须使用此参数
+    /// - 与 max_tokens 同时设置时以此为准
+    pub max_completion_tokens: Option<u32>,
+    /// 限制输出token数量（已废弃，仅向后兼容）
+    /// - o 系列模型不支持此参数
+    /// - 推荐使用 max_completion_tokens 替代
     pub max_tokens: Option<u32>,
-    pub max_completion_tokens: Option<u32>,  // 新增：限制输出token数量
     pub frequency_penalty: Option<f64>,       // 新增：频率惩罚
     pub presence_penalty: Option<f64>,       // 新增：存在惩罚
     pub top_p: Option<f64>,                  // 新增：核采样

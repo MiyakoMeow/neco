@@ -375,7 +375,7 @@ flowchart LR
 - 高优先级配置覆盖低优先级相同键
 - 数组类型采用替换而非合并
   - 字符串数组：如需追加而非替换，使用特殊语法 `+<item>`（例如 `models = [+new-model]`）
-  - 对象数组：使用 TOML 内联表语法追加对象（例如 `models = [+{ provider = "openai", name = "gpt-4" }]`）
+  - 对象数组：使用 TOML 内联表语法追加对象（例如 `models = [+{ provider = "openai", name = "gpt-5.2" }]`）
   - 转义：以 `+` 开头的字符串值需使用 `++` 前缀表示字面值（例如 `models = [++my-value]` 表示值为 `+my-value`）
 - 嵌套对象采用深度合并
 

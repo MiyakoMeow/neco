@@ -239,8 +239,7 @@ MCP协议基于JSON-RPC 2.0规范，主要消息类型包括：
     "params": {
         "protocolVersion": "2025-06-18",
         "capabilities": {
-            "roots": { "listChanged": true },
-            "sampling": {}
+            // 客户端能力声明
         },
         "clientInfo": {
             "name": "neoco",
