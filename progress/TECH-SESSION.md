@@ -24,9 +24,9 @@ classDiagram
     
     class AgentUlid {
         +Ulid ulid
-        +new_root(session_ulid) AgentUlid  # 根Agent与Session ULID相同
+        +new_root() AgentUlid
         +new_child(parent: &AgentUlid) AgentUlid
-        +session_ulid() SessionUlid
+        +parent_ulid() Option<Ulid>
     }
     
     class MessageId {

@@ -201,7 +201,7 @@ pub struct DefaultToolRegistry {
 }
 
 impl DefaultToolRegistry {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let mut registry = Self {
             tools: RwLock::new(HashMap::new()),
             timeouts: RwLock::new(HashMap::new()),
@@ -209,40 +209,40 @@ impl DefaultToolRegistry {
 
         // 注册内置工具（按优先级排序）
         // 1. 核心工具（文件系统）：fs::read, fs::write, fs::edit, fs::delete, fs::list, fs::ls
-        registry.register(FileReadTool);
-        registry.register(FileWriteTool);
-        registry.register(FileEditTool);
-        registry.register(FileDeleteTool);
-        registry.register(FileListTool);
-        registry.register(FileLsTool::new());  // fs::ls 别名
+        registry.register(Arc::new(FileReadTool));
+        registry.register(Arc::new(FileWriteTool));
+        registry.register(Arc::new(FileEditTool));
+        registry.register(Arc::new(FileDeleteTool));
+        registry.register(Arc::new(FileListTool));
+        registry.register(Arc::new(FileLsTool::new()));  // fs::ls 别名
         
         // 2. 上下文工具：context::observe
         // 依赖注入方式：通过工厂函数或服务容器获取实例
         // 示例: let observer = ctx.container().resolve::<dyn ContextObserver>();
         let context_observer = create_context_observer().await;
-        registry.register(ContextObserveTool::new(context_observer));
+        registry.register(Arc::new(ContextObserveTool::new(context_observer)));
         
         // 2.1 上下文工具：context::compact
         // 依赖注入方式：通过工厂函数或服务容器获取实例
         // 示例: let compression = ctx.container().resolve::<CompressionService>();
         let compression_service = create_compression_service().await;
-        registry.register(ContextCompactTool::new(compression_service));
+        registry.register(Arc::new(ContextCompactTool::new(compression_service)));
         
         // 3. 多智能体工具：multi-agent::spawn, multi-agent::send, multi-agent::report
-        registry.register(MultiAgentSpawnTool);
-        registry.register(MultiAgentSendTool);
-        registry.register(MultiAgentReportTool);
+        registry.register(Arc::new(MultiAgentSpawnTool));
+        registry.register(Arc::new(MultiAgentSendTool));
+        registry.register(Arc::new(MultiAgentReportTool));
         
         // 4. 激活工具：activate::skill, activate::mcp
-        registry.register(ActivateSkillTool);
-        registry.register(ActivateMcpTool);
+        registry.register(Arc::new(ActivateSkillTool));
+        registry.register(Arc::new(ActivateMcpTool));
         
         // 5. 工作流工具：workflow::pass, workflow::option
-        registry.register(WorkflowOptionTool);
-        registry.register(WorkflowPassTool);
+        registry.register(Arc::new(WorkflowOptionTool));
+        registry.register(Arc::new(WorkflowPassTool));
         
         // 6. 上下文工具：question::ask
-        registry.register(QuestionAskTool);
+        registry.register(Arc::new(QuestionAskTool));
 
         // 注意：MCP和Skill外部工具在运行时动态注册
 
@@ -764,7 +764,7 @@ impl ToolExecutor for QuestionAskTool {
 
 **执行约束：**
 - 仅在TUI交互模式下可用，且未启用 `--no-ask` 参数
-- 在CLI或Agent模式下调用时返回 `ToolError::Execution` 错误
+- 在CLI或Agent模式下调用时返回 `ToolError::PermissionDenied` 错误
 - 超时时间可通过timeout参数配置，默认30秒
 
 ### 5.1.4 context::compact
