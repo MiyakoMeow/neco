@@ -97,8 +97,8 @@ pub struct ToolDefinition {
 
 /// 工具执行上下文
 pub struct ToolContext {
-    pub session_id: SessionId,
-    pub agent_id: AgentId,
+    pub session_ulid: SessionUlid,
+    pub agent_ulid: AgentUlid,
     pub working_dir: PathBuf,
 }
 
@@ -136,30 +136,35 @@ pub trait ToolExecutor: Send + Sync {
 /// 工具注册表Trait
 #[async_trait]
 pub trait ToolRegistry: Send + Sync {
-    fn register(&self, tool: Arc<dyn ToolExecutor>);
+    async fn register(&self, tool: Arc<dyn ToolExecutor>);
     
     fn get(&self, id: &ToolId) -> Option<Arc<dyn ToolExecutor>>;
     
     fn definitions(&self) -> Vec<ToolDefinition>;
     
-    fn timeout(&self, id: &ToolId) -> Duration;
+    fn timeout(&self, id: &ToolId) -> Option<Duration>;
     
     fn set_timeout(&self, prefix: &str, duration: Duration);
     
     fn list_tools(&self) -> Vec<ToolId>;
 }
 
-/// 工具ID（强类型）
+/// 工具ID（静态命名空间标识符）
+/// 格式：[namespace, name]（如 ["fs", "read"], ["multi-agent", "spawn"]）
+/// 注意：工具ID是静态的，在工具注册时确定，不同于动态生成的ULID
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolId(pub String);
+pub struct ToolId(pub Vec<String>);
 
 impl ToolId {
+    pub fn new(namespace: impl Into<String>, name: impl Into<String>) -> Self {
+        vec![namespace.into(), name.into()]
+    }
+
     pub fn from_parts(namespace: &str, name: &str) -> Self {
-        Self(format!("{}::{}", namespace, name))
+        vec![namespace.to_string(), name.to_string()]
     }
 
     pub fn from_parts_validated(namespace: &str, name: &str) -> Result<Self, ToolError> {
-        // 验证namespace：只允许小写字母、数字、连字符
         if !namespace.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
             return Err(ToolError::InvalidArgs(format!(
                 "Invalid namespace '{}': only lowercase letters, digits, and hyphens allowed",
@@ -167,7 +172,6 @@ impl ToolId {
             )));
         }
 
-        // 验证name：只允许小写字母、数字、连字符、下划线
         if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
             return Err(ToolError::InvalidArgs(format!(
                 "Invalid name '{}': only lowercase letters, digits, hyphens, and underscores allowed",
@@ -175,20 +179,19 @@ impl ToolId {
             )));
         }
 
-        Ok(Self(format!("{}::{}", namespace, name)))
+        Ok(Self(vec![namespace.to_string(), name.to_string()]))
     }
 
     pub fn namespace(&self) -> Option<&str> {
-        self.0.split("::").next()
+        self.0.first().map(|s| s.as_str())
     }
 
     pub fn name(&self) -> Option<&str> {
-        self.0.split("::").nth(1)
+        self.0.get(1).map(|s| s.as_str())
     }
 }
-```
 
-### 3.3 默认工具注册表实现
+/// 3.3 默认工具注册表实现
 
 ```rust
 /// 默认工具注册表实现
@@ -244,10 +247,10 @@ impl DefaultToolRegistry {
 
 #[async_trait]
 impl ToolRegistry for DefaultToolRegistry {
-    async fn register<T: ToolExecutor + Send + Sync + 'static>(&mut self, tool: T) {
+    async fn register(&self, tool: Arc<dyn ToolExecutor>) {
         let def = tool.definition();
-        let executor = Arc::new(tool);
-        self.tools.write().await.insert(def.id.clone(), executor);
+        let mut tools = self.tools.write().await;
+        tools.insert(def.id.clone(), tool);
     }
     
     async fn get(&self, id: &ToolId) -> Option<Arc<dyn ToolExecutor>> {
@@ -269,8 +272,8 @@ impl ToolRegistry for DefaultToolRegistry {
         }
     }
     
-    async fn set_timeout(&self, id: ToolId, timeout: Duration) {
-        self.timeouts.write().await.insert(id.0, timeout);
+    async fn set_timeout(&self, prefix: &str, timeout: Duration) {
+        self.timeouts.write().await.insert(prefix.to_string(), timeout);
     }
     
     async fn list_tools(&self) -> Vec<ToolId> {
@@ -300,7 +303,7 @@ pub mod fs {
     impl ToolExecutor for FileReadTool {
         fn definition(&self) -> &ToolDefinition {
             static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-                id: ToolId("fs::read".into()),
+                id: ToolId::new("fs", "read"),
                 description: "读取文件内容".into(),
                 schema: json!({
                     "type": "object",
@@ -354,9 +357,9 @@ pub struct FileWriteTool;
 #[async_trait]
 impl ToolExecutor for FileWriteTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("fs::write".into()),
-            description: "写入文件内容（完全覆盖）".into(),
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "write"),
+                description: "写入文件内容（完全覆盖）".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -398,9 +401,9 @@ pub struct FileEditTool;
 #[async_trait]
 impl ToolExecutor for FileEditTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("fs::edit".into()),
-            description: "基于verify编辑文件内容".into(),
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "edit"),
+                description: "基于verify编辑文件内容".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -499,9 +502,9 @@ pub struct FileDeleteTool;
 #[async_trait]
 impl ToolExecutor for FileDeleteTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("fs::delete".into()),
-            description: "删除文件".into(),
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("fs", "delete"),
+                description: "删除文件".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -570,9 +573,9 @@ impl ContextObserveTool {
 #[async_trait]
 impl ToolExecutor for ContextObserveTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("context::observe".into()),
-            description: "观测上下文状态，获取内存使用仪表盘".into(),
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("context", "observe"),
+                description: "观测上下文状态，获取内存使用仪表盘".into(),
             schema: json!({
                 "type": "object",
                 "properties": {
@@ -628,9 +631,9 @@ impl ContextCompactTool {
 #[async_trait]
 impl ToolExecutor for ContextCompactTool {
     fn definition(&self) -> &ToolDefinition {
-        static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
-            id: ToolId("context::compact".into()),
-            description: "主动压缩上下文，将历史消息压缩为摘要（Agent主动管理内存）".into(),
+            static DEF: Lazy<ToolDefinition> = Lazy::new(|| ToolDefinition {
+                id: ToolId::new("context", "compact"),
+                description: "主动压缩上下文，将历史消息压缩为摘要（Agent主动管理内存）".into(),
             schema: json!({
                 "type": "object",
                 "properties": {

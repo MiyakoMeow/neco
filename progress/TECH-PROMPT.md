@@ -151,14 +151,14 @@ pub trait PromptBuilder {
 
 ```rust
 pub trait SessionRepository: Send + Sync {
-    async fn get_or_create(&self, session_id: &str) -> Result<Session, SessionError>;
+    async fn get_or_create(&self, session_ulid: &SessionUlid) -> Result<Session, SessionError>;
     async fn save(&self, session: &Session) -> Result<(), SessionError>;
-    async fn find_by_id(&self, session_id: &str) -> Result<Option<Session>, SessionError>;
+    async fn find_by_id(&self, session_ulid: &SessionUlid) -> Result<Option<Session>, SessionError>;
 }
 ```
 
 **参数说明：**
-- `session_id: &str` - 会话唯一标识符
+- `session_ulid: &SessionUlid` - 会话ULID标识符
 - `session: &Session` - 会话实例
 
 **返回值定义：**
