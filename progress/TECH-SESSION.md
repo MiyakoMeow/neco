@@ -305,13 +305,25 @@ pub enum AgentModeParsed {
 }
 
 impl AgentDefinition {
-    pub fn from_file(path: &Path) -> Result<Self, AgentDefinitionError> {
+    /// Agent文件解析结果
+    pub struct ParsedAgentFile {
+        /// Agent元数据定义
+        pub definition: AgentDefinition,
+        /// Markdown正文内容（作为提示词）
+        pub body: String,
+    }
+
+    pub fn from_file(path: &Path) -> Result<ParsedAgentFile, AgentDefinitionError> {
         // TODO: 实现要点
         // 1. 读取文件内容
         // 2. 解析YAML头部 (--- delimited)
-        // 3. 填充默认值（prompts等空Vec）
+        // 3. 分离frontmatter和Markdown正文
+        // 4. 填充默认值（prompts等空Vec）
+        // 5. 返回ParsedAgentFile { definition, body }
+        // 6. 提示词合并规则：Markdown正文在前，prompts列表项在后追加
         unimplemented!()
     }
+}
 
     /// 获取实际使用的模型组
     /// 优先级：model_group > model.provider > 默认（由运行时决定）
@@ -335,7 +347,7 @@ impl AgentDefinition {
     }
 
     /// 获取实际使用的温度参数
-    /// 优先级：model.temperature > temperature > 模型默认
+    /// 优先级：model对象内temperature > 外层temperature字段 > 模型默认
     pub fn resolve_temperature(&self) -> Option<f64> {
         // TODO: 实现要点
         // 1. 优先从 model (Object) 的 temperature 获取

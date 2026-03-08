@@ -459,6 +459,21 @@ http_headers = { "X-Figma-Region" = "us-east-1" }
 - 路径：`agents/xxx.md`
 - 单个Markdown文件即为一个Agent定义，使用YAML frontmatter定义元数据，Markdown内容作为提示词。
 
+**提示词合并规则：**
+- Markdown正文内容作为基础提示词
+- frontmatter中的`prompts`列表为追加的提示词组件
+- 最终提示词 = Markdown正文 + prompts列表项（按顺序追加）
+- 示例：
+  ```yaml
+  ---
+  prompts:
+    - base
+    - multi-agent
+  ---
+  # Agent 提示词内容...
+  ```
+  实际加载时：先加载Markdown正文，再依次追加prompts中定义的组件
+
 #### Agent头部信息
 
 ```yaml
