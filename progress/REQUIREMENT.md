@@ -492,8 +492,7 @@ model:
   temperature: 0.1
 
 # 注意：model_group 与 model 同时存在时，优先使用 model_group
-
-**当 model 和 model_group 均未设置时：** 使用模型默认配置（由运行时决定具体模型）。
+# 未设置model字段时：使用模型默认配置（由运行时决定具体模型）
 ```
 
 **mode字段支持的格式：**

@@ -260,8 +260,14 @@ pub enum ModelValue {
     String(String),
     /// 对象形式：{ provider, name, temperature }
     Object(ModelRef),
-    /// 未设置
+    /// 未设置，使用模型默认配置
     None,
+}
+
+impl Default for ModelValue {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 /// 模型引用（统一格式）
@@ -278,10 +284,16 @@ pub struct ModelRef {
 pub enum AgentMode {
     /// 字符串形式："primary" / "subagent"
     String(String),
-    /// 数组形式：["primary", "subagent"]
+    /// 数组形式：["primary", "subagent"]（不能为空，空数组无效）
     Array(Vec<String>),
     /// 解析后形式
     Parsed(AgentModeParsed),
+}
+
+impl Default for AgentMode {
+    fn default() -> Self {
+        Self::String("primary".to_string())
+    }
 }
 
 /// 解析后的运行模式
@@ -302,14 +314,14 @@ impl AgentDefinition {
     }
 
     /// 获取实际使用的模型组
-    /// 优先级：model_group > model.provider > 默认
+    /// 优先级：model_group > model.provider > 默认（由运行时决定）
     pub fn resolve_model_group(&self) -> Option<&str> {
         // TODO: 实现要点
         // 1. 如果 model_group 不为空，返回 Some(model_group)
         // 2. 否则从 model 字段提取 provider
         //    - ModelValue::String: split('/') 取第一段
         //    - ModelValue::Object: 取 provider 字段
-        // 3. 都为空时返回 None
+        // 3. 都为空时返回 None（表示由运行时决定默认模型）
         unimplemented!()
     }
 
@@ -336,8 +348,9 @@ impl AgentDefinition {
     pub fn resolve_mode(&self) -> AgentModeParsed {
         // TODO: 实现要点
         // - AgentMode::String: "primary"->Primary, "subagent"->SubAgent
-        // - AgentMode::Array: 转换为 Multiple([...])
+        // - AgentMode::Array: 转换为 Multiple([...])，空数组无效（返回Primary）
         // - AgentMode::Parsed: 直接返回
+        // 注意：数组不能为空，空数组无效（等同于未设置，返回primary模式）
         unimplemented!()
     }
 }
