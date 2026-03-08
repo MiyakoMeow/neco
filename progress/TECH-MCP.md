@@ -536,10 +536,15 @@ pub async fn restore_session(
 ) -> Result<McpSession, McpError> {
     let mut params = serde_json::Map::new();
     params.insert("protocolVersion".to_string(), serde_json::Value::String(CURRENT_PROTOCOL_VERSION.to_string()));
-    params.insert("sessionId".to_string(), serde_json::Value::String(session_id.as_str().to_string()));
     
     let request = Request::new("initialize", Value::Object(params));
-    let response = self.peer.send_request(request).await?;
+    
+    // HTTP头传递会话ID和协议版本
+    let headers = &[
+        ("MCP-Session-Id", session_id.as_str()),
+        ("MCP-Protocol-Version", CURRENT_PROTOCOL_VERSION),
+    ];
+    let response = self.peer.send_request_with_headers(request, headers).await?;
     
     // 解析响应中的服务器能力
     let result = response.result()
@@ -586,99 +591,109 @@ pub mod jsonrpc {
 }
 ```
 
-### 12.2 错误类型定义
+### 12.2 错误类型扩展
+
+> 注意：完整的 `McpError` 定义见第5节。以下为补充的错误变体和JSON-RPC映射扩展。
 
 ```rust
-#[derive(Debug, Error)]
-pub enum McpError {
-    // ... 现有错误 ...
-    
-    // JSON-RPC 标准错误
-    #[error("解析错误: {0}")]
-    ParseError(String),
-    
-    #[error("无效请求: {0}")]
-    InvalidRequest(String),
-    
-    #[error("方法未找到: {0}")]
-    MethodNotFound(String),
-    
-    #[error("无效参数: {0}")]
-    InvalidParams(String),
-    
-    #[error("内部错误: {0}")]
-    InternalError(String),
-    
-    // MCP 扩展错误
-    #[error("资源未找到: {0}")]
-    ResourceNotFound(String),
-    
-    #[error("资源不可读: {0}")]
-    ResourceNotReadable(String),
-    
-    #[error("提示词未找到: {0}")]
-    PromptNotFound(String),
-    
-    #[error("提示词参数缺失: {0}")]
-    PromptArgumentsMissing(String),
-    
-    #[error("工具未找到: {0}")]
-    ToolNotFound(String),
-    
-    #[error("工具参数无效: {0}")]
-    ToolArgumentsInvalid(String),
-    
-    #[error("会话未初始化")]
-    SessionNotInitialized,
-    
-    #[error("会话恢复失败: {0}")]
-    SessionResumeFailed(String),
-    
-    #[error("协议版本不匹配: 客户端={client}, 服务器={server}")]
-    ProtocolVersionMismatch { client: String, server: String },
-    
-    #[error("安全错误: {0}")]
-    SecurityError(String),
-}
+// 在第5节的 McpError 枚举中补充以下变体：
 
-impl McpError {
-    /// 转换为 JSON-RPC 错误响应
-    pub fn to_jsonrpc_error(&self) -> JsonRpcError {
-        let code = match self {
-            Self::ParseError(_) => jsonrpc::PARSE_ERROR,
-            Self::InvalidRequest(_) => jsonrpc::INVALID_REQUEST,
-            Self::MethodNotFound(_) => jsonrpc::METHOD_NOT_FOUND,
-            Self::InvalidParams(_) => jsonrpc::INVALID_PARAMS,
-            Self::InternalError(_) => jsonrpc::INTERNAL_ERROR,
-            Self::ResourceNotFound(_) => jsonrpc::RESOURCE_NOT_FOUND,
-            Self::ResourceNotReadable(_) => jsonrpc::RESOURCE_NOT_READABLE,
-            Self::PromptNotFound(_) => jsonrpc::PROMPT_NOT_FOUND,
-            Self::PromptArgumentsMissing(_) => jsonrpc::PROMPT_ARGUMENTS_MISSING,
-            Self::ToolNotFound(_) => jsonrpc::TOOL_NOT_FOUND,
-            Self::ToolArgumentsInvalid(_) => jsonrpc::TOOL_ARGUMENTS_INVALID,
-            Self::SessionNotInitialized => jsonrpc::SESSION_NOT_INITIALIZED,
-            Self::SessionResumeFailed(_) => jsonrpc::SESSION_RESUME_FAILED,
-            Self::ProtocolVersionMismatch { .. } => jsonrpc::PROTOCOL_VERSION_MISMATCH,
-            Self::SecurityError(_) => jsonrpc::INTERNAL_ERROR,
-            _ => jsonrpc::INTERNAL_ERROR,
-        };
-        
-        JsonRpcError {
-            code,
-            message: self.to_string(),
-            data: None,
-        }
-    }
-    
-    pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::Timeout | 
-            Self::ConnectionFailed(_) |
-            Self::SessionResumeFailed(_) |
-            Self::InternalError(_)
-        )
-    }
+// JSON-RPC 标准错误
+#[error("解析错误: {0}")]
+ParseError(String),
+
+#[error("无效请求: {0}")]
+InvalidRequest(String),
+
+#[error("方法未找到: {0}")]
+MethodNotFound(String),
+
+#[error("无效参数: {0}")]
+InvalidParams(String),
+
+#[error("内部错误: {0}")]
+InternalError(String),
+
+// MCP 扩展错误
+#[error("资源未找到: {0}")]
+ResourceNotFound(String),
+
+#[error("资源不可读: {0}")]
+ResourceNotReadable(String),
+
+#[error("提示词未找到: {0}")]
+PromptNotFound(String),
+
+#[error("提示词参数缺失: {0}")]
+PromptArgumentsMissing(String),
+
+#[error("工具未找到: {0}")]
+ToolNotFound(String),
+
+#[error("工具参数无效: {0}")]
+ToolArgumentsInvalid(String),
+
+#[error("会话未初始化")]
+SessionNotInitialized,
+
+#[error("会话恢复失败: {0}")]
+SessionResumeFailed(String),
+
+#[error("协议版本不匹配: 客户端={client}, 服务器={server}")]
+ProtocolVersionMismatch { client: String, server: String },
+
+#[error("安全错误: {0}")]
+SecurityError(String),
+```
+
+**JSON-RPC 错误码映射补充：**
+
+```rust
+// 在 jsonrpc 模块中补充以下错误码：
+pub const RESOURCE_NOT_FOUND: i32 = -32000;
+pub const RESOURCE_NOT_READABLE: i32 = -32001;
+pub const PROMPT_NOT_FOUND: i32 = -32002;
+pub const PROMPT_ARGUMENTS_MISSING: i32 = -32003;
+pub const TOOL_NOT_FOUND: i32 = -32004;
+pub const TOOL_ARGUMENTS_INVALID: i32 = -32005;
+pub const SESSION_NOT_INITIALIZED: i32 = -32006;
+pub const SESSION_RESUME_FAILED: i32 = -32007;
+pub const PROTOCOL_VERSION_MISMATCH: i32 = -32008;
+```
+
+**to_jsonrpc_error 方法补充映射：**
+
+```rust
+// 在 McpError::to_jsonrpc_error 方法中补充以下匹配分支：
+Self::ParseError(_) => jsonrpc::PARSE_ERROR,
+Self::InvalidRequest(_) => jsonrpc::INVALID_REQUEST,
+Self::MethodNotFound(_) => jsonrpc::METHOD_NOT_FOUND,
+Self::InvalidParams(_) => jsonrpc::INVALID_PARAMS,
+Self::InternalError(_) => jsonrpc::INTERNAL_ERROR,
+Self::ResourceNotFound(_) => jsonrpc::RESOURCE_NOT_FOUND,
+Self::ResourceNotReadable(_) => jsonrpc::RESOURCE_NOT_READABLE,
+Self::PromptNotFound(_) => jsonrpc::PROMPT_NOT_FOUND,
+Self::PromptArgumentsMissing(_) => jsonrpc::PROMPT_ARGUMENTS_MISSING,
+Self::ToolNotFound(_) => jsonrpc::TOOL_NOT_FOUND,
+Self::ToolArgumentsInvalid(_) => jsonrpc::TOOL_ARGUMENTS_INVALID,
+Self::SessionNotInitialized => jsonrpc::SESSION_NOT_INITIALIZED,
+Self::SessionResumeFailed(_) => jsonrpc::SESSION_RESUME_FAILED,
+Self::ProtocolVersionMismatch { .. } => jsonrpc::PROTOCOL_VERSION_MISMATCH,
+Self::SecurityError(_) => jsonrpc::INTERNAL_ERROR,
+```
+
+**is_retryable 方法补充：**
+
+```rust
+// 在 McpError::is_retryable 方法中补充：
+pub fn is_retryable(&self) -> bool {
+    matches!(
+        self,
+        Self::Timeout | 
+        Self::ConnectionFailed(_) |
+        Self::SessionResumeFailed(_) |
+        Self::InternalError(_)
+    )
 }
 ```
 
@@ -748,6 +763,8 @@ impl OriginValidator {
 pub struct ProtocolVersionManager {
     pub min_version: String,
     pub max_version: String,
+    /// 支持的协议版本白名单（见8.1版本历史）
+    pub supported_versions: Vec<String>,
 }
 
 impl Default for ProtocolVersionManager {
@@ -755,38 +772,39 @@ impl Default for ProtocolVersionManager {
         Self {
             min_version: "2024-11-05".to_string(),
             max_version: "2025-11-25".to_string(),
+            supported_versions: vec![
+                "2024-11-05".to_string(),
+                "2025-11-25".to_string(),
+            ],
         }
     }
 }
 
 impl ProtocolVersionManager {
     pub fn validate(&self, client_version: &str) -> Result<String, McpError> {
-        let client_date = NaiveDate::parse_from_str(client_version, "%Y-%m-%d")
-            .map_err(|_| McpError::ProtocolVersionMismatch {
-                client: client_version.to_string(),
-                server: self.max_version.clone(),
-            })?;
+        // 白名单校验：只接受已知版本
+        if self.supported_versions.contains(&client_version.to_string()) {
+            return Ok(client_version.to_string());
+        }
         
-        const DEFAULT_MIN: NaiveDate = NaiveDate::from_ymd_opt(2024, 11, 5).expect("valid date");
-        const DEFAULT_MAX: NaiveDate = NaiveDate::from_ymd_opt(2025, 11, 25).expect("valid date");
-        
-        let min_date = NaiveDate::parse_from_str(&self.min_version, "%Y-%m-%d")
-            .unwrap_or(DEFAULT_MIN);
-        let max_date = NaiveDate::parse_from_str(&self.max_version, "%Y-%m-%d")
-            .unwrap_or(DEFAULT_MAX);
-        
-        if client_date < min_date {
+        // 低于最低版本：拒绝
+        if client_version < self.min_version.as_str() {
             return Err(McpError::ProtocolVersionMismatch {
                 client: client_version.to_string(),
                 server: self.max_version.clone(),
             });
         }
         
-        if client_date <= max_date {
-            Ok(client_version.to_string())
-        } else {
-            Ok(self.max_version.clone())
+        // 高于最高版本：返回最高版本（向后兼容）
+        if client_version > self.max_version.as_str() {
+            return Ok(self.max_version.clone());
         }
+        
+        // 其他情况（不支持的中间版本）：拒绝
+        Err(McpError::ProtocolVersionMismatch {
+            client: client_version.to_string(),
+            server: self.max_version.clone(),
+        })
     }
 }
 ```
