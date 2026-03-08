@@ -483,6 +483,7 @@ impl ToolExecutor for SpawnAgentTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -536,6 +537,7 @@ impl ToolExecutor for SendMessageTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -585,6 +587,7 @@ impl ToolExecutor for ReportTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Common,
         });
         &DEF
     }

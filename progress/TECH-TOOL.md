@@ -74,12 +74,26 @@ pub struct ToolCapabilities {
     pub concurrent: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResourceLevel {
     #[default]
     Low,
     Medium,
     High,
+}
+
+/// 工具分类
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToolCategory {
+    /// 通用工具，所有模式可用
+    #[default]
+    Common,
+    /// TUI 专用工具，仅在 TUI 模式下生效
+    Tui,
+    /// CLI 专用工具，仅在 CLI 模式下生效
+    Cli,
+    /// Daemon 专用工具，仅在 Daemon 模式下生效
+    Daemon,
 }
 
 /// 工具定义
@@ -93,6 +107,8 @@ pub struct ToolDefinition {
     pub schema: Value,
     pub capabilities: ToolCapabilities,
     pub timeout: Duration,
+    /// 工具分类，影响工具的可用性
+    pub category: ToolCategory,
 }
 
 /// 工具执行上下文
@@ -331,6 +347,7 @@ pub mod fs {
                 }),
                 capabilities: ToolCapabilities::default(),
                 timeout: Duration::from_secs(5),
+                category: ToolCategory::Common,
             });
             &DEF
         }
@@ -376,6 +393,7 @@ impl ToolExecutor for FileWriteTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(10),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -428,6 +446,7 @@ impl ToolExecutor for FileEditTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(10),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -617,10 +636,11 @@ impl ToolExecutor for FileDeleteTool {
                         "description": "要删除的文件路径"
                     }
                 },
-                "required": ["path"]
+                "required": []
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(5),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -692,6 +712,7 @@ impl ToolExecutor for ContextObserveTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(5),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -742,6 +763,7 @@ impl ToolExecutor for QuestionAskTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Tui,
         });
         &DEF
     }
@@ -800,10 +822,11 @@ impl ToolExecutor for ContextCompactTool {
                         "description": "压缩起点标记，从该标记到当前位置的消息将被压缩"
                     }
                 },
-                "required": ["tag"]
+                "required": []
             }),
             capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(30),
+            timeout: Duration::from_secs(5),
+            category: ToolCategory::Common,
         });
         &DEF
     }

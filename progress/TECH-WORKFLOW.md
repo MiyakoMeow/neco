@@ -519,6 +519,7 @@ impl ToolExecutor for WorkflowTransitionTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Common,
         });
         &DEF
     }
@@ -562,6 +563,7 @@ impl ToolExecutor for PassTool {
             }),
             capabilities: ToolCapabilities::default(),
             timeout: Duration::from_secs(30),
+            category: ToolCategory::Common,
         });
         &DEF
     }
