@@ -235,16 +235,14 @@ neoco --working-dir /path/to/project
 graph TB
     subgraph "TUI布局"
         M[消息历史]
-        S1[状态栏（上方）]
+        S1[状态栏]
         I[输入框]
-        S2[状态栏（下方）]
         W[工作流面板]
         A[Agent树面板]
     end
     
     M --> S1
     S1 --> I
-    I --> S2
     M --> W
     M --> A
 ```
@@ -434,29 +432,6 @@ pub struct TlsConfig {
     pub client_ca_path: Option<PathBuf>,
 }
 
-// [TODO] 暂不实现：认证配置
-// pub struct AuthConfig {
-//     pub api_keys: Vec<String>,
-//     pub jwt_secret: Option<String>,
-//     pub jwt_expiration_sec: Option<u64>,
-// }
-
-// [TODO] 暂不实现：速率限制配置
-// pub struct RateLimitConfig {
-//     pub enabled: bool,
-//     pub requests_per_minute: u32,
-//     pub burst_size: u32,
-// }
-
-// [TODO] 暂不实现：CORS配置
-// pub struct CorsConfig {
-//     pub allowed_origins: Vec<String>,
-//     pub allowed_methods: Vec<String>,
-//     pub allowed_headers: Vec<String>,
-//     pub allow_credentials: bool,
-//     pub max_age_sec: u64,
-// }
-
 pub struct ServerConfig {
     pub max_connections: usize,
     pub request_timeout_sec: u64,
@@ -472,50 +447,8 @@ pub struct DaemonConfig {
     // TLS配置
     pub tls: Option<TlsConfig>,
     
-    // 认证配置
-    pub auth: AuthConfig,
-    
-    // 速率限制
-    pub rate_limit: RateLimitConfig,
-    
-    // CORS配置
-    pub cors: CorsConfig,
-    
     // 服务器配置
     pub server: ServerConfig,
-}
-
-pub struct TlsConfig {
-    pub cert_path: PathBuf,
-    pub key_path: PathBuf,
-    pub client_ca_path: Option<PathBuf>,
-}
-
-pub struct AuthConfig {
-    pub api_keys: Vec<String>,
-    pub jwt_secret: Option<String>,
-    pub jwt_expiration_sec: Option<u64>,
-}
-
-pub struct RateLimitConfig {
-    pub enabled: bool,
-    pub requests_per_minute: u32,
-    pub burst_size: u32,
-}
-
-pub struct CorsConfig {
-    pub allowed_origins: Vec<String>,
-    pub allowed_methods: Vec<String>,
-    pub allowed_headers: Vec<String>,
-    pub allow_credentials: bool,
-    pub max_age_sec: u64,
-}
-
-pub struct ServerConfig {
-    pub max_connections: usize,
-    pub request_timeout_sec: u64,
-    pub shutdown_timeout_sec: u64,
-    pub worker_threads: Option<usize>,
 }
 
 impl DaemonInterface {

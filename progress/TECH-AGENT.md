@@ -187,6 +187,8 @@ pub enum FailureReason {
 }
 
 /// Agent模式 - 对应需求文档的mode字段
+/// 支持数组形式，如 `mode: [primary, subagent]`
+/// 用于支持多模式Agent，既可以作为主Agent运行，也可以作为子Agent被调用
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentMode {
@@ -194,14 +196,24 @@ pub enum AgentMode {
     Subagent,  // 子Agent，由上级Agent创建
 }
 
+/// Agent定义来源 - 标识Agent定义来自哪里
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentDefinitionSource {
+    Config(String),      // 来自配置目录，String为配置文件路径
+    Workflow(String),   // 来自工作流定义，String为工作流节点ID
+}
+
 /// Agent领域模型
 pub struct Agent {
     id: AgentUlid,
     parent_ulid: Option<AgentUlid>,
     definition_id: String,
-    mode: AgentMode,  // primary 或 subagent
+    definition_source: AgentDefinitionSource,  // Agent定义来源：工作流或配置目录
+    mode: Vec<AgentMode>,  // 支持数组形式，如 [primary, subagent]
     state: AgentState,
-    model_group: Option<String>,
+    model: Option<String>,         // 使用的具体模型（如 anthropic/claude-sonnet-4-20250514）
+    model_group: Option<String>,   // 使用的模型组（如 claude-3-opus）
     system_prompt: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -211,14 +223,30 @@ impl Agent {
     pub fn id(&self) -> &AgentUlid { &self.id }
     pub fn parent_ulid(&self) -> Option<&AgentUlid> { self.parent_ulid.as_ref() }
     pub fn definition_id(&self) -> &str { &self.definition_id }
+    pub fn definition_source(&self) -> &AgentDefinitionSource { &self.definition_source }
+    pub fn mode(&self) -> &[AgentMode] { &self.mode }
     pub fn state(&self) -> &AgentState { &self.state }
+    pub fn model(&self) -> Option<&str> { self.model.as_deref() }
     pub fn model_group(&self) -> Option<&str> { self.model_group.as_deref() }
     pub fn system_prompt(&self) -> Option<&str> { self.system_prompt.as_deref() }
     pub fn created_at(&self) -> DateTime<Utc> { self.created_at }
     pub fn updated_at(&self) -> DateTime<Utc> { self.updated_at }
     
+    pub fn is_primary(&self) -> bool {
+        self.mode.contains(&AgentMode::Primary)
+    }
+    
+    pub fn is_subagent(&self) -> bool {
+        self.mode.contains(&AgentMode::Subagent)
+    }
+    
     pub fn set_state(&mut self, new_state: AgentState, timestamp: DateTime<Utc>) {
         self.state = new_state;
+        self.updated_at = timestamp;
+    }
+    
+    pub fn set_model(&mut self, model: Option<String>, timestamp: DateTime<Utc>) {
+        self.model = model;
         self.updated_at = timestamp;
     }
     
@@ -241,8 +269,11 @@ impl Agent {
 | `id` | AgentUlid | Agent唯一标识 |
 | `parent_ulid` | Option\<AgentUlid\> | 父Agent ID |
 | `definition_id` | String | Agent定义标识 |
+| `definition_source` | AgentDefinitionSource | Agent定义来源：配置目录或工作流节点 |
+| `mode` | Vec\<AgentMode\> | 支持数组形式，如 [primary, subagent] |
 | `state` | AgentState | Agent当前状态 |
-| `model_group` | Option\<String\> | 使用的模型组 |
+| `model` | Option\<String\> | 具体模型（如 anthropic/claude-sonnet-4-20250514），优先级高于 model_group |
+| `model_group` | Option\<String\> | 模型组（如 claude-3-opus），当 model 未指定时使用 |
 | `system_prompt` | Option\<String\> | Agent运行时使用的系统提示词，可覆盖或扩展定义中的默认提示词 |
 | `created_at` | DateTime\<Utc\> | Agent实例创建的时间戳 |
 | `updated_at` | DateTime\<Utc\> | Agent实例最后更新的时间戳（状态变更、属性修改等） |
@@ -252,8 +283,9 @@ impl Agent {
 > **注意**：Agent引擎不直接持有领域模型，通过仓储接口访问
 >
 > **mode字段创建约束（不变量）**：
-> - 根Agent（直接与用户对话的Session Root Agent）：固定为 `Primary` 模式
-> - 子Agent（由 `spawn_child` 创建）：固定为 `Subagent` 模式
+> - 根Agent（直接与用户对话的Session Root Agent）：固定为 `[Primary]` 模式
+> - 子Agent（由 `spawn_child` 创建）：固定为 `[Subagent]` 模式
+> - 支持多模式Agent：如 `[Primary, Subagent]` 既可作为主Agent也可作为子Agent被调用
 >
 > 此约束确保基于模式做权限或行为分流时不会出现语义漂移。
 
@@ -391,6 +423,7 @@ sequenceDiagram
         &self,
         parent_ulid: AgentUlid,
         definition_id: String,
+        definition_source: AgentDefinitionSource,  // Agent定义来源信息
         model_override: Option<String>,
         model_group_override: Option<String>,
         prompts_override: Option<Vec<String>>,
@@ -399,6 +432,8 @@ sequenceDiagram
         // 1. 验证父Agent存在
         // 2. 在Session中创建子Agent
         // 3. 应用model/model_group/prompts覆盖（如果提供）
+        //    - model 优先级高于 model_group
+        //    - 覆盖参数优先级高于继承值
         // 4. 发布AgentCreated事件
         // 5. 返回AgentUlid
         unimplemented!()
@@ -431,6 +466,21 @@ sequenceDiagram
         Engine-->>Client: Ok(AgentUlid)
     end
 ```
+
+**model/model_group 优先级语义说明：**
+
+```
+Agent模型选择优先级（从高到低）：
+1. model 参数 - 具体模型标识，如 "anthropic/claude-sonnet-4-20250514"
+2. model_group 参数 - 模型组标识，如 "claude-3-opus"（在model未指定时使用）
+3. 继承值 - 从父Agent继承的 model 或 model_group
+4. 默认值 - Agent定义中的默认模型配置
+```
+
+**层级继承语义：**
+- 子Agent创建时，如果未提供 model_override 和 model_group_override，则自动继承父Agent的模型配置
+- 如果同时提供 model_override 和 model_group_override，model_override 优先级更高
+- model 和 model_group 的区别：model 指定具体模型，model_group 指定模型系列（便于批量切换）
 
 /// Agent执行结果
 pub struct AgentResult {
@@ -526,11 +576,11 @@ impl ToolExecutor for SpawnAgentTool {
                     },
                     "model": {
                         "type": "string",
-                        "description": "覆盖使用的模型（可选）。\n子Agent默认继承父Agent的model配置，\n可通过此参数覆盖继承的值。\n\n格式：\n- 字符串形式：'anthropic/claude-sonnet-4-20250514'\n- 与model_group同时存在时，model_group优先"
+                        "description": "覆盖使用的具体模型（可选）。\n子Agent默认继承父Agent的model配置，\n可通过此参数覆盖继承的值。\n\n格式：\n- 字符串形式：'anthropic/claude-sonnet-4-20250514'\n- 优先级高于model_group：同时存在时，model优先于model_group"
                     },
                     "model_group": {
                         "type": "string",
-                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n可通过此参数覆盖继承的值。\n\n层级继承语义：\n- 如果不提供此参数，子Agent使用父Agent的model_group\n- 如果提供此参数，子Agent使用指定的model_group，忽略继承值\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
+                        "description": "覆盖使用的模型组（可选）。\n子Agent默认继承父Agent的model_group，\n当model参数未指定时使用此参数。\n\n层级继承语义：\n- 如果不提供此参数且model也未指定，子Agent使用父Agent的model_group\n- 如果提供此参数且model未指定，子Agent使用指定的model_group\n- model_group命名规则：使用kebab-case格式，如 'gpt-4', 'claude-3-opus'\n- model_group必须在配置文件中预先定义"
                     },
                     "prompts": {
                         "type": "array",

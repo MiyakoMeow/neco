@@ -440,6 +440,10 @@ impl ResourceScheduler for DefaultResourceScheduler {
 | `fs::edit` | 编辑文件（基于verify） | 10秒 |
 | `fs::delete` | 删除文件 | 10秒 |
 | `fs::list` / `fs::ls` | 读取目录内容 | 10秒 |
+| `mcp::*` | MCP类工具 | 60秒 |
+| `skill::*` | Skill类工具 | 60秒 |
+| `context::observe` | 观测上下文状态，获取 Dashboard | 5秒 |
+| `context::compact` | 主动压缩上下文（Layer A） | 30秒 |
 
 ### 4.2 fs::read 实现
 
@@ -996,7 +1000,7 @@ impl ToolExecutor for ContextCompactTool {
                 "required": []
             }),
             capabilities: ToolCapabilities::default(),
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(30),
             category: ToolCategory::Common,
         });
         &DEF
