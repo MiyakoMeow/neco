@@ -43,11 +43,12 @@ classDiagram
         +as_str() &str
     }
     
-    class ToolUlid {
-        +Ulid ulid
-        +new() ToolUlid
-        +from_string(&str) Result~ToolUlid~
-        +as_str() &str
+    class ToolId {
+        +String id
+        +new(namespace, name) ToolId
+        +from_parts(&str, &str) Result~ToolId~
+        +namespace() &str
+        +name() &str
     }
     
     class SkillUlid {
@@ -69,7 +70,7 @@ classDiagram
 | `AgentUlid` | Agent实例化时 | `{ session: Ulid, agent: Ulid }` | 双Ulid |
 | `MessageId` | 消息添加时 | `MessageId(u64)` | 原子自增（保持u64） |
 | `NodeUlid` | 工作流节点创建时 | `NodeUlid(Ulid)` | 26位Ulid |
-| `ToolUlid` | 工具注册时 | `ToolUlid(Ulid)` | 26位Ulid |
+| `ToolId` | 工具注册时 | `ToolId(String)` | namespace::name 格式（如 `fs::read`） |
 | `SkillUlid` | Skill加载时 | `SkillUlid(Ulid)` | 26位Ulid |
 
 ### 2.2 领域仓储接口（依赖反转）

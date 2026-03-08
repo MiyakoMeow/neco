@@ -349,21 +349,21 @@ sequenceDiagram
     participant Repo as AgentRepository
     participant Events as EventPublisher
 
-    Client->>Engine: spawn_child(parent_id, definition_id)
-    Engine->>Repo: find_by_id(parent_id)
+    Client->>Engine: spawn_child(parent_ulid, definition_id)
+    Engine->>Repo: find_by_id(parent_ulid)
     Repo-->>Engine: parent_agent
     
     alt parent not found
         Engine-->>Client: Err(AgentError::ParentNotFound)
     else parent found
-        Engine->>Engine: generate_child_id(parent_id)
+        Engine->>Engine: generate_child_id(parent_ulid)
         
-        Engine->>Engine: create_agent(parent_id, definition_id)
+        Engine->>Engine: create_agent(parent_ulid, definition_id)
         
         Engine->>Repo: save(child_agent)
-        Engine->>Events: publish(AgentCreated { id, parent_id })
+        Engine->>Events: publish(AgentCreated { id, parent_ulid })
         
-        Engine-->>Client: Ok(child_agent_id)
+        Engine-->>Client: Ok(AgentUlid)
     end
 ```
 

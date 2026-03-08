@@ -149,7 +149,9 @@ pub trait ToolRegistry: Send + Sync {
     fn list_tools(&self) -> Vec<ToolUlid>;
 }
 
-/// 工具ID（强类型ULID）
+/// 工具ID（静态命名空间标识符）
+/// 格式：namespace::name（如 fs::read, multi-agent::spawn）
+/// 注意：工具ID是静态的，在工具注册时确定，不同于动态生成的ULID
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolUlid(pub String);
 
