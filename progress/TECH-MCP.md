@@ -21,10 +21,10 @@ graph TB
         CM[ConnectionManager]
         RM[rmcp ClientHandler]
         
-        subgraph "传输层"
-            ST[TokioChildProcess<br/>Stdio]
-            HT[StreamableHttpClient<br/>HTTP]
-        end
+    subgraph "传输层"
+        ST[TokioChildProcess<br/>Stdio]
+        HT[Streamable HTTP<br/>Client]
+    end
     end
     
     subgraph "MCP服务器"
@@ -171,14 +171,18 @@ pub async fn connect_http(
     url: &str,
 ) -> Result<Peer, McpError> {
     // [TODO] 实现要点说明
-    // 1. 创建 StreamableHttpClientTransport，传入 url
-    // 2. 使用 RmcpClient 包装传输层
-    // 3. 调用 client.serve() 启动客户端并返回 Peer
+    // 1. 使用 Streamable HTTP 传输模式（MCP 2025-11-25+）
+    // 2. 创建 StreamableHttpClientTransport，传入 url
+    // 3. 支持 session 管理，支持请求/响应和 SSE 两种模式
+    // 4. 使用 rmcp::Client 包装传输层
+    // 5. 调用 client.serve() 启动客户端并返回 Peer
     unimplemented!()
 }
 ```
 
 ## 5. 错误处理
+
+作为公共错误边界供其他 crate 显式映射使用：
 
 ```rust
 #[derive(Debug, Error)]
@@ -233,8 +237,14 @@ MCP协议基于JSON-RPC 2.0规范，主要消息类型包括：
     "id": 1,
     "method": "initialize",
     "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {}
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+            // 客户端能力声明
+        },
+        "clientInfo": {
+            "name": "neoco",
+            "version": "0.1.0"
+        }
     }
 }
 
@@ -254,7 +264,14 @@ MCP协议基于JSON-RPC 2.0规范，主要消息类型包括：
 | `initialize` | Client→Server | 初始化连接，交换协议版本和能力 |
 | `tools/list` | Client→Server | 获取可用工具列表 |
 | `tools/call` | Client→Server | 调用指定工具 |
+| `resources/list` | Client→Server | 获取可用的资源列表 |
+| `resources/read` | Client→Server | 读取指定资源内容 |
+| `prompts/list` | Client→Server | 获取可用的提示词模板列表 |
+| `prompts/get` | Client→Server | 获取指定提示词模板 |
 | `notifications/initialized` | Client→Server | 通知初始化完成 |
+| `notifications/tools/list_changed` | Server→Client | 工具列表变更通知 |
+| `notifications/resources/list_changed` | Server→Client | 资源列表变更通知 |
+| `notifications/prompts/list_changed` | Server→Client | 提示词列表变更通知 |
 | `ping` | Client↔Server | 心跳保活 |
 
 ## 7. 连接生命周期
@@ -318,6 +335,53 @@ pub enum DisconnectReason {
     Timeout,
     MaxRetriesExceeded,
 }
+```
+
+---
+
+## 8. rmcp 依赖配置
+
+### Cargo.toml 配置
+
+```toml
+rmcp = { version = "1.1", features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+    "reqwest"  # TLS 后端
+] }
+```
+
+### Feature 说明
+
+| Feature | 说明 |
+|---------|------|
+| `client` | 启用客户端功能 |
+| `transport-child-process` | 支持 stdio 传输 |
+| `transport-streamable-http-client-reqwest` | 支持 Streamable HTTP 传输（使用 reqwest） |
+| `reqwest` | reqwest 作为 HTTP 客户端后端 |
+
+### 传输层使用示例
+
+**Stdio 传输：**
+```rust
+use rmcp::{ServiceExt, transport::{ConfigureCommandExt, TokioChildProcess}};
+use tokio::process::Command;
+
+let client = ()
+    .serve(TokioChildProcess::new(Command::new("npx").configure(|cmd| {
+        cmd.args(["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]);
+    }))?)
+    .await?;
+```
+
+**Streamable HTTP 传输：**
+```rust
+use rmcp::{ServiceExt, transport::StreamableHttpClientTransport};
+
+let client = ()
+    .serve(StreamableHttpClientTransport::from_uri("http://localhost:3000/mcp"))
+    .await?;
 ```
 
 ---

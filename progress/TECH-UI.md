@@ -343,7 +343,7 @@ Content-Type: application/json
 {
     "session_id": "session_001",
     "config": {
-        "model": "gpt-4",
+        "model": "gpt-5.2",
         "temperature": 0.7
     }
 }
@@ -576,7 +576,7 @@ $ neoco daemon
 # 使用API（通过curl）
 $ curl -X POST http://127.0.0.1:8080/api/v1/sessions \
   -H "Content-Type: application/json" \
-  -d '{"config": {"model": "gpt-4"}}'
+  -d '{"config": {"model": "gpt-5.2"}}'
 
 $ curl -X POST http://127.0.0.1:8080/api/v1/sessions/{session_id}/messages \
   -H "Content-Type: application/json" \
@@ -610,15 +610,38 @@ $ neoco --config /custom/path/config.toml
 [INFO] Config loaded successfully (single file)
 
 # 合并行为示例：
-# .neoco/neoco.toml:         { model = "gpt-4", temperature = 0.7 }
+# .neoco/neoco.toml:         { model = "gpt-5.2", temperature = 0.7 }
 # .agents/neoco.toml:       { model = "gpt-3.5", max_tokens = 2000 }
 # ~/.config/neoco/neoco.toml: { api_key = "sk-xxx" }
 # 
-# 最终合并结果：           { model = "gpt-4", temperature = 0.7, max_tokens = 2000, api_key = "sk-xxx" }
+# 最终合并结果：           { model = "gpt-5.2", temperature = 0.7, max_tokens = 2000, api_key = "sk-xxx" }
 #                         ^^^^^^^^^^^   来自.neoco/（最高优先级覆盖）
 #                                                         ^^^^^^^^^^^^^^   来自.agents/
 #                                                                            ^^^^^^^^^^^^^^   来自~/.config/
 ```
+
+---
+
+## 10. 依赖配置
+
+### Cargo.toml 配置
+
+```toml
+crossterm = { version = "0.29", features = [
+    "events",          # 事件支持（键盘输入等）
+    "bracketed-paste", # 括号粘贴模式支持
+    "windows"         # Windows 平台支持
+] }
+axum = "0.8"           # HTTP 服务框架（daemon 模式可选）
+```
+
+### Feature 说明
+
+| Feature | 说明 |
+|---------|------|
+| `events` | 启用事件处理，支持键盘输入捕获 |
+| `bracketed-paste` | 支持终端粘贴模式（更准确的粘贴处理） |
+| `windows` | Windows 平台特定优化 |
 
 ---
 
