@@ -146,20 +146,20 @@ sequenceDiagram
 
 基于领域驱动设计原则，项目划分为以下crate：
 
-| Crate | 职责 | 关键依赖 |
-|-------|------|----------|
-| `neoco` | **唯一可执行文件**，CLI模式/TUI交互模式/守护进程模式入口 | 所有上述crate |
-| `neoco-core` | 核心类型、强类型ID、事件系统、领域接口 | - |
-| `neoco-config` | 配置管理、类型安全配置结构 | neoco-core |
-| `neoco-model` | 模型调用服务、故障转移 | neoco-core |
-| `neoco-session` | Session领域模型、Agent领域模型、仓库接口 | neoco-core |
-| `neoco-storage` | 存储后端实现（文件系统） | neoco-core, neoco-session |
-| `neoco-mcp` | MCP客户端 | neoco-core |
-| `neoco-skill` | Skills管理 | neoco-core |
-| `neoco-context` | 上下文管理（压缩+观测） | neoco-core |
-| `neoco-agent` | Agent引擎、Agent生命周期 | neoco-core, neoco-session, neoco-model |
-| `neoco-tool` | 工具执行器、工具注册表 | neoco-core |
-| `neoco-ui` | 用户接口 | neoco-core |
+| Crate | 职责 | 相对路径 | 关键依赖 |
+|-------|------|----------|----------|
+| `neoco` | **唯一可执行文件**，CLI模式/TUI交互模式/守护进程模式入口 | `.` | 所有下述功能crate |
+| `neoco-core` | 核心类型、强类型ID、事件系统、领域接口 | `core` | - |
+| `neoco-config` | 配置管理、类型安全配置结构 | `config` | neoco-core |
+| `neoco-model` | 模型调用服务、故障转移 | `model` | neoco-core |
+| `neoco-session` | Session领域模型、Agent领域模型、仓库接口 | `session` | neoco-core |
+| `neoco-storage` | 存储后端实现（文件系统） | `storage` | neoco-core, neoco-session |
+| `neoco-mcp` | MCP客户端 | `mcp` | neoco-core |
+| `neoco-skill` | Skills管理 | `skill` | neoco-core |
+| `neoco-context` | 上下文管理（压缩+观测） | `context` | neoco-core |
+| `neoco-agent` | Agent引擎、Agent生命周期 | `agent` | neoco-core, neoco-session, neoco-model |
+| `neoco-tool` | 工具执行器、工具注册表 | `tool` | neoco-core |
+| `neoco-ui` | 用户接口 | `ui` | neoco-core |
 
 ### 2.1 运行模式
 
