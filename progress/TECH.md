@@ -179,9 +179,9 @@ graph TB
         Daemon["agent 子命令<br/>启动长期运行的Agent服务"]
     end
     
-    neoco --> CLI
-    neoco --> TUI
-    neoco --> Daemon
+    neoco -->|模式1| CLI
+    neoco -->|模式2| TUI
+    neoco -->|模式3| Daemon
 ```
 
 ### 2.2 Crate依赖关系（领域驱动）
