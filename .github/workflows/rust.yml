@@ -26,7 +26,7 @@ jobs:
           workspaces: |
             . -> target
       - name: Run clippy
-        run: cargo clippy --all-targets --verbose -- -D warnings
+        run: cargo clippy --workspace --all-targets --verbose -- -D warnings
 
   test:
     runs-on: ${{ matrix.os }}
@@ -45,13 +45,10 @@ jobs:
           workspaces: |
             . -> target
       - name: Run tests
-        run: cargo test --verbose --all-features
+        run: cargo test --workspace --verbose --all-features
 
   fmt:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Setup rustfmt
@@ -61,4 +58,15 @@ jobs:
           components: rustfmt
       - name: Run format check
         run: cargo fmt --check
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build documentation
+        run: cargo doc --workspace --no-deps --all-features
 
