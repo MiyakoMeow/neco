@@ -5,3 +5,47 @@ version = 4
 [[package]]
 name = "neoco"
 version = "0.1.0"
+
+[[package]]
+name = "neoco-agent"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-config"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-context"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-core"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-mcp"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-model"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-session"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-skill"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-storage"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-tool"
+version = "0.1.0"
+
+[[package]]
+name = "neoco-ui"
+version = "0.1.0"

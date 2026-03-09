@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+members = [".", "core", "config", "model", "session", "storage", "mcp", "skill", "context", "agent", "tool", "ui"]
 default-members = ["."]
 
 [workspace.package]
