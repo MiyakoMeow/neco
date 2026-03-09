@@ -148,6 +148,7 @@ sequenceDiagram
 
 | Crate | 职责 | 关键依赖 |
 |-------|------|----------|
+| `neoco` | **唯一可执行文件**，CLI模式/TUI交互模式/守护进程模式入口 | 所有上述crate |
 | `neoco-core` | 核心类型、强类型ID、事件系统、领域接口 | - |
 | `neoco-config` | 配置管理、类型安全配置结构 | neoco-core |
 | `neoco-model` | 模型调用服务、故障转移 | neoco-core |
@@ -159,7 +160,29 @@ sequenceDiagram
 | `neoco-agent` | Agent引擎、Agent生命周期 | neoco-core, neoco-session, neoco-model |
 | `neoco-tool` | 工具执行器、工具注册表 | neoco-core |
 | `neoco-ui` | 用户接口 | neoco-core |
-| `neoco` | 主入口 | 所有上述crate |
+
+### 2.1 运行模式
+
+```mermaid
+graph TB
+    neoco["neoco (唯一可执行文件)"]
+    
+    subgraph "CLI模式"
+        CLI["--model 或 -m 参数<br/>直接执行单次对话"]
+    end
+    
+    subgraph "TUI交互模式"
+        TUI["默认模式<br/>交互式终端界面"]
+    end
+    
+    subgraph "守护进程模式"
+        Daemon["agent 子命令<br/>启动长期运行的Agent服务"]
+    end
+    
+    neoco --> CLI
+    neoco --> TUI
+    neoco --> Daemon
+```
 
 ### 2.1 Crate依赖关系（领域驱动）
 
