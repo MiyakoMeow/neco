@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = [".", "core", "config", "model", "session", "storage", "mcp", "skill", "context", "agent", "tool", "ui"]
+members = [".", "crates/core", "crates/config", "crates/model", "crates/session", "crates/storage", "crates/mcp", "crates/skill", "crates/context", "crates/agent", "crates/tool", "crates/ui"]
 default-members = ["."]
 
 [workspace.package]
@@ -9,10 +9,13 @@ license = "Apache-2.0"
 authors = ["MiyakoMeow"]
 
 [profile.release]
-lto = "thin"
+lto = "fat"
+opt-level = "z"
+codegen-units = 1
+strip = true
 
 [workspace.lints.rust]
-missing_docs = "deny"
+missing_docs = "forbid"
 dead_code = "deny"
 unused_crate_dependencies = "deny"
 unused_extern_crates = "deny"
@@ -35,29 +38,90 @@ invalid_html_tags = "deny"
 bare_urls = "deny"
 
 [workspace.lints.clippy]
-pedantic = "deny"
+pedantic = { level = "deny", priority = -1 }
 
 missing_docs_in_private_items = "deny"
 
 missing_errors_doc = "deny"
-must_use_candidate = "deny"
+return_self_not_must_use = "deny"
+similar_names = "deny"
 mod_module_files = "deny"
 
 indexing_slicing = "deny"
 panic = "deny"
-unwrap_used = "deny"
 expect_used = "deny"
 todo = "deny"
 unimplemented = "deny"
-unreachable = "deny"
+unused_async = "deny"
 panic_in_result_fn = "deny"
 
-print_stderr = "deny"
+no_effect_underscore_binding = "deny"
+match_same_arms = "deny"
 print_stdout = "deny"
 
 assertions_on_constants = "deny"
 assertions_on_result_states = "deny"
 bool_assert_comparison = "deny"
+
+[workspace.dependencies]
+neoco-core = { path = "./crates/core" }
+neoco-config = { path = "./crates/config" }
+neoco-session = { path = "./crates/session" }
+neoco-model = { path = "./crates/model" }
+neoco-storage = { path = "./crates/storage" }
+neoco-mcp = { path = "./crates/mcp" }
+neoco-skill = { path = "./crates/skill" }
+neoco-context = { path = "./crates/context" }
+neoco-agent = { path = "./crates/agent" }
+neoco-tool = { path = "./crates/tool" }
+neoco-ui = { path = "./crates/ui" }
+
+async-anthropic = "0.6"
+async-openai = { version = "0.33", features = ["_api", "chat-completion"] }
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.28"
+dashmap = "6"
+dirs = "6"
+enum-iterator = "2.3"
+futures = "0.3"
+http = "1"
+log = "0.4"
+ratatui = "0.29"
+regex = "1.10"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+rmcp = { version = "1.1", features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+    "reqwest"
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["std"] }
+serde_yaml = "0.9"
+tempfile = "3.14"
+thiserror = "2.0"
+tokio = { version = "1.42", features = ["full"] }
+tokio-test = "0.4"
+notify = { version = "8", features = ["serde"] }
+toml = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ulid = { version = "1.1", features = ["serde"] }
+include_dir = "0.7"
+url = { version = "2.5", features = ["serde"] }
+zeroize = { version = "1.8", features = ["derive"] }
+smol_str = { version = "0.2", features = ["serde"] }
+indexmap = { version = "2", features = ["std", "serde"] }
+flume = "0.11"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-test.workspace = true
 
 [package]
 name = "neoco"
@@ -67,6 +131,20 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+neoco-core.workspace = true
+neoco-config.workspace = true
+neoco-ui.workspace = true
+neoco-agent.workspace = true
+neoco-model.workspace = true
+neoco-skill.workspace = true
+neoco-tool.workspace = true
+
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+async-trait.workspace = true
 
 [lints]
 workspace = true
