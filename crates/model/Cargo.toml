@@ -1,0 +1,31 @@
+[package]
+name = "neoco-model"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+neoco-core.workspace = true
+neoco-config.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+async-openai.workspace = true
+async-anthropic.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+dashmap.workspace = true
+tokio.workspace = true
+smol_str.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

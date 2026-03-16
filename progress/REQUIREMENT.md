@@ -59,7 +59,7 @@
 
 ### Session管理
 
-- 存储在`~/.local/neoco/(session_ulid)/agents/(agent_ulid).toml`文件。该文件存储所有的上下文内容。
+- 存储在`~/.local/share/neoco/(session_ulid)/agents/(agent_ulid).toml`文件（遵循XDG数据目录标准）。该文件存储所有的上下文内容。
 - **Session ULID与Agent ULID的关系**：
   - Session ULID是顶级容器的ULID，在创建Session时生成
   - Agent ULID是每个Agent实例的ULID，在Agent开始对话时生成（第一个Agent除外，其使用Session ULID）
@@ -137,7 +137,6 @@ content = "xxx"
     - 按角色过滤
     - 按大小排序（默认按ID升序，可通过sort参数覆盖）
     - 按时间排序（默认按ID升序，可通过sort参数覆盖）
-- 在TUI模式和后台Agent模式中都可用。
 
 #### 压缩触发时机
 
@@ -274,7 +273,7 @@ content = "xxx"
   4. **通用配置目录**：`~/.agents/`
 - 本节的所有"配置路径"，都是相对于上述配置目录的路径。
 
-- 配置目录（`~/.config/neoco`）和Session目录（`~/.local/neoco`）分离的原因:
+- 配置目录（`~/.config/neoco`）和Session目录（`~/.local/share/neoco`，遵循XDG数据目录标准）分离的原因:
   1. **配置目录**: 存放用户配置、Agent定义等**相对静态**的内容
   2. **Session目录**: 存放运行时数据、消息历史、状态等**动态生成**的内容
 
@@ -548,34 +547,6 @@ mode:
 - `/exit`：退出应用。
 - `/compact`：执行上下文压缩。
 
-### C. 后台运行模式
-
-参考ZeroClaw项目的架构设计:
-
-1. **守护进程**: neoco作为系统服务运行，管理Session生命周期
-2. **IPC通信**: 守护进程与前端通过RESTful API交互
-3. **状态暴露**: 提供HTTP API查询Session状态和进度
-4. **多前端支持**: 支持CLI、Web UI、IDE插件等多种前端
-
-- 与ZeroClaw的主要区别:
-  - ZeroClaw是通用自动化工具，NeoCo专注于AI Agent协作
-  - NeoCo的Session管理更复杂（支持智能体树）
-
-#### API支持
-
-- **Agent树查询API**：提供Agent层级结构查询接口
-  - `GET /api/v1/sessions/{session_id}/agents/tree`：获取Agent树形结构
-  - `GET /api/v1/sessions/{session_id}/agents/{agent_id}/messages`：获取Agent消息历史
-  - `GET /api/v1/sessions/{session_id}/agents/{agent_id}/tools`：获取Agent工具调用记录
-  - `GET /api/v1/sessions/{session_id}/agents/stats`：获取Agent执行统计信息
-- **实时事件流**：通过WebSocket/Server-Sent Events推送状态变更
-  - Agent状态变更事件
-  - 工具调用开始/完成事件
-
-- **权限设计**：
-  - 默认无密钥，用户可以选择使用固定密钥。
-  - 暂不实现：授权策略、跨域访问控制、速率限制。
-
 ### 用户接口要求
 
 - 模式A和B都使用`ratatui`，且共享消息内容渲染逻辑。
@@ -583,7 +554,6 @@ mode:
 - 以下逻辑要求分离至不同crate：
   - 核心执行逻辑
   - 终端输出逻辑
-  - 后台Agent与外部接口
 
 ---
 
